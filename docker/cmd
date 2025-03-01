@@ -1,0 +1,1 @@
+cwl-runner --singularity --outdir ./testrun cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl input.yml

@@ -1,0 +1,51 @@
+# Ignore Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore Conda environment files
+.env/
+venv/
+*.conda
+*.yaml
+
+# Ignore Snakemake logs and temp files
+logs/
+*.log
+*.snakemake/
+*.tmp
+*.out
+*.err
+
+# Ignore compiled and binary files
+*.o
+*.so
+*.exe
+*.dll
+
+# Ignore large data files
+data/reference
+results/
+*.bam
+*.vcf
+*.fastq
+*.h5
+
+# Ignore VS Code settings
+.vscode/
+.RData
+.Rhistory
+._.gitignore
+._Snakefile
+._TODO
+._docs
+docker/cwl
+docker/*sif
+docker/testrefhuman46_Rhap_reference.tar.gz
+testrun/
+docs/*html
+docs/*files
+docs/*zip
+docs/*html
+docker/testrun

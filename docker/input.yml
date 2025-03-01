@@ -1,0 +1,18 @@
+#!/usr/bin/env cwl-runner
+cwl:tool: rhapsody
+
+Reads:
+  - class: File
+    location: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
+  - class: File
+    location: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
+
+Reference_Archive:
+    class: File
+    location: "/home/jiayiwang/rhapsodist/docker/testrefhuman46_Rhap_reference.tar.gz"
+
+Sample_Tags_Version: human
+
+
+
+

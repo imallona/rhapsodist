@@ -1,0 +1,227 @@
+---
+title: "rhapsodist: preprocessing"
+
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-tools: true
+    toc_float: true
+
+author: Jiayi Wang
+---
+
+## Dependencies
+```{r packages}
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(ggplot2)
+    library(scater)
+    library(scDblFinder)
+    library(data.table)
+    library(patchwork)
+    library(scuttle)
+    library(BiocParallel)
+})
+```
+
+## read data
+```{r data}
+sces <- readRDS("~/rhapsodist/testrun/sces.rds")
+```
+
+## Quality control
+
+### Doublet removal 
+
+```{r doublet, message=FALSE, warning=FALSE}
+sces <- lapply(sces, \(sce) {
+  tryCatch({
+    scDblFinder(sce, BPPARAM = MulticoreParam(3))
+  }, error = \(e) {
+    message("Error in scDblFinder: ", e$message)
+    sce$scDblFinder.class <- "error"
+    return(sce)
+  })
+})
+sapply(sces,\(sce) table(sce$scDblFinder.class))
+sces <- lapply(sces, \(sce) sce[,sce$scDblFinder.class == "singlet"])
+```
+
+
+### QC metrics
+```{r qc metrics}
+# mitochondrial genes
+sces <- lapply(sces, \(sce) {
+    mito <- grep("^MT-", rownames(sce), value = TRUE)
+    sce <- addPerCellQC(sce, subsets = list(Mt = mito))
+})
+cols <- c("sum", "detected", "subsets_Mt_percent")
+log <- c(TRUE, TRUE, FALSE)
+type <- c("lower", "lower", "higher")
+drop_cols <- paste0(cols, "_drop")
+
+.f <- \(sce) {
+    for (i in seq_along(cols))
+        colData(sce)[[drop_cols[i]]] <- isOutlier(sce[[cols[i]]], 
+            nmads = 2.5, type = type[i], log = log[i])
+    
+    sapply(drop_cols, function(i) 
+        sapply(drop_cols, function(j)
+            sum(sce[[i]] & sce[[j]])))
+    
+    cd <- data.frame(colData(sce))
+    gg <- lapply(seq_along(cols), \(i) {
+        p <- ggplot(cd, aes_string(x = cols[i], alpha = drop_cols[i])) +
+            geom_histogram(bins = 100, show.legend = FALSE) +
+            scale_alpha_manual(values = c("FALSE" = 1, "TRUE" = 0.4)) +
+            theme_classic() + theme(strip.background = element_blank())
+        if (log[i]) p <- p + scale_x_log10()
+        p
+    }) |> wrap_plots(ncol=3)
+    print(gg)
+    return(sce)
+}
+```
+
+::: {.panel-tabset}
+
+### Alevin
+```{r, fig.height=5, fig.width=10}
+sces[[1]] <- .f(sces[[1]])
+```
+
+
+### kallisto
+```{r, fig.height=5, fig.width=10}
+sces[[2]] <- .f(sces[[2]])
+```
+
+### starsolo
+```{r, fig.height=5, fig.width=10}
+sces[[3]] <- .f(sces[[3]])
+```
+
+### SBG
+```{r, fig.height=5, fig.width=10}
+sces[[4]] <- .f(sces[[4]])
+```
+
+:::
+
+### QC plots
+```{r filtering3, fig.width=15, fig.height=7}
+.p <- \(sce) {
+    cols <- c("sum", "detected", "subsets_Mt_percent")
+    log <- c(TRUE, TRUE, FALSE)
+    type <- c("lower", "lower", "higher")
+    drop_cols <- paste0(cols, "_drop")
+    sce$discarded <- ol <- rowSums(as.matrix(colData(sce)[drop_cols])) != 0
+    cd <- colData(sce)
+    p1 <- ggplot(cd, aes(sum,subsets_Mt_percent,col=discarded)) +
+      geom_point(alpha=0.4) +
+      theme_bw() +
+      scale_color_brewer(palette = "Set1") +
+      scale_x_log10() +
+      xlab("Total counts") + ylab("% mitochondrial genes") 
+      #facet_wrap(~sample, ncol=3) 
+    
+    p2 <- ggplot(cd, aes(sum,detected,col=discarded)) +
+      geom_point(alpha=0.4) +
+      theme_bw() +
+      scale_color_brewer(palette = "Set1") +
+      scale_x_log10() + scale_y_log10() +
+      xlab("Total counts") + ylab("Non-zero features") 
+      #facet_wrap(~sample, ncol=3)
+    print(p1 + p2 + plot_layout(guides = "collect"))
+    return(sce)
+}
+```
+
+
+::: {.panel-tabset}
+
+### Alevin
+```{r, fig.height=5, fig.width=12}
+sces[[1]] <- .p(sces[[1]])
+```
+
+
+### kallisto
+```{r, fig.height=5, fig.width=10}
+sces[[2]] <- .p(sces[[2]])
+```
+
+### starsolo
+```{r, fig.height=5, fig.width=10}
+sces[[3]] <- .p(sces[[3]])
+```
+
+### SBG
+```{r, fig.height=5, fig.width=10}
+sces[[4]] <- .p(sces[[4]])
+```
+
+:::
+
+
+## Summary
+```{r summary}
+# summary of cells kept
+.s <- \(sce) {
+    ns <- ncol(sce)
+    ns_fil <- sum(!sce$discarded)
+    print(round(rbind(
+        before_filter = ncol(sce), after_filter = sum(!sce$discarded),
+        "%" = ns_fil / ns * 100), digits = 0))
+    
+    # drop outlier cells
+    sce <- sce[, !sce$discarded]
+    
+    # require count > 1 in at least 20 cells
+    sce <- sce[rowSums(counts(sce) > 1) >= 20, ]
+
+}
+
+```
+
+
+::: {.panel-tabset}
+
+### Alevin
+```{r, fig.height=7}
+sce <- sces[[1]]
+sces[[1]] <- .s(sce)
+```
+
+
+### kallisto
+```{r, fig.height=7}
+sce <- sces[[2]]
+sces[[2]] <- .s(sce)
+```
+
+### starsolo
+```{r, fig.height=7}
+sce <- sces[[3]]
+sces[[3]] <- .s(sce)
+```
+
+### SBG
+```{r, fig.height=7}
+sce <- sces[[4]]
+sces[[4]] <- .s(sce)
+```
+
+:::
+
+```{r}
+saveRDS(sces, "~/rhapsodist/testrun/sces_preprocessed.rds")
+```
+
+
+
+
+
+
+

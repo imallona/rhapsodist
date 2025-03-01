@@ -1,5 +1,7 @@
 ## software stack, will work out of the box if within the supplied docker container
-Rbin: R
+#Rbin: R
+R: "R_LIBS_USER=/home/jiayiwang/lib/ /usr/local/R/R-4.3.1/bin/R"
+Rbin: /usr/local/R/R-4.3.1/bin/R
 STAR: STAR
 
 repo_path: '.'
@@ -22,20 +24,20 @@ soloMultiMappers: "Unique" # Uniform, Rescue , PropUnique, EM
 extraStarSoloArgs: ""
 
 ## full, absolute path where outputs will be generated at
-working_dir: /home/imallona/noname/test_run/
+working_dir: /home/jiayiwang/rhapsodist/testrun
 
 gtf_origin: "gencode"
 # https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz
 # caution uncompressed
-gtf: /home/imallona/src/noname/data/gencode.v46.primary_assembly.annotation.gtf
+gtf: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.primary_assembly.annotation.gtf
 
 # https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/GRCh38.p14.genome.fa.gz
 # caution uncompressed
-genome: /home/imallona/src/noname/data/GRCh38.p14.genome.fa
+genome:  /home/jiayiwang/rhapsodist/data/reference/GRCh38.p14.genome.fa
 
 # https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.pc_transcripts.fa.gz
 # caution compressed
-transcriptome: /home/imallona/src/noname/data/gencode.v46.pc_transcripts.fa.gz
+transcriptome: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.pc_transcripts.fa.gz
 
 # cDNA readlength is 71
 sjdbOverhang: 70
@@ -64,8 +66,8 @@ aligner: ['starsolo', 'kallisto', 'alevin']
 samples:
   - name: example_full
     uses:
-      cb_umi_fq: "/home/imallona/tmp/bdrhapsody_demo/12WTA-ABC-SMK-EB-5kJRT/r1.fq.gz"
-      cdna_fq: "/home/imallona/tmp/bdrhapsody_demo/12WTA-ABC-SMK-EB-5kJRT/r2.fq.gz"
+      cb_umi_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
+      cdna_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
       whitelist: 384x3
       species: 'human'
   # - name: example_50M

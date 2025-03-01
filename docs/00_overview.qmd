@@ -1,0 +1,203 @@
+---
+title: "rhapsodist: overview"
+
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-tools: true
+    toc_float: true
+
+author: Jiayi Wang
+---
+
+## Dependencies
+```{r packages}
+#setwd("~/Desktop/sher/rhapsodist/")
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(Matrix)
+    library(AnnotationDbi)
+    library(org.Hs.eg.db)
+    library(EnsDb.Hsapiens.v86)
+    library(UpSetR)
+    library(ggplot2)
+    library(scater)
+    library(scDblFinder)
+    library(data.table)
+    source("~/rhapsodist/scripts/index2barcode.R")
+})
+```
+
+
+## Data loading
+
+### rhapsodist
+```{r rhapsodist}
+path <- "~/rhapsodist/testrun/"
+sce_alevin <- readRDS(paste0(path, 
+                             "alevin/example_full/example_full_alevin_sce.rds"))
+sce_kallisto <- readRDS(paste0(path,"kallisto/example_full/example_full_kallisto_sce.rds"))
+sce_starsolo <- readRDS(paste0(path,"starsolo/example_full/example_full_starsolo_sce.rds"))
+```
+
+### SBG
+```{r sbg}
+path1 <- "~/rhapsodist/docker/testrun/unfiltered_MEX_output/"
+feature <- paste0(path1, "features.tsv.gz")
+count <- paste0(path1, "matrix.mtx.gz")
+barcode <- paste0(path1, "barcodes.tsv.gz")
+counts <- readMM(count)
+features <- read.table(feature, header = FALSE, sep = "\t", 
+                       stringsAsFactors = FALSE)
+barcodes <- read.table(barcode, header = FALSE, sep = "\t",
+                       stringsAsFactors = FALSE)
+
+rownames(counts) <- features$V1  
+colnames(counts) <- barcodes$V1 
+
+sce_sbg <- SingleCellExperiment(assays = list(counts = counts))
+colnames(sce_sbg) <- sapply(colnames(sce_sbg), index_to_sequence, 
+                            bead_version="Enh")
+```
+
+### Remove cells or features without any counts
+```{r}
+.rm <- \(x) {
+    x <- x[rowSums(counts(x))!=0,]
+    x <- x[,colSums(counts(x))!=0]
+    x
+}
+sces <- list(alevin=sce_alevin, kallisto=sce_kallisto, 
+             starsolo=sce_starsolo, SBG=sce_sbg)
+sces <- lapply(sces, .rm)
+
+```
+
+### Convert Ensembl ID to gene symbol
+The number of genes and the number of cells for each method after removed cells/genes with 0 count.
+```{r}
+convert_ensembl_to_symbol <- \(x) {
+    ensembl_ids <- rownames(x)
+    ensembl_ids <- sub("\\..*$", "", ensembl_ids)
+    
+    gene_symbols <- mapIds(EnsDb.Hsapiens.v86,
+                           keys = ensembl_ids,
+                           column = "SYMBOL",
+                           keytype = "GENEID",
+                           multiVals = "first")
+    gene_symbols[is.na(gene_symbols)] <- ensembl_ids[is.na(gene_symbols)]
+    
+    rowData(x) <- DataFrame(ENSEMBL = ensembl_ids, SYMBOL = gene_symbols)
+    rownames(x) <- gene_symbols
+    x
+}
+sces[1:3] <- lapply(sces[1:3], convert_ensembl_to_symbol)
+mx <- sapply(sces, dim)
+rownames(mx) <- c("nGene", "nCell")
+mx
+```
+
+
+
+## Comparison before QC
+
+### Cell barcodes overlapping
+```{r}
+barcodes <- lapply(sces, colnames)
+upset(fromList(barcodes), 
+      order.by = "freq",
+      text.scale = 1.5)
+```
+
+
+### Expressed genes overlapping
+```{r}
+genes <- lapply(sces, rownames)
+upset(fromList(genes), 
+      order.by = "freq",
+      text.scale = 1.5)
+```
+
+### Distribution of reads per cell
+```{r, fig.width=8, fig.height=8}
+reads <- lapply(sces, \(x) {
+    data.table(CB=colnames(x), nReads=colSums(counts(x)), nGenes=colSums(counts(x) > 0))
+}) 
+reads <- rbindlist(reads, idcol = "workflow")
+ggplot(reads, aes(x = log10(nReads), color = workflow)) +
+    geom_density() +
+    labs(
+        title = "Reads per Cell Distribution by Workflow",
+        x = "Reads per Cell (Log scale)",
+        y = "Density",
+        color = "Workflow") +
+    theme_bw() +
+    facet_wrap(~workflow, scales="free", ncol=2) +
+    scale_color_brewer(palette = "Paired")
+```
+
+NOTE: so many cells only contain 1 count in kallisto. 
+Set threshold to 1 for kallisto:
+```{r}
+# NOTE: so many cells only contain 1 count in kallisto
+sum(colSums(counts(sces$kallisto))==1)
+x <- sces$kallisto
+x <- x[,colSums(counts(x))>1]
+dim(x)
+df <- data.table(CB=colnames(x), 
+                 nReads=colSums(counts(x)), 
+                 nGenes=colSums(counts(x) > 0))
+ggplot(df, aes(x = log10(nReads))) +
+    geom_density() +
+    labs(
+        title = "Reads per Cell Distribution by Workflow",
+        x = "Reads per Cell (Log scale)",
+        y = "Density",
+        color = "Workflow") +
+    theme_bw()
+sces$kallisto <- x
+```
+
+### Top 20 expressed genes
+
+
+::: {.panel-tabset}
+
+### alevin
+```{r alevin}
+plotHighestExprs(sces[[1]], n=20)
+```
+
+### kallisto
+
+```{r kallisto}
+plotHighestExprs(sces[[2]], n=20)
+# NOTE: problem plotting the figure, so print
+# gene_sums <- rowSums(assay(sces[[2]], "counts"))
+# top_genes <- names(sort(gene_sums, decreasing = TRUE))[1:20]
+# top_genes
+```
+
+### starsolo
+```{r starsolo}
+plotHighestExprs(sces[[3]], n=20)
+```
+
+### SBG
+```{r sbg top}
+plotHighestExprs(sces[[4]], n=20)
+```
+
+::: 
+
+## Saving
+```{r}
+saveRDS(sces, "~/rhapsodist/testrun/sces.rds")
+```
+
+
+
+
+
+
