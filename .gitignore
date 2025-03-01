@@ -49,3 +49,5 @@ docs/*files
 docs/*zip
 docs/*html
 docker/testrun
+scripts/._*
+docs/._*
