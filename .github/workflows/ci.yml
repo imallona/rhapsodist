@@ -1,0 +1,147 @@
+name: rhapsodist CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+
+  simulate-fastqs:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Miniforge3
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-variant: Miniforge3
+          miniforge-version: latest
+          activate-environment: snakemake-ci
+          channels: conda-forge,bioconda,nodefaults
+          channel-priority: strict
+
+      - name: Install Snakemake
+        run: conda install -y -n snakemake-ci "snakemake>=8,<9"
+
+      - name: Cache Snakemake conda environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.snakemake/conda
+          key: snakemake-conda-simulate-${{ hashFiles('envs/simulate.yaml') }}
+          restore-keys: snakemake-conda-simulate-
+
+      - name: Clean previous simulation artifacts
+        run: rm -rf /tmp/rhapsodist_simulate
+
+      - name: Generate simulated genome, GTF and FASTQs
+        run: |
+          snakemake \
+            --configfile sim_config.yaml \
+            --use-conda \
+            --cores 4 \
+            --rerun-incomplete \
+            --latency-wait 30 \
+            --printshellcmds \
+            /tmp/rhapsodist_simulate/simulate/sim_R1.fq.gz \
+            /tmp/rhapsodist_simulate/simulate/sim_R2.fq.gz
+
+      - name: Sanity-check simulated FASTQs
+        run: |
+          expected_reads=$(( 100 * 100 * 100 ))
+          r1_reads=$(zcat /tmp/rhapsodist_simulate/simulate/sim_R1.fq.gz | awk 'NR%4==1' | wc -l)
+          r2_reads=$(zcat /tmp/rhapsodist_simulate/simulate/sim_R2.fq.gz | awk 'NR%4==1' | wc -l)
+          echo "Expected reads : $expected_reads"
+          echo "R1 read count  : $r1_reads"
+          echo "R2 read count  : $r2_reads"
+          [ "$r1_reads" -eq "$expected_reads" ] || { echo "R1 read count mismatch" >&2; exit 1; }
+          [ "$r2_reads" -eq "$expected_reads" ] || { echo "R2 read count mismatch" >&2; exit 1; }
+          echo "PASS: read counts match"
+
+      - name: Upload simulation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulate-logs
+          path: /tmp/rhapsodist_simulate/logs/simulate_data.log
+          if-no-files-found: warn
+
+
+  full-pipeline:
+    runs-on: self-hosted
+    needs: simulate-fastqs
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Miniforge3
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-variant: Miniforge3
+          miniforge-version: latest
+          activate-environment: snakemake-ci
+          channels: conda-forge,bioconda,nodefaults
+          channel-priority: strict
+
+      - name: Install Snakemake
+        run: conda install -y -n snakemake-ci "snakemake>=8,<9"
+
+      - name: Cache Snakemake conda environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.snakemake/conda
+          key: snakemake-conda-full-${{ hashFiles('envs/all_in_one.yaml', 'envs/simulate.yaml') }}
+          restore-keys: snakemake-conda-full-
+
+      - name: Run STARsolo + SCE + validation
+        run: |
+          snakemake \
+            --configfile sim_config.yaml \
+            --use-conda \
+            --cores 4 \
+            --rerun-incomplete \
+            --latency-wait 30 \
+            --printshellcmds
+
+      - name: Check simulation validation passed
+        run: |
+          if [ ! -f /tmp/rhapsodist_simulate/simulation_validation.html ]; then
+            echo "simulation_validation.html not produced" >&2
+            exit 1
+          fi
+          echo "Validation report produced successfully."
+
+      - name: Upload HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            /tmp/rhapsodist_simulate/simulation_validation.html
+            /tmp/rhapsodist_simulate/starsolo/simulated/descriptive_report.html
+          if-no-files-found: warn
+
+      - name: Upload logs and benchmarks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-and-benchmarks
+          path: |
+            /tmp/rhapsodist_simulate/logs/
+            /tmp/rhapsodist_simulate/benchmarks/
+          if-no-files-found: warn
