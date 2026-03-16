@@ -41,7 +41,7 @@ def get_species_by_name(name):
              if species in ['mouse', 'human']:
                  return(species)
              else:
-                 raise('Unknown species (not mouse nor human), it was reported ' + species)
+                 raise ValueError('Unknown species (not mouse nor human), it was reported ' + species)
              
 # def get_sampletags_fasta_by_name(name):
 #     for i in range(len(config['samples'])):
@@ -71,11 +71,11 @@ def symlink_whitelist(sample):
                 os.symlink(src = op.join(config['repo_path'], 'data', 'whitelist_96x3', x),
                            dst = op.join(config['working_dir'], 'starsolo', sample, 'whitelists', x))
             except FileExistsError:
-                break
+                continue
     elif get_barcode_whitelist_by_name(name = sample) == '384x3':
         for x in ['BD_CLS1.txt', 'BD_CLS2.txt', 'BD_CLS3.txt']:
             try:
                 os.symlink(src = op.join(config['repo_path'], 'data', 'whitelist_384x3', x),
                            dst = op.join(config['working_dir'], 'starsolo', sample, 'whitelists', x))
             except FileExistsError:
-                break
+                continue

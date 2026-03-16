@@ -10,31 +10,59 @@
 import os.path as op
 import os
 
-# include: op.join('src', 'simulate.snmk')
-    
 configfile: "config.yaml"
 
+## to ease whitelists symlinking — must be absolute before any include uses it
+if not op.isabs(config['repo_path']):
+    config['repo_path'] = op.join(workflow.basedir, config['repo_path'])
+
+## when use_simulated is true, point genome/gtf/transcriptome/fastqs at generated outputs
+if config.get('use_simulated', False):
+    _sim_dir = op.join(config['working_dir'], 'simulate')
+    config['genome']        = op.join(_sim_dir, 'genome.fa')
+    config['gtf']           = op.join(_sim_dir, 'genes.gtf')
+    config['transcriptome'] = op.join(_sim_dir, 'transcriptome.fa.gz')
+    for _s in config['samples']:
+        if not _s['uses'].get('cb_umi_fq'):
+            _s['uses']['cb_umi_fq'] = op.join(_sim_dir, 'sim_R1.fq.gz')
+        if not _s['uses'].get('cdna_fq'):
+            _s['uses']['cdna_fq'] = op.join(_sim_dir, 'sim_R2.fq.gz')
+
 include: "src/workflow_functions.py"
+
+include: op.join('src', 'simulate.snmk')
 
 ## kallisto and bustools from bioconda are not reliable, so we compile them
 kallisto = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src')
 bustools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src')
 shell.prefix('export PATH=' + kallisto + ':' + bustools + ":$PATH;")
 
-## to ease whitelists symlinking
-if not op.isabs(config['repo_path']):
-    config['repo_path'] = op.join(workflow.basedir, config['repo_path'])
-
-os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
-os.makedirs(op.join(config['working_dir'], 'benchmarks'), exist_ok=True)
+try:
+    os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
+    os.makedirs(op.join(config['working_dir'], 'benchmarks'), exist_ok=True)
+except OSError:
+    pass
 
 print(get_sample_names())
+
+_extra_targets = (
+    [op.join(config['working_dir'], 'simulation_validation.html')]
+    if config.get('use_simulated', False) else []
+)
+
+_sampletag_reports = (
+    [] if config.get('skip_sampletags', False) else
+    expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html'),
+           sample = get_sample_names())
+)
 
 rule all:
     input:
         expand(op.join(config['working_dir'], '{aligner}',  '{sample}', 'descriptive_report.html'),
                aligner = get_aligners(),
-               sample = get_sample_names())               
+               sample = get_sample_names()),
+        _sampletag_reports,
+        _extra_targets
         # op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin'),
         # expand(op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         #        sample = get_sample_names()),
@@ -120,7 +148,7 @@ rule star_index:
         nthreads = config['nthreads'],
         star = config['STAR'],
         sjdbOverhang = config['sjdbOverhang'],
-        indexNbases = 14
+        indexNbases = config.get('genomeSAindexNbases', 14)
     log:
         op.join(config['working_dir'], 'logs', 'star_indexing.log')
     benchmark:
@@ -188,6 +216,7 @@ rule starsolo:
         sjdbOverhang = config['sjdbOverhang'],
         soloCellFilter = config['soloCellFilter'],
         soloMultiMappers = config['soloMultiMappers'],
+        soloUMIdedup = config.get('soloUMIdedup', '1MM_CR'),
         extraStarSoloArgs = config['extraStarSoloArgs'],
         gene_solo_path = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out',
                             'Gene')
@@ -204,12 +233,13 @@ rule starsolo:
         --soloType CB_UMI_Simple \
         --soloCBstart 1 --soloCBlen 27  \
         --soloUMIstart 28 --soloUMIlen 8 \
-        --soloUMIdedup 1MM_CR \
+        --soloUMIdedup {params.soloUMIdedup} \
         --soloBarcodeReadLength 1 \
         --soloCellReadStats Standard \
         --soloCBwhitelist None \
         --soloCellFilter {params.soloCellFilter} \
         --outSAMattributes NH HI AS nM NM MD jM jI MC ch CB UB gx gn sS CR CY UR UY\
+        --outSAMunmapped Within \
         --outSAMtype BAM SortedByCoordinate \
         --quantMode GeneCounts \
         --sjdbGTFfile {input.gtf} \
@@ -288,7 +318,6 @@ rule install_r_deps:
         log = op.join(config['working_dir'], 'logs', 'installs.log')
     params:
         working_dir = config['working_dir'],
-        sample = "{wildcards.sample}",
         Rbin = config['Rbin'],
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_install.txt')
@@ -313,7 +342,7 @@ rule generate_sce_starsolo:
     params:
         align_path = op.join(config['working_dir']),
         working_dir = config['working_dir'],
-        sample = "{wildcards.sample}",
+        sample = lambda wildcards: wildcards.sample,
         Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_star.log')
@@ -344,7 +373,7 @@ rule generate_sce_kallisto:
         sce = op.join(config['working_dir'], 'kallisto', '{sample}', '{sample}_kallisto_sce.rds')
     params:
         working_dir = config['working_dir'],
-        sample = "{wildcards.sample}",
+        sample = lambda wildcards: wildcards.sample,
         Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_kallisto.log')
@@ -370,7 +399,7 @@ rule generate_sce_alevin:
         sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
     params:
         working_dir = config['working_dir'],
-        sample = "{wildcards.sample}",
+        sample = lambda wildcards: wildcards.sample,
         Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_alevin.log')
@@ -399,7 +428,7 @@ rule generate_sce_alevin:
 #     params:
 #         align_path = op.join(config['working_dir'], 'tasseq'),
 #         working_dir = config['working_dir'],
-#         sample = "{wildcards.sample}",
+#         sample = lambda wildcards: wildcards.sample,
 #         Rbin = config['Rbin']
 #     shell:
 #         """
@@ -419,8 +448,9 @@ rule render_descriptive_report:
         sces = expand(op.join(config['working_dir'], '{{aligner}}', '{sample}', '{sample}_{{aligner}}_sce.rds'),
                       sample = get_sample_names()),
         installs = op.join(config['working_dir'], 'logs', 'installs.log'),
-        counts = expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
-                        sample = get_sample_names())
+        counts = ([] if config.get('skip_sampletags', False) else
+                  expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
+                         sample = get_sample_names()))
     output:
         html = op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html')
         # cache = temp(op.join(config['repo_path'], 'process_sce_objects_cache')),
@@ -432,7 +462,7 @@ rule render_descriptive_report:
     params:
         path = op.join(config['working_dir'], '{aligner}', '{sample}'),
         working_dir = op.join(config['working_dir'], '{aligner}'),
-        sample = "{wildcards.sample}",
+        sample = lambda wildcards: wildcards.sample,
         Rbin = config['Rbin']
     shell:
         """
@@ -489,7 +519,7 @@ rule rustody_run:
         source "$HOME/.cargo/env"
         if [ {params.whitelist} == '384x3' ]; then
            wl='v2.384'
-        elif [ {params}.whitelist == '96x3' ]; then
+        elif [ {params.whitelist} == '96x3' ]; then
            wl='v2.96'
         else
            wl='error_unknown_whitelist_spec'
@@ -526,6 +556,10 @@ rule standardize_cb_umis_cutadapt:
         path = op.join(config['working_dir'], 'data', 'fastq')
     threads:
         workflow.cores
+    log:
+        op.join(config['working_dir'], 'logs', 'standardize_cb_umis_{sample}.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'standardize_cb_umis_{sample}.txt')
     shell:
         """
         mkdir -p {params.path}
@@ -537,7 +571,7 @@ rule standardize_cb_umis_cutadapt:
            --pair-filter=both \
            -o {output.temp_cb_umi} \
            -p {output.cdna} \
-           {input.cb_umi} {input.cdna} 
+           {input.cb_umi} {input.cdna} &> {log}
 
         pigz --decompress {output.temp_cb_umi} -p {threads} --stdout | \
             cut -c1-9,14-22,27- | pigz -p {threads} > {output.standardized_cb_umi}
@@ -567,7 +601,7 @@ rule kallisto_index:
         mkdir -p {params.output_dir}
         cd {params.output_dir}
         
-        kallisto index --threads {threads} --i {params.index_name} {input.transcriptome} &> {log}
+        kallisto index --threads {threads} -i {params.index_name} {input.transcriptome} &> {log}
         """
 
 ## conda recipe is broken 
@@ -620,16 +654,32 @@ rule kallisto_bus:
         """
 
         
+rule bustools_sort:
+    input:
+        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus'),
+        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+    output:
+        sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')
+    threads: workflow.cores
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_bustools_sort.txt')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_bustools_sort.log')
+    shell:
+        """
+        bustools sort -t {threads} -o {output.sorted_bus} {input.bus} &> {log}
+        """
+
 rule bustools_count:
     # conda:
     #     op.join('envs', 'kallisto.yaml')
     input:
-        txp2gene = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
-        matrix_ec = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
+        txp2gene   = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
+        matrix_ec  = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
-        bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus'),
-        kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')  
+        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
+        kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
+        btools     = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
         op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx')
     params:
@@ -692,14 +742,22 @@ rule extract_unmapped_startsolo_wta_tagged_fastqs:
     output:
         temp(op.join(config['working_dir'], 'sampletags', '{sample}_unmapped_tagged.fq.gz'))
     threads:
-        1        
+        min(10, workflow.cores)
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_unmapped_tagged.log')
     benchmark:
-        op.join(config['working_dir'], 'benchmarks', '{sample}_unaligned_tagged.log')
+        op.join(config['working_dir'], 'benchmarks', '{sample}_unaligned_tagged.txt')
     shell:
         """
-        samtools view -@ {threads} {input.bam} | \
-             awk -F " " '{{print "@"$22"__"$23"\\n"$10"\\n""+""\\n"$11}}' | \
-             pigz -c > {output}
+        samtools view -@ {threads} -f 4 -d CB {input.bam} | \
+            awk -F '\\t' '{{
+                cb=""; ub="";
+                for (i=12; i<=NF; i++) {{
+                    if (substr($i,1,5)=="CB:Z:") cb=substr($i,6);
+                    else if (substr($i,1,5)=="UB:Z:") ub=substr($i,6);
+                }}
+                if (cb!="" && ub!="") printf "@%s__%s\\n%s\\n+\\n%s\\n", cb, ub, $10, $11
+            }}' | pigz -p {threads} -c > {output} 2> {log}
         """
     
 
@@ -727,14 +785,15 @@ rule align_star_sampletags:
     conda:
         op.join('envs', 'all_in_one.yaml')
     input:
-        # fastq = op.join(config['working_dir'], 'sampletags', '{sample}', '{sample}_unmapped_tagged.fq.gz')
         fastq = op.join(config['working_dir'], 'sampletags', '{sample}_sampletag_tagged.fq.gz'),
-        idx_flag = op.join(config['working_dir'] , 'data', species + '_index', 'sampletags', 'SAindex')
+        idx_flag = lambda wildcards: op.join(config['working_dir'], 'data',
+                       get_species_by_name(wildcards.sample) + '_index', 'sampletags', 'SAindex')
     output:
         bam = op.join(config['working_dir'], 'sampletags', '{sample}', 'Aligned.out.bam')
     params:
         output_dir = op.join(config['working_dir'], 'sampletags', '{sample}/'),
-        sampletags_genome_dir = op.join(config['working_dir'] , 'data', species + '_index', 'sampletags'),
+        sampletags_genome_dir = lambda wildcards: op.join(config['working_dir'], 'data',
+                                    get_species_by_name(wildcards.sample) + '_index', 'sampletags'),
         tmp = op.join(config['working_dir'], 'sampletags', 'tmp_starsolo_{sample}'),
     log:
         op.join(config['working_dir'], 'logs', '{sample}_align_sampletags_star.log')
@@ -754,12 +813,9 @@ rule align_star_sampletags:
           --outFileNamePrefix {params.output_dir} \
           --readFilesIn {input.fastq}  \
           --outSAMtype BAM Unsorted \
-          # --outFilterScoreMinOverLread 0.5 \
-          # --outFilterMatchNminOverLread 0.5 \
           --outFilterMismatchNmax 5 \
           --scoreInsOpen  -8 \
           --scoreDelBase -8 \
-          # --seedSearchStartLmax 30 \
           --alignIntronMax 1 &> {log}
 
         rm -rf {params.tmp}
@@ -786,6 +842,35 @@ rule count_sampletags:
           cut -f1,3,6 | sed 's/__/\t/g' | pigz -p {threads} -c > {output.counts}
         """
 
+rule render_sampletag_report:
+    conda:
+        op.join('envs', 'all_in_one.yaml')
+    input:
+        counts   = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
+        script   = op.join(config['repo_path'], 'src', 'generate_sampletag_report.Rmd'),
+        installs = op.join(config['working_dir'], 'logs', 'installs.log')
+    output:
+        html = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_sampletag_report.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_sampletag_report.txt')
+    params:
+        Rbin = config['Rbin'],
+        assignments = lambda wildcards: (
+            op.join(config['working_dir'], 'simulate', 'sampletag_assignments.txt')
+            if config.get('use_simulated', False) else ''
+        )
+    shell:
+        """
+        {params.Rbin} --vanilla -e \
+          'rmarkdown::render("{input.script}",
+            output_file = "{output.html}",
+            params = list(
+              counts_path      = "{input.counts}",
+              assignments_path = "{params.assignments}"))' &> {log}
+        """
+
 rule deversion_transcriptome:
     conda:
         op.join('envs', 'all_in_one.yaml')
@@ -798,9 +883,9 @@ rule deversion_transcriptome:
         gtf_style = config['gtf_origin']
     threads: workflow.cores    
     log:
-        op.join(config['working_dir'], 'logs', 'alevin_index.log')
+        op.join(config['working_dir'], 'logs', 'deversion_transcriptome.log')
     benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'alevin_index.log')
+        op.join(config['working_dir'], 'benchmarks', 'deversion_transcriptome.txt')
     shell:
         """
         mkdir -p {params.index_path}
@@ -811,7 +896,7 @@ rule deversion_transcriptome:
 
             # no transcript versions
             #  e.g. ENST4654.1, the .1 needs to go because the matching GTF doesn't have it
-            zcat {input.transcriptome} | awk 'FS="." {{print $1}}' > {output.deversioned_fasta}
+            zcat {input.transcriptome} | awk '/^>/ {{sub(/\..*/, "", $1)}} {{print}}' > {output.deversioned_fasta}
 
          elif [[ {params.gtf_style} == 'gencode' ]]
          then
@@ -836,9 +921,9 @@ rule salmon_index:
         gtf_style = config['gtf_origin']
     threads: workflow.cores    
     log:
-        op.join(config['working_dir'], 'logs', 'alevin_index.log')
+        op.join(config['working_dir'], 'logs', 'salmon_index.log')
     benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'alevin_index.txt')
+        op.join(config['working_dir'], 'benchmarks', 'salmon_index.txt')
     shell:
         """
         mkdir -p {params.index_path}
@@ -854,7 +939,11 @@ rule get_txp2gene:
     output:
         op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene')
     params:
-        gtf_style = config['gtf_origin'] 
+        gtf_style = config['gtf_origin']
+    log:
+        op.join(config['working_dir'], 'logs', 'get_txp2gene.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'get_txp2gene.txt')
     shell:
          """
          if [[ {params.gtf_style} == 'ensembl' ]]

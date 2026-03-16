@@ -26,18 +26,39 @@ args <- parser$parse_args()
 wd <- args$working_dir
 id <- args$sample
 
-# generating sce object
-
 counts <- Matrix::readMM(file.path(wd, 'bustools', id, 'output.mtx'))
-gene_ids <- readLines(file.path(wd, 'bustools', id,'output.genes.txt'))
-barcodes <- readLines(file.path(wd, 'bustools', id,'output.barcodes.txt'))
+gene_ids <- readLines(file.path(wd, 'bustools', id, 'output.genes.txt'))
+barcodes <- readLines(file.path(wd, 'bustools', id, 'output.barcodes.txt'))
 
 rownames(counts) <- barcodes
 colnames(counts) <- gene_ids
 
-sce <- SingleCellExperiment(list(counts=t(counts)),
-                            colData=DataFrame(Barcode=barcodes),
-                            rowData=DataFrame(ID=gene_ids,SYMBOL=gene_ids))
+# Cell filtering: elbow detection in log-log barcode rank space.
+# Uses maximum distance from the diagonal connecting the first and last point,
+# which is robust to tail artifacts that trip up simple slope-based methods.
+lib_sizes <- Matrix::rowSums(counts)
+nonzero <- lib_sizes[lib_sizes > 0]
+ranked <- sort(nonzero, decreasing = TRUE)
+n <- length(ranked)
+log_rank <- log10(seq_len(n))
+log_count <- log10(ranked)
+x1 <- log_rank[1]; y1 <- log_count[1]
+x2 <- log_rank[n]; y2 <- log_count[n]
+dx <- x2 - x1; dy <- y2 - y1
+dist <- (dy * log_rank - dx * log_count + x2*y1 - y2*x1) / sqrt(dy^2 + dx^2)
+knee_idx <- which.min(dist)
+knee_threshold <- ranked[knee_idx]
+n_before <- length(lib_sizes)
+keep <- lib_sizes >= knee_threshold
+cat(sprintf('Elbow threshold: %g counts  Kept %d / %d barcodes\n',
+            knee_threshold, sum(keep), n_before))
+
+counts <- counts[keep, ]
+barcodes <- barcodes[keep]
+
+sce <- SingleCellExperiment(list(counts = t(counts)),
+                            colData = DataFrame(Barcode = barcodes),
+                            rowData = DataFrame(ID = gene_ids, SYMBOL = gene_ids))
 rownames(sce) <- gene_ids
 
 saveRDS(object = sce, file = args$output_fn)

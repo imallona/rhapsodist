@@ -4,30 +4,29 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  ## - conda-forge::icu=70.1
-  ## - bioconda::bedtools=2.31.1
-  ## - conda-forge::pandoc=2.9.2
-  ## - bioconda::subread=2.0.6
-  ## - bioconda::ucsc-bedgraphtobigwig=445
-  ## - bioconda::ucsc-fasize=377
   - bioconda::htslib
   - bioconda::samtools
   - bioconda::star=2.7.11b
   - bioconda::cutadapt=4.9
-  - conda-forge:pigz
+  - conda-forge::pigz
   - bioconda::salmon=1.10.3
-  ## - bioconda::alevin-fry=0.10.0
-  ## - conda-forge::r-base=4.2.2
-  ## - bioconda::bioconductor-biocgenerics=0.44.0
-  ## - conda-forge::r-biocmanager=1.30.22
-  ## - conda-forge::r-cairo=1.6_0
-  ## - conda-forge::r-mass=7.3_60
-  ## - conda-forge::r-matrixstats=1.1.0
-  ## - bioconda::bioconductor-biobase=2.58.0
-  ## - bioconda::bioconductor-sparsematrixstats=1.10.0
-  ## - bioconda::bioconductor-summarizedexperiment=1.28.0
-  ## - bioconda::bioconductor-singlecellexperiment=1.20.0
-  ## - bioconda::bioconductor-scuttle=1.8.0
-  ## - bioconda::bioconductor-scater=1.26.0
-  ## - conda-forge::r-seurat=4.4.0
-  ## - conda-forge::r-seuratobject=5.0.0
+  - conda-forge::r-base
+  - conda-forge::r-biocmanager
+  - conda-forge::r-cairo
+  - conda-forge::r-rmarkdown
+  - conda-forge::r-knitr
+  - conda-forge::r-ggplot2
+  - conda-forge::r-argparse
+  - conda-forge::r-mass
+  - conda-forge::r-matrixstats
+  - conda-forge::r-seurat
+  - conda-forge::r-seuratobject
+  - bioconda::bioconductor-biocgenerics
+  - bioconda::bioconductor-biobase
+  - bioconda::bioconductor-sparsematrixstats
+  - bioconda::bioconductor-summarizedexperiment
+  - bioconda::bioconductor-singlecellexperiment
+  - bioconda::bioconductor-scuttle
+  - bioconda::bioconductor-scater
+  - bioconda::bioconductor-tximeta
+  - conda-forge::pandoc

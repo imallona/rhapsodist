@@ -14,12 +14,10 @@ BiocManager::install('devtools', update = FALSE)
 ## devtools::install_version("Matrix",version = "1.6.1.1")
 # devtools::install_version('Seurat', version = '4.4.0')
 
-for (pkg in c("argparse", #"Seurat",
+for (pkg in c("argparse", "Seurat",
               "scater", "scuttle", "ggplot2", "tximeta")){
     if (! pkg  %in% installed.packages()) {
-        
-        BiocManager::install(pkg, update = FALSE) 
-
+        BiocManager::install(pkg, update = FALSE)
     }
 }
 

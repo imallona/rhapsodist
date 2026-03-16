@@ -18,6 +18,20 @@ params:
 
 
 ```{r}
+knitr::opts_chunk$set(fig.width = 5,
+                      fig.height = 5,
+                      error = TRUE,
+                      echo = TRUE,
+                      cache = FALSE,
+                      include = TRUE,
+                      dev = "png",
+                      dev.args = list(type = "cairo-png"),
+                      cache.lazy = FALSE,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+```{r}
 suppressPackageStartupMessages({
     library(SingleCellExperiment)
     library(Seurat)
@@ -38,25 +52,14 @@ print(params$path)
 ```{r}
 
 ac <- function(col, alpha=1){
-  apply(sapply(col, col2rgb)/255, 2, 
-                     function(x) 
+  apply(sapply(col, col2rgb)/255, 2,
+                     function(x)
                          rgb(x[1], x[2], x[3], alpha=alpha))
 }
 ```
 
 
 ```{r}
-knitr::opts_chunk$set(fig.width = 5,
-                      fig.height = 5,
-                      error = TRUE,
-                      echo = TRUE,
-                      cache = FALSE,
-                      include = TRUE,
-                      dev = "png",
-                      dev.args = list(type = "cairo-png"),
-                      cache.lazy = FALSE,
-                      warning = TRUE,
-                      message = TRUE)
 
 ## ## render on error hook
 ## knitr::knit_hooks$set(error = function(x, options) {
@@ -83,7 +86,16 @@ for (i in 1:length(sces)) {
                                           '_',
                                           colnames(sces[[i]]))
     colData(sces[[i]])$experiment <- mainExpName(sces[[i]])
-    colnames(rowData(sces[[i]])) <- c("name", "type", "value")
+    if (ncol(rowData(sces[[i]])) >= 3) {
+        colnames(rowData(sces[[i]]))[1:3] <- c("name", "type", "value")
+    } else if (ncol(rowData(sces[[i]])) == 2) {
+        colnames(rowData(sces[[i]]))[1:2] <- c("name", "type")
+        rowData(sces[[i]])$value <- NA_character_
+    } else {
+        colnames(rowData(sces[[i]]))[1] <- "name"
+        rowData(sces[[i]])$type  <- NA_character_
+        rowData(sces[[i]])$value <- NA_character_
+    }
     rownames(sces[[i]]) <- paste0(rowData(sces[[i]])$name, "__", rownames(sces[[i]]))
 }
 
@@ -100,8 +112,7 @@ rm(sces)
 sce <- addPerCellQC(sce,
                     assay.type = 'counts',
                     subsets = list(mito = grep('^mt-', rownames(rowData(sce)),
-                                               value = TRUE, ignore.case = TRUE),
-                                   capture = rowData(sce)$captured == 'captured'))
+                                               value = TRUE, ignore.case = TRUE)))
 
 libsize.drop <- isOutlier(sce$total, nmads = 2, type = "both", log = TRUE, batch = sce$experiment)
 feature.drop <- isOutlier(sce$detected, nmads = 2, type = "both", log = TRUE, batch = sce$experiment)
@@ -246,7 +257,7 @@ so <- CreateSeuratObject(counts = assay(sce, 'counts'),
                          min.cells = 0, min.features = 0,
                          assay = 'RNA')
 
-stopifnot(all(rownames(so@meta.dta) == colnames(sce)))
+stopifnot(all(rownames(so@meta.data) == colnames(sce)))
 
 meta <- colData(sce)
 so@meta.data <- cbind(so@meta.data, meta)
