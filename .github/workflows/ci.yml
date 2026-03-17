@@ -2,6 +2,9 @@ name: rhapsodist CI
 
 on:
   push:
+    branches:
+      - main
+      - dev
   pull_request:
   workflow_dispatch:
 
@@ -20,17 +23,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Miniforge3
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Install apptainer
+        uses: eWaterCycle/setup-apptainer@v2
         with:
-          miniforge-variant: Miniforge3
-          miniforge-version: latest
-          activate-environment: snakemake-ci
-          channels: conda-forge,bioconda,nodefaults
-          channel-priority: strict
+          apptainer-version: 1.4.0
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          micromamba-version: latest
+          init-shell: bash
+          cache-environment: false
+          post-cleanup: none
 
       - name: Install Snakemake
-        run: conda install -y -n snakemake-ci "snakemake>=8,<9"
+        run: micromamba install -y -n base -c conda-forge -c bioconda "snakemake>=8,<9"
 
       - name: Cache Snakemake conda environments
         uses: actions/cache@v4
@@ -89,17 +96,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Miniforge3
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Install apptainer
+        uses: eWaterCycle/setup-apptainer@v2
         with:
-          miniforge-variant: Miniforge3
-          miniforge-version: latest
-          activate-environment: snakemake-ci
-          channels: conda-forge,bioconda,nodefaults
-          channel-priority: strict
+          apptainer-version: 1.4.0
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          micromamba-version: latest
+          init-shell: bash
+          cache-environment: false
+          post-cleanup: none
 
       - name: Install Snakemake
-        run: conda install -y -n snakemake-ci "snakemake>=8,<9"
+        run: micromamba install -y -n base -c conda-forge -c bioconda "snakemake>=8,<9"
 
       - name: Cache Snakemake conda environments
         uses: actions/cache@v4
