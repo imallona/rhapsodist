@@ -8,7 +8,6 @@ __pycache__/
 .env/
 venv/
 *.conda
-*.yaml
 
 # Ignore Snakemake logs and temp files
 logs/

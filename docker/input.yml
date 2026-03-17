@@ -20,6 +20,9 @@ Reference_Archive:
 
 Sample_Tags_Version: human   ## human | mouse
 
+## Force short-read (STAR) mode; omit or set true for PacBio/Nanopore.
+Long_Reads: false
+
 
 
 
