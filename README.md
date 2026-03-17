@@ -2,9 +2,20 @@
 
 Rhapsodist is a Snakemake workflow to process BD Rhapsody (enhanced beads) data.
 
+## TL/DR
+
+Simulations:
+
+```
+snakemake --use-conda --cores 10 --configfile sim_config.yaml
+```
+
+
 ## Contributors
 
 - Izaskun Mallona 
+- Jiayi Wang
+- Giulia Moro
 - We reuse and adapt tools from STAR, subread (featurecounts), samtools and others; we are extremely grateful to their contributors for their unvaluable resources free and openly provided to the community
 
 ## Contact

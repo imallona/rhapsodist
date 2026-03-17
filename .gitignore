@@ -40,7 +40,6 @@ results/
 ._Snakefile
 ._TODO
 ._docs
-docker/cwl
 docker/*sif
 docker/testrefhuman46_Rhap_reference.tar.gz
 testrun/

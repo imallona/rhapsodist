@@ -1,1 +1,3 @@
-cwl-runner --singularity --outdir ./testrun cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl input.yml
+# CWL file source: https://bitbucket.org/CRSwDev/cwl/src/master/v3.0/rhapsody_pipeline_3.0.cwl
+# Downloaded with: curl -sL https://bitbucket.org/CRSwDev/cwl/raw/master/v3.0/rhapsody_pipeline_3.0.cwl -o cwl/v3.0/rhapsody_pipeline_3.0.cwl
+cwltool --singularity --outdir ./testrun cwl/v3.0/rhapsody_pipeline_3.0.cwl input.yml

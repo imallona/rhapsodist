@@ -1,0 +1,205 @@
+---
+title: "rhapsodist: computational benchmarks"
+author: "Izaskun Mallona"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    self_contained: true
+params:
+  working_dir:      "/tmp/rhapsodist_simulate"
+  n_expected_cells: 1000
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+    library(data.table)
+    library(ggplot2)
+    library(patchwork)
+    library(ggrepel)
+})
+
+wd    <- params$working_dir
+n_exp <- as.integer(params$n_expected_cells)
+
+## Map each benchmark filename stem to a pipeline group.
+## Steps shared across pipelines (preprocessing, indexing) are labelled "shared".
+PIPELINE_MAP <- list(
+    simulate_data              = "shared",
+    star_indexing              = "shared",
+    standardize_cb_umis        = "shared",
+    deversion_transcriptome    = "shared",
+    salmon_index               = "shared",
+    get_txp2gene               = "shared",
+    kallisto_install           = "shared",
+    bustools_install           = "shared",
+    r_install                  = "shared",
+    star                       = "starsolo",
+    r_sce_generation_star      = "starsolo",
+    starsolo_descriptive       = "starsolo",
+    kallisto_index             = "kallisto",
+    kallisto_bus               = "kallisto",
+    bustools_sort              = "kallisto",
+    bustools_count             = "kallisto",
+    r_sce_generation_kallisto  = "kallisto",
+    kallisto_descriptive       = "kallisto",
+    alevin                     = "alevin",
+    r_sce_generation_alevin    = "alevin",
+    alevin_descriptive         = "alevin",
+    sbg_cwl                    = "sbg",
+    r_sce_generation_sbg       = "sbg",
+    sbg_descriptive            = "sbg",
+    comparison_report          = "report",
+    benchmarks_report          = "report",
+    validate_simulation        = "report"
+)
+```
+
+## Load benchmark data
+
+```{r load-benchmarks}
+bm_dir   <- file.path(wd, "benchmarks")
+bm_files <- list.files(bm_dir, pattern = "\\.txt$", full.names = TRUE)
+if (length(bm_files) == 0) stop("No benchmark files found in ", bm_dir)
+
+read_bm <- function(fn) {
+    tryCatch({
+        dt <- fread(fn, sep = "\t")
+        dt[, file := basename(fn)]
+        dt
+    }, error = function(e) NULL)
+}
+
+bm <- rbindlist(Filter(Negate(is.null), lapply(bm_files, read_bm)), fill = TRUE)
+bm[, step := gsub("\\.txt$", "", file)]
+## strip trailing _<samplename>
+bm[, step := sub("_[A-Za-z0-9]+$", "", step)]
+
+classify <- function(step_name) {
+    if (step_name %in% names(PIPELINE_MAP)) return(PIPELINE_MAP[[step_name]])
+    for (nm in names(PIPELINE_MAP)) {
+        if (startsWith(step_name, nm)) return(PIPELINE_MAP[[nm]])
+    }
+    if (grepl("starsolo|star_", step_name)) return("starsolo")
+    if (grepl("kallisto|bustools",  step_name)) return("kallisto")
+    if (grepl("alevin",             step_name)) return("alevin")
+    if (grepl("sbg",                step_name)) return("sbg")
+    return("shared")
+}
+
+bm[, pipeline := sapply(step, classify)]
+bm[, minutes  := s / 60]
+
+cat("Benchmark records loaded:", nrow(bm), "\n")
+knitr::kable(
+    bm[order(pipeline, step), .(step, pipeline,
+                                 seconds = round(s, 1),
+                                 minutes = round(minutes, 2),
+                                 max_rss_MB = round(max_rss, 1))][1:min(nrow(bm), 30)],
+    caption = "First 30 benchmark entries"
+)
+```
+
+## Runtime per step
+
+```{r runtime-per-step, fig.width=10, fig.height=5}
+bm_steps <- bm[pipeline != "report"]
+
+ggplot(bm_steps, aes(x = reorder(step, minutes), y = minutes, fill = pipeline)) +
+    geom_col(width = 0.7) +
+    coord_flip() +
+    scale_fill_brewer(palette = "Set2", na.value = "grey70") +
+    theme_bw(base_size = 11) +
+    labs(title = "Wall-clock time per workflow step",
+         x = NULL, y = "Time (minutes)", fill = "Pipeline")
+```
+
+## Total runtime per pipeline
+
+Only steps assigned to a single pipeline (not "shared") are summed.
+
+```{r runtime-per-pipeline, fig.width=7, fig.height=4}
+pipeline_time <- bm_steps[, .(minutes = max(minutes)), by = .(step, pipeline)]
+pipeline_sum  <- pipeline_time[, .(total_min = sum(minutes)), by = pipeline]
+pipeline_sum[, pipeline := factor(pipeline,
+    levels = c("shared", "starsolo", "kallisto", "alevin", "sbg"))]
+
+ggplot(pipeline_sum, aes(x = pipeline, y = total_min, fill = pipeline)) +
+    geom_col(width = 0.6, show.legend = FALSE) +
+    geom_text(aes(label = round(total_min, 1)), vjust = -0.4, size = 3.5) +
+    scale_fill_brewer(palette = "Set2", na.value = "grey70") +
+    theme_bw() +
+    labs(title = "Total wall-clock time per pipeline",
+         x = NULL, y = "Time (minutes)")
+```
+
+## Memory usage (max RSS)
+
+```{r memory, fig.width=10, fig.height=5}
+bm_mem <- bm_steps[!is.na(max_rss) & max_rss > 0]
+if (nrow(bm_mem) > 0) {
+    ggplot(bm_mem, aes(x = reorder(step, max_rss), y = max_rss / 1024,
+                       fill = pipeline)) +
+        geom_col(width = 0.7) +
+        coord_flip() +
+        scale_fill_brewer(palette = "Set2", na.value = "grey70") +
+        theme_bw(base_size = 11) +
+        labs(title = "Peak memory (max RSS) per step",
+             x = NULL, y = "Memory (GB)", fill = "Pipeline")
+} else {
+    cat("No memory data available.\n")
+}
+```
+
+## Speed vs cell recovery
+
+```{r recovery-vs-time, fig.width=6, fig.height=4, eval=n_exp > 0}
+pipelines <- c("starsolo", "kallisto", "alevin", "sbg")
+sample_names <- basename(list.dirs(wd, recursive = FALSE))
+
+recovery <- rbindlist(lapply(pipelines, function(pl) {
+    rbindlist(lapply(sample_names, function(samp) {
+        fn  <- file.path(wd, pl, samp, paste0(samp, "_", pl, "_sce.rds"))
+        sce <- tryCatch(readRDS(fn), error = function(e) NULL)
+        if (is.null(sce)) return(NULL)
+        data.table(pipeline = pl, sample = samp, n_cells = ncol(sce))
+    }))
+}))
+
+if (nrow(recovery) > 0) {
+    cmp <- merge(
+        recovery[, .(n_cells = mean(n_cells)), by = pipeline],
+        pipeline_sum, by = "pipeline", all.x = TRUE)
+    cmp[, recovery_pct := n_cells / n_exp * 100]
+
+    ggplot(cmp, aes(x = total_min, y = recovery_pct, colour = pipeline,
+                    label = pipeline)) +
+        geom_point(size = 4) +
+        geom_text_repel(size = 3.5, show.legend = FALSE) +
+        geom_hline(yintercept = 100, linetype = "dashed", colour = "grey50") +
+        scale_colour_brewer(palette = "Set2") +
+        theme_bw() +
+        labs(title = "Speed vs cell recovery",
+             subtitle = paste0("Expected cells: ", n_exp),
+             x = "Total pipeline time (minutes)",
+             y = paste0("Cells recovered (% of ", n_exp, ")"),
+             colour = NULL)
+} else {
+    cat("No SCE files found for recovery plot.\n")
+}
+```
+
+## Full benchmark table
+
+```{r full-table}
+knitr::kable(
+    bm[order(pipeline, step),
+       .(step, pipeline,
+         seconds    = round(s, 1),
+         minutes    = round(minutes, 2),
+         max_rss_MB = round(max_rss, 1),
+         mean_load  = round(mean_load, 2))],
+    caption = "Complete benchmark statistics for all workflow steps"
+)
+```

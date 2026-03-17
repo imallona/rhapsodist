@@ -56,13 +56,33 @@ _sampletag_reports = (
            sample = get_sample_names())
 )
 
+## SBG is enabled for a run when at least one sample has sbg_cwl or sbg_mex_dir
+## configured (per-sample uses: block or top-level config fallback).
+_has_sbg = any(sample_has_sbg(s) for s in get_sample_names())
+
+_sbg_sce_targets = (
+    expand(op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds'),
+           sample = get_sample_names())
+    if _has_sbg else []
+)
+
+_comparison_reports = expand(
+    op.join(config['working_dir'], '{sample}_comparison.html'),
+    sample = get_sample_names()
+)
+
+_benchmarks_report = [op.join(config['working_dir'], 'benchmarks_report.html')]
+
 rule all:
     input:
         expand(op.join(config['working_dir'], '{aligner}',  '{sample}', 'descriptive_report.html'),
                aligner = get_aligners(),
                sample = get_sample_names()),
         _sampletag_reports,
-        _extra_targets
+        _extra_targets,
+        _sbg_sce_targets,
+        _comparison_reports,
+        _benchmarks_report
         # op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin'),
         # expand(op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         #        sample = get_sample_names()),
@@ -981,7 +1001,7 @@ rule alevin_align:
     log:
         op.join(config['working_dir'], 'logs', 'alevin_{sample}_align.log')
     benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'alevin_{sample}_align.log')
+        op.join(config['working_dir'], 'benchmarks', 'alevin_{sample}_align.txt')
     shell:
         """
         salmon alevin -i {params.index_path} \
@@ -996,7 +1016,309 @@ rule alevin_align:
            --tgMap {input.t2g} &> {log}
         """
 
-        
+
+## SevenBridges / BD Rhapsody official pipeline (optional)
+##
+## Configure in the config yaml, either globally at the top level or per-sample
+## inside uses:. Per-sample values override the global ones.
+##
+## Run mode (sbg_cwl is set):
+##   Executes the BD Rhapsody CWL workflow via cwl-runner --singularity.
+##   cwl-runner pulls the BD Docker image listed inside the CWL file from
+##   DockerHub automatically; no manual docker/singularity pull is needed.
+##   The CWL input.yml is generated entirely from config values; users never
+##   edit a separate yml file.
+##
+##   Reference archive handling:
+##   - Simulated data (use_simulated: true): automatically assembled from the
+##     simulated STAR index and GTF following the BD Rhapsody format:
+##       BD_Rhapsody_Reference_Files/
+##         star_index/   [STAR genomeGenerate output]
+##         *.gtf
+##   - Real data, sbg_reference_url set: downloaded from the BD public S3 bucket
+##       http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
+##   - Real data, sbg_reference_archive set: path to a pre-built archive
+##
+## Ingest mode (sbg_mex_dir is set, sbg_cwl is not):
+##   Reads pre-computed MEX output (features.tsv.gz, matrix.mtx.gz,
+##   barcodes.tsv.gz). Use per-sample subdirectories sbg_mex_dir/<sample>/
+##   when processing multiple samples.
+##
+## In both modes generate_sce_sbg decodes numeric BD barcode indices to 27-bp
+## sequences via scripts/index2barcode.R.
+
+## Simulated reference: built from the simulated STAR index + GTF.
+## Required format documented at:
+## https://bd-rhapsody-bioinfo-docs.genomics.bd.com/setup/input/reference_files.html
+if config.get('use_simulated') and any(get_sbg_cwl_by_name(s) for s in get_sample_names()):
+    rule build_sbg_reference_simulated:
+        conda:
+            op.join('envs', 'all_in_one.yaml')
+        input:
+            star_flag = op.join(config['working_dir'], 'data', 'index', 'star', 'SAindex'),
+            gtf = config['gtf']
+        output:
+            archive = op.join(config['working_dir'], 'sbg_reference',
+                              'rhapsody_reference_simulated.tar.gz')
+        params:
+            star_index_dir = op.join(config['working_dir'], 'data', 'index', 'star'),
+            staging = op.join(config['working_dir'], 'sbg_reference', 'staging')
+        log:
+            op.join(config['working_dir'], 'logs', 'build_sbg_reference_simulated.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'build_sbg_reference_simulated.txt')
+        shell:
+            """
+            rm -rf {params.staging}
+            mkdir -p {params.staging}/BD_Rhapsody_Reference_Files/star_index
+            cp {params.star_index_dir}/* {params.staging}/BD_Rhapsody_Reference_Files/star_index/
+            cp {input.gtf} {params.staging}/BD_Rhapsody_Reference_Files/
+            tar -czf {output.archive} -C {params.staging} BD_Rhapsody_Reference_Files 2> {log}
+            rm -rf {params.staging}
+            """
+
+
+## Real-data reference: download from the BD public S3 bucket.
+## Set sbg_reference_url in config (or sample uses:) to the specific archive, e.g.:
+##   http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
+##     Rhapsody_WTA_Analysis_Pipeline_Reference_Files_GRCh38_2022-09_gencode.v41.tar.gz
+_any_sbg_ref_url = (
+    config.get('sbg_reference_url') or
+    any(_sbg_uses(s, 'sbg_reference_url') for s in get_sample_names())
+)
+if _any_sbg_ref_url and not config.get('use_simulated'):
+    rule download_sbg_reference:
+        output:
+            archive = op.join(config['working_dir'], 'sbg_reference',
+                              'rhapsody_reference.tar.gz')
+        params:
+            url = config.get('sbg_reference_url', '')
+        log:
+            op.join(config['working_dir'], 'logs', 'download_sbg_reference.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'download_sbg_reference.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output.archive})
+            curl -fsSL -o {output.archive} "{params.url}" &> {log}
+            """
+
+
+## run_sbg_cwl fires per sample that has sbg_cwl configured.
+## At parse time we decide which reference file to track based on the mode.
+for _sbg_sample in get_sample_names():
+    if not get_sbg_cwl_by_name(_sbg_sample):
+        continue
+
+    _sbg_ref_url = (
+        _sbg_uses(_sbg_sample, 'sbg_reference_url') or config.get('sbg_reference_url')
+    )
+
+    if config.get('use_simulated'):
+        _ref_path = op.join(config['working_dir'], 'sbg_reference',
+                            'rhapsody_reference_simulated.tar.gz')
+        _ref_input = [_ref_path]
+    elif _sbg_ref_url:
+        _ref_path = op.join(config['working_dir'], 'sbg_reference',
+                            'rhapsody_reference.tar.gz')
+        _ref_input = [_ref_path]
+    else:
+        _ref_path = get_sbg_reference_by_name(_sbg_sample) or ''
+        _ref_input = []  # pre-existing archive; not tracked by Snakemake
+
+    rule:
+        name: f"run_sbg_cwl_{_sbg_sample}"
+        conda:
+            op.join('envs', 'sbg.yaml')
+        input:
+            r1 = get_cbumi_by_name(_sbg_sample),
+            r2 = get_cdna_by_name(_sbg_sample),
+            ref = _ref_input
+        output:
+            matrix = op.join(config['working_dir'], 'sbg', _sbg_sample,
+                             'unfiltered_MEX_output', 'matrix.mtx.gz')
+        params:
+            cwl = get_sbg_cwl_by_name(_sbg_sample),
+            outdir = op.join(config['working_dir'], 'sbg', _sbg_sample),
+            sample_tags_version = get_sbg_sample_tags_version_by_name(_sbg_sample),
+            ref_path = _ref_path
+        log:
+            op.join(config['working_dir'], 'logs', f'sbg_cwl_{_sbg_sample}.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', f'sbg_cwl_{_sbg_sample}.txt')
+        shell:
+            """
+            mkdir -p {params.outdir}
+
+            ## Generate the CWL input.yml entirely from config values.
+            ## cwltool --singularity pulls the BD Docker image automatically.
+            INPUT_YML={params.outdir}/input.yml
+            cat > "$INPUT_YML" << 'ENDOFYML'
+#!/usr/bin/env cwl-runner
+cwl:tool: rhapsody
+
+Reads:
+  - class: File
+    location: "PLACEHOLDER_R1"
+  - class: File
+    location: "PLACEHOLDER_R2"
+
+Reference_Archive:
+    class: File
+    location: "PLACEHOLDER_REF"
+
+Sample_Tags_Version: PLACEHOLDER_STV
+ENDOFYML
+
+            sed -i "s|PLACEHOLDER_R1|$(realpath {input.r1})|" "$INPUT_YML"
+            sed -i "s|PLACEHOLDER_R2|$(realpath {input.r2})|" "$INPUT_YML"
+            sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
+            sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
+
+            cwltool --singularity \
+                --outdir {params.outdir} \
+                {params.cwl} "$INPUT_YML" &> {log}
+            """
+
+
+if _has_sbg:
+    rule generate_sce_sbg:
+        conda:
+            op.join('envs', 'all_in_one.yaml')
+        input:
+            ## In run mode, depend on the CWL matrix output so Snakemake
+            ## chains run_sbg_cwl -> generate_sce_sbg correctly.
+            mex_flag = lambda wildcards: (
+                [op.join(config['working_dir'], 'sbg', wildcards.sample,
+                         'unfiltered_MEX_output', 'matrix.mtx.gz')]
+                if get_sbg_cwl_by_name(wildcards.sample) else []
+            ),
+            script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
+            installs = op.join(config['working_dir'], 'logs', 'installs.log'),
+            index2barcode = op.join(config['repo_path'], 'scripts', 'index2barcode.R')
+        output:
+            sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
+        params:
+            ## run mode: MEX is inside the CWL outdir
+            ## ingest mode: sbg_mex_dir per-sample subdir or flat
+            mex_dir = lambda wildcards: (
+                op.join(config['working_dir'], 'sbg', wildcards.sample,
+                        'unfiltered_MEX_output')
+                if get_sbg_cwl_by_name(wildcards.sample) else (
+                    op.join(get_sbg_mex_dir_by_name(wildcards.sample), wildcards.sample)
+                    if op.isdir(op.join(get_sbg_mex_dir_by_name(wildcards.sample) or '',
+                                       wildcards.sample))
+                    else (get_sbg_mex_dir_by_name(wildcards.sample) or '')
+                )
+            ),
+            bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),
+            Rbin = config['Rbin']
+        log:
+            op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_sbg.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_sbg.txt')
+        shell:
+            """
+            {params.Rbin} -q --no-save --no-restore --slave \
+                 -f {input.script} --args \
+                 --sample {wildcards.sample} \
+                 --mex_dir {params.mex_dir} \
+                 --output_fn {output.sce} \
+                 --bead_version {params.bead_version} \
+                 --index2barcode_script {input.index2barcode} &> {log}
+            """
+
+
+## Paper-figure reports
+
+rule render_comparison_report:
+    conda:
+        op.join('envs', 'all_in_one.yaml')
+    input:
+        sces = lambda wildcards: (
+            expand(
+                op.join(config['working_dir'], '{aligner}', wildcards.sample,
+                        wildcards.sample + '_{aligner}_sce.rds'),
+                aligner = get_aligners()
+            ) + (
+                [op.join(config['working_dir'], 'sbg', wildcards.sample,
+                         wildcards.sample + '_sbg_sce.rds')]
+                if _has_sbg else []
+            )
+        ),
+        barcodes = (
+            op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+            if config.get('use_simulated', False) else []
+        ),
+        doc = op.join(config['repo_path'], 'docs', '02_comparison.Rmd'),
+        installs = op.join(config['working_dir'], 'logs', 'installs.log')
+    output:
+        html = op.join(config['working_dir'], '{sample}_comparison.html')
+    params:
+        working_dir = config['working_dir'],
+        sample = lambda wildcards: wildcards.sample,
+        aligners = ','.join(get_aligners()),
+        has_sbg = 'TRUE' if _has_sbg else 'FALSE',
+        n_expected_cells = (config.get('sim_n_cells', 0)
+                            if config.get('use_simulated', False) else 0),
+        barcodes_file = (op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+                         if config.get('use_simulated', False) else ''),
+        Rbin = config['Rbin']
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_comparison_report.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_comparison_report.txt')
+    shell:
+        """
+        {params.Rbin} --vanilla -e '
+          rmarkdown::render(
+            "{input.doc}",
+            output_file  = "{output.html}",
+            params = list(
+              working_dir      = "{params.working_dir}",
+              sample           = "{params.sample}",
+              aligners         = "{params.aligners}",
+              has_sbg          = {params.has_sbg},
+              n_expected_cells = {params.n_expected_cells},
+              barcodes_file    = "{params.barcodes_file}"))' &> {log}
+        """
+
+
+rule render_benchmarks_report:
+    conda:
+        op.join('envs', 'all_in_one.yaml')
+    input:
+        ## depend on descriptive reports so all benchmark files have been written
+        descriptive = expand(
+            op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html'),
+            aligner = get_aligners(),
+            sample  = get_sample_names()
+        ),
+        doc = op.join(config['repo_path'], 'docs', '03_benchmarks.Rmd'),
+        installs = op.join(config['working_dir'], 'logs', 'installs.log')
+    output:
+        html = op.join(config['working_dir'], 'benchmarks_report.html')
+    params:
+        working_dir = config['working_dir'],
+        n_expected_cells = (config.get('sim_n_cells', 0)
+                            if config.get('use_simulated', False) else 0),
+        Rbin = config['Rbin']
+    log:
+        op.join(config['working_dir'], 'logs', 'benchmarks_report.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'benchmarks_report.txt')
+    shell:
+        """
+        {params.Rbin} --vanilla -e '
+          rmarkdown::render(
+            "{input.doc}",
+            output_file  = "{output.html}",
+            params = list(
+              working_dir      = "{params.working_dir}",
+              n_expected_cells = {params.n_expected_cells}))' &> {log}
+        """
+
+
 # # https://github.com/s-shichino1989/TASSeq_EnhancedBeads/blob/e48fd2c2fd5a23d622f03e206b8fbe87772fd57f/shell_scripts/Rhapsody_STARsolo.sh#L18
 # rule starsolo_tasseq_style:
 #     conda:

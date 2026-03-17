@@ -29,4 +29,8 @@ dependencies:
   - bioconda::bioconductor-scuttle
   - bioconda::bioconductor-scater
   - bioconda::bioconductor-tximeta
+  - conda-forge::r-upsetr
+  - conda-forge::r-data.table
+  - conda-forge::r-patchwork
+  - conda-forge::r-ggrepel
   - conda-forge::pandoc

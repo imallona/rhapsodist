@@ -1,17 +1,24 @@
 #!/usr/bin/env cwl-runner
+## Template input file for the BD Rhapsody CWL pipeline.
+## When running via Snakemake (rule run_sbg_cwl), this file is generated
+## automatically in {working_dir}/sbg/{sample}/input.yml.
+## For manual runs copy this template and adjust the paths below, then:
+##   cd docker
+##   cwltool --singularity --outdir ./testrun cwl/v3.0/rhapsody_pipeline_3.0.cwl input.yml
+
 cwl:tool: rhapsody
 
 Reads:
   - class: File
-    location: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
+    location: "/path/to/sample_R1_001.fastq.gz"   ## cb+umi read
   - class: File
-    location: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
+    location: "/path/to/sample_R2_001.fastq.gz"   ## cDNA read
 
 Reference_Archive:
     class: File
-    location: "/home/jiayiwang/rhapsodist/docker/testrefhuman46_Rhap_reference.tar.gz"
+    location: "/path/to/Rhapsody_reference.tar.gz"
 
-Sample_Tags_Version: human
+Sample_Tags_Version: human   ## human | mouse
 
 
 
