@@ -2,16 +2,13 @@ name: rhapsodist CI
 
 on:
   push:
-    branches:
-      - main
-      - dev
   pull_request:
   workflow_dispatch:
 
 jobs:
 
   simulate-fastqs:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
