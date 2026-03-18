@@ -40,8 +40,11 @@ shell.prefix('export PATH=' + kallisto + ':' + bustools + ":$PATH;")
 try:
     os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
     os.makedirs(op.join(config['working_dir'], 'benchmarks'), exist_ok=True)
-except OSError:
-    pass
+except OSError as e:
+    raise RuntimeError(
+        f"Failed to create required directories under working_dir "
+        f"'{config['working_dir']}': {e}"
+    ) from e
 
 print(get_sample_names())
 
@@ -58,11 +61,12 @@ _sampletag_reports = (
 
 ## SBG is enabled for a run when at least one sample has sbg_cwl or sbg_mex_dir
 ## configured (per-sample uses: block or top-level config fallback).
-_has_sbg = any(sample_has_sbg(s) for s in get_sample_names())
+_sbg_samples = [s for s in get_sample_names() if sample_has_sbg(s)]
+_has_sbg = bool(_sbg_samples)
 
 _sbg_sce_targets = (
     expand(op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds'),
-           sample = get_sample_names())
+           sample = _sbg_samples)
     if _has_sbg else []
 )
 
@@ -1131,6 +1135,11 @@ for _sbg_sample in get_sample_names():
         _ref_input = [_ref_path]
     else:
         _ref_path = get_sbg_reference_by_name(_sbg_sample) or ''
+        if not _ref_path:
+            raise ValueError(
+                f"sbg_cwl is set for sample '{_sbg_sample}' but no reference was "
+                "configured. Set 'sbg_reference_url' or 'sbg_reference_archive'."
+            )
         _ref_input = []  # pre-existing archive; not tracked by Snakemake
 
     rule:
@@ -1269,7 +1278,7 @@ rule render_comparison_report:
             ) + (
                 [op.join(config['working_dir'], 'sbg', wildcards.sample,
                          wildcards.sample + '_sbg_sce.rds')]
-                if _has_sbg else []
+                if _has_sbg and sample_has_sbg(wildcards.sample) else []
             )
         ),
         barcodes = (
@@ -1288,7 +1297,7 @@ rule render_comparison_report:
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
         aligners = ','.join(get_aligners()),
-        has_sbg = 'true' if _has_sbg else 'false',
+        has_sbg = lambda wildcards: 'true' if _has_sbg and sample_has_sbg(wildcards.sample) else 'false',
         n_expected_cells = (config.get('sim_n_cells', 0)
                             if config.get('use_simulated', False) else 0),
         n_umis_per_cell = (config.get('sim_n_umis', 0)
