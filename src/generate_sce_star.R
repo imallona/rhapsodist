@@ -75,8 +75,6 @@ read_matrix <- function(mtx, cells, features, cell.column = 1, feature.column = 
 
 wd <- args$working_dir
 id <- args$sample
-gtf <- args$captured_gtf
-
 wta <- read_matrix(mtx = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'matrix.mtx'),
                    cells = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'barcodes.tsv'),
                    features = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'features.tsv'),

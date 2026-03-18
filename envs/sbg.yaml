@@ -1,0 +1,9 @@
+name: noname
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - conda-forge::cwl_runner
+  ## schema-salad is pulled in by cwltool but pinning it avoids resolver conflicts
+  - conda-forge::schema-salad
+  - conda-forge::pyyaml ## python helper

@@ -1,0 +1,338 @@
+---
+title: "rhapsodist: method comparison"
+author: "Izaskun Mallona"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    self_contained: true
+params:
+  working_dir:      "/tmp/rhapsodist_simulate"
+  sample:           "simulated"
+  aligners:         "starsolo,kallisto,alevin"
+  has_sbg:          false
+  n_expected_cells: 1000
+  barcodes_file:    ""
+  n_umis_per_cell:  0
+  true_mex_dir:     ""
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(Matrix)
+    library(ggplot2)
+    library(ggrepel)
+    library(UpSetR)
+    library(data.table)
+    library(patchwork)
+})
+
+wd           <- params$working_dir
+samp         <- params$sample
+aligners     <- strsplit(params$aligners, ",")[[1]]
+has_sbg      <- isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
+n_exp        <- as.integer(params$n_expected_cells)
+n_umis_truth <- as.integer(params$n_umis_per_cell)
+true_mex_dir <- params$true_mex_dir
+```
+
+## Data loading
+
+```{r load-sces}
+load_sce <- function(aligner, wd, samp) {
+    fn <- file.path(wd, aligner, samp, paste0(samp, "_", aligner, "_sce.rds"))
+    if (!file.exists(fn)) {
+        warning("SCE not found: ", fn)
+        return(NULL)
+    }
+    readRDS(fn)
+}
+
+sces <- setNames(lapply(aligners, load_sce, wd = wd, samp = samp), aligners)
+
+if (has_sbg) {
+    sbg_fn <- file.path(wd, "sbg", samp, paste0(samp, "_sbg_sce.rds"))
+    if (file.exists(sbg_fn)) {
+        sces[["sbg"]] <- readRDS(sbg_fn)
+    } else {
+        warning("SBG SCE not found: ", sbg_fn)
+    }
+}
+
+sces <- Filter(Negate(is.null), sces)
+
+.rm_zeros <- function(x) {
+    x <- x[rowSums(counts(x)) > 0, ]
+    x[, colSums(counts(x)) > 0]
+}
+sces <- lapply(sces, .rm_zeros)
+
+cat("Methods loaded:", paste(names(sces), collapse = ", "), "\n")
+sapply(sces, dim) |> `rownames<-`(c("nGenes", "nCells"))
+```
+
+## Cell count recovery
+
+```{r cell-counts, fig.width=6, fig.height=4}
+counts_df <- data.frame(
+    method = names(sces),
+    n_cells = sapply(sces, ncol),
+    n_genes = sapply(sces, nrow)
+)
+
+p <- ggplot(counts_df, aes(x = method, y = n_cells, fill = method)) +
+    geom_col(width = 0.6, show.legend = FALSE) +
+    geom_text(aes(label = n_cells), vjust = -0.4, size = 3.5) +
+    theme_bw() +
+    labs(title = "Cells recovered per method", x = NULL, y = "Number of cells") +
+    scale_fill_brewer(palette = "Set2")
+
+if (n_exp > 0) {
+    p <- p +
+        geom_hline(yintercept = n_exp, linetype = "dashed", colour = "firebrick") +
+        annotate("text", x = Inf, y = n_exp, label = paste0("expected: ", n_exp),
+                 hjust = 1.1, vjust = -0.4, colour = "firebrick", size = 3)
+}
+p
+```
+
+## Ground-truth barcode recovery (simulated data)
+
+```{r ground-truth, eval=nchar(params$barcodes_file) > 0}
+truth <- readLines(params$barcodes_file)
+cat("Ground-truth cells:", length(truth), "\n\n")
+
+gt_df <- rbindlist(lapply(names(sces), function(m) {
+    cb <- colnames(sces[[m]])
+    data.frame(
+        method    = m,
+        n_cells   = length(cb),
+        n_true    = sum(cb %in% truth),
+        n_false   = sum(!(cb %in% truth)),
+        recall    = mean(cb %in% truth),
+        precision = sum(cb %in% truth) / length(truth)
+    )
+}))
+knitr::kable(gt_df, digits = 3,
+    caption = paste("Recall = fraction of recovered cells in ground truth;",
+                    "Precision = fraction of ground-truth cells recovered"))
+```
+
+```{r gt-plot, eval=nchar(params$barcodes_file) > 0, fig.width=7, fig.height=4}
+gt_long <- melt(as.data.table(gt_df[, c("method", "n_true", "n_false")]),
+                id.vars = "method", variable.name = "type", value.name = "count")
+gt_long[, type := ifelse(type == "n_true", "True positive", "False positive")]
+
+ggplot(gt_long, aes(x = method, y = count, fill = type)) +
+    geom_col(width = 0.6) +
+    scale_fill_manual(values = c("True positive" = "#66c2a5",
+                                  "False positive" = "#fc8d62")) +
+    theme_bw() +
+    labs(title = "Cell barcode recovery vs ground truth",
+         x = NULL, y = "Number of cells", fill = NULL)
+```
+
+## Barcode overlaps
+
+```{r upset, fig.width=8, fig.height=5}
+bc_lists <- lapply(sces, colnames)
+upset(fromList(bc_lists), order.by = "freq", text.scale = 1.4,
+      point.size = 3, line.size = 0.8, mb.ratio = c(0.6, 0.4))
+```
+
+## Per-gene expression correlation
+
+Genes detected in at least two methods are used. Counts are summed across cells
+(pseudo-bulk) to give one value per gene per method.
+
+```{r gene-correlation, fig.width=9, fig.height=8}
+all_genes <- Reduce(union, lapply(sces, rownames))
+length(all_genes)
+
+pb <- lapply(names(sces), function(m) {
+    s  <- sces[[m]]
+    gs <- rowSums(counts(s))
+    gs[match(all_genes, rownames(s))]
+}) |> setNames(names(sces))
+
+pb_mat <- do.call(cbind, pb)
+rownames(pb_mat) <- all_genes
+
+n_detected <- rowSums(!is.na(pb_mat) & pb_mat > 0)
+table(n_detected)
+pb_mat <- pb_mat[n_detected >= 2, ]
+pb_mat[is.na(pb_mat)] <- 0
+
+cat("Genes used for correlation:", nrow(pb_mat), "\n")
+
+method_pairs <- combn(names(sces), 2, simplify = FALSE)
+
+plots <- lapply(method_pairs, function(pair) {
+    x <- pb_mat[, pair[1]]
+    y <- pb_mat[, pair[2]]
+    rho <- round(cor(x, y, use = "complete.obs", method = "spearman"), 3)
+    mad_val <- round(mean(abs(x - y), na.rm = TRUE), 1)
+    df <- data.frame(x = x, y = y)
+    ggplot(df, aes(x, y)) +
+        geom_point(alpha = 0.4, size = 0.8) +
+        geom_abline(slope = 1, intercept = 0, colour = "firebrick",
+                    linetype = "dashed") +
+        labs(title = paste0(pair[1], " vs ", pair[2]),
+             subtitle = paste0("Spearman rho = ", rho,
+                               "  |  mean |diff| = ", mad_val),
+             x = pair[1],
+             y = pair[2]) +
+        theme_bw(base_size = 10)
+})
+wrap_plots(plots, ncol = min(length(plots), 3))
+```
+
+## Correlation matrix
+
+```{r corr-matrix, fig.width=5, fig.height=4}
+cor_mat  <- cor(pb_mat, use = "pairwise.complete.obs", method = "spearman")
+cor_long <- as.data.frame(as.table(cor_mat))
+names(cor_long) <- c("method1", "method2", "rho")
+
+ggplot(cor_long, aes(method1, method2, fill = rho)) +
+    geom_tile() +
+    geom_text(aes(label = round(rho, 3)), size = 3.5) +
+    scale_fill_distiller(palette = "RdYlGn", limits = c(0, 1), direction = 1) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(title = "Per-gene pseudo-bulk count correlation (Spearman)", x = NULL, y = NULL)
+```
+
+## Deviation from simulated truth
+
+```{r truth-load, eval=nchar(true_mex_dir) > 0}
+.find_mex <- function(dir, base) {
+    gz <- file.path(dir, paste0(base, '.gz'))
+    if (file.exists(gz)) return(gz)
+    file.path(dir, base)
+}
+truth_counts   <- readMM(.find_mex(true_mex_dir, 'matrix.mtx'))
+truth_barcodes <- readLines(.find_mex(true_mex_dir, 'barcodes.tsv'))
+truth_features <- read.table(.find_mex(true_mex_dir, 'features.tsv'),
+                              sep = '\t', header = FALSE)
+rownames(truth_counts) <- truth_features$V1
+colnames(truth_counts) <- truth_barcodes
+truth_pb <- rowSums(truth_counts)
+```
+
+```{r truth-heatmap, eval=nchar(true_mex_dir) > 0, fig.width=5, fig.height=4}
+## Build a pseudo-bulk matrix that includes truth as an additional column,
+## then compute pairwise mean absolute relative difference (MARD) between
+## all methods and truth.  MARD = mean(|x-y| / ((x+y)/2)).
+shared_genes <- Reduce(intersect, c(lapply(sces, rownames), list(names(truth_pb))))
+
+pb_with_truth <- do.call(cbind, c(
+    lapply(names(sces), function(m) rowSums(counts(sces[[m]]))[shared_genes]),
+    list(truth = truth_pb[shared_genes])
+))
+colnames(pb_with_truth) <- c(names(sces), "truth")
+
+mard_mat <- outer(
+    colnames(pb_with_truth), colnames(pb_with_truth),
+    Vectorize(function(a, b) {
+        x <- pb_with_truth[, a]
+        y <- pb_with_truth[, b]
+        denom <- (x + y) / 2
+        mean(abs(x - y)[denom > 0] / denom[denom > 0], na.rm = TRUE)
+    })
+)
+dimnames(mard_mat) <- list(colnames(pb_with_truth), colnames(pb_with_truth))
+
+mard_long <- as.data.frame(as.table(mard_mat))
+names(mard_long) <- c("method1", "method2", "mard")
+
+ggplot(mard_long, aes(method1, method2, fill = mard * 100)) +
+    geom_tile(colour = "white") +
+    geom_text(aes(label = sprintf("%.2f%%", mard * 100)), size = 3.2) +
+    scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(title = "Pairwise mean absolute relative difference",
+         subtitle = "Including simulated truth; lower is better",
+         x = NULL, y = NULL, fill = "MARD (%)")
+```
+
+```{r truth-summary, eval=nchar(true_mex_dir) > 0}
+truth_df <- rbindlist(lapply(names(sces), function(m) {
+    pb <- rowSums(counts(sces[[m]]))[shared_genes]
+    rel_err <- (pb - truth_pb[shared_genes]) / truth_pb[shared_genes]
+    data.table(method = m, gene = shared_genes, rel_err = rel_err)
+}))
+truth_sum <- truth_df[, .(
+    mean_rel_err   = round(mean(rel_err), 4),
+    median_rel_err = round(median(rel_err), 4),
+    rmse           = round(sqrt(mean(rel_err^2)), 4)
+), by = method]
+knitr::kable(truth_sum,
+    caption = "Per-method deviation from simulated truth (relative error per gene)")
+```
+
+## Accuracy vs speed
+
+```{r accuracy-vs-speed, eval=nchar(true_mex_dir) > 0, fig.width=6, fig.height=4, message=FALSE, warning=FALSE}
+bm_dir   <- file.path(wd, "benchmarks")
+bm_files <- list.files(bm_dir, pattern = "\\.txt$", full.names = TRUE)
+
+if (length(bm_files) > 0) {
+    bm <- rbindlist(Filter(Negate(is.null), lapply(bm_files, function(fn) {
+        tryCatch({
+            dt <- fread(fn, sep = "\t")
+            dt[, step := gsub("\\.txt$", "", basename(fn))]
+            dt
+        }, error = function(e) NULL)
+    })), fill = TRUE)
+
+    classify_pipeline <- function(step) {
+        if (grepl("^starsolo|^star|r_sce_generation_starsolo|starsolo_descriptive", step)) return("starsolo")
+        if (grepl("^kallisto|^bustools|r_sce_generation_kallisto|kallisto_descriptive", step)) return("kallisto")
+        if (grepl("^alevin|r_sce_generation_alevin|alevin_descriptive", step)) return("alevin")
+        if (grepl("^sbg|r_sce_generation_sbg|sbg_descriptive", step)) return("sbg")
+        return(NA_character_)
+    }
+    bm[, pipeline := sapply(step, classify_pipeline)]
+    bm[, minutes  := s / 60]
+
+    pipeline_sum <- bm[!is.na(pipeline),
+                       .(total_min = sum(minutes)), by = pipeline]
+
+    acc <- truth_sum[, .(pipeline = method, rmse)]
+
+    cmp <- merge(pipeline_sum, acc, by = "pipeline")
+
+    ggplot(cmp, aes(x = total_min, y = rmse, colour = pipeline, label = pipeline)) +
+        geom_point(size = 4) +
+        ggrepel::geom_text_repel(size = 3.5, show.legend = FALSE) +
+        scale_colour_brewer(palette = "Set2") +
+        theme_bw() +
+        labs(title = "Accuracy vs speed",
+             subtitle = "RMSE of relative error vs simulated truth",
+             x = "Total pipeline time (minutes)",
+             y = "RMSE (relative error vs truth)",
+             colour = NULL)
+} else {
+    cat("No benchmark files found; skipping.\n")
+}
+```
+
+## Per-cell total-count distribution
+
+```{r umi-dist, fig.width=8, fig.height=4}
+umi_df <- rbindlist(lapply(names(sces), function(m) {
+    data.table(method = m, total_counts = colSums(counts(sces[[m]])))
+}))
+
+ggplot(umi_df, aes(x = log10(total_counts + 1), colour = method)) +
+    geom_density(linewidth = 0.8) +
+    facet_wrap(~method, scales = "free_y") +
+    theme_bw() +
+    scale_colour_brewer(palette = "Set2") +
+    labs(title = "Distribution of per-cell total counts",
+         x = "log10(total counts + 1)", y = "Density", colour = NULL)
+```

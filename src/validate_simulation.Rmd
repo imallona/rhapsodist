@@ -1,0 +1,107 @@
+---
+title: "Simulation Validation"
+author: "rhapsodist"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    number_sections: true
+params:
+    sce_path:      ""
+    barcodes_path: ""
+    n_cells:       100
+    n_genes:       100
+    n_umis:        100
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = TRUE, warning = TRUE, error = TRUE)
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(Matrix)
+})
+```
+
+Expected: **`r params$n_cells`** cells × **`r params$n_genes`** genes ×
+**`r params$n_umis`** UMIs per cell–gene pair
+(total UMIs per cell: **`r params$n_genes * params$n_umis`**).
+
+# Load count matrix
+
+```{r load}
+sce <- readRDS(params$sce_path)
+mat <- assay(sce, 'counts')
+cat(sprintf('Count matrix dimensions: %d genes × %d cells\n', nrow(mat), ncol(mat)))
+```
+
+# Cell recovery
+
+```{r cells}
+n_recovered <- ncol(mat)
+expected_cells <- as.integer(params$n_cells)
+cat(sprintf('Recovered %d cells (expected %d) — %s\n',
+            n_recovered, expected_cells,
+            ifelse(n_recovered == expected_cells, 'PASS', 'FAIL')))
+```
+
+# Gene recovery
+
+```{r genes}
+n_genes_detected <- nrow(mat)
+expected_genes <- as.integer(params$n_genes)
+cat(sprintf('Detected %d genes (expected %d) — %s\n',
+            n_genes_detected, expected_genes,
+            ifelse(n_genes_detected == expected_genes, 'PASS', 'FAIL')))
+```
+
+# UMI counts
+
+```{r umis}
+expected_umis_per_cell <- as.integer(params$n_genes) * as.integer(params$n_umis)
+umis_per_cell  <- colSums(mat)
+genes_per_cell <- colSums(mat > 0)
+
+cat(sprintf('UMIs per cell  : min=%d  median=%g  max=%d  (expected %d) — %s\n',
+            min(umis_per_cell), median(umis_per_cell), max(umis_per_cell),
+            expected_umis_per_cell,
+            ifelse(all(umis_per_cell >= expected_umis_per_cell * 0.99), 'PASS', 'FAIL')))
+
+cat(sprintf('Genes per cell : min=%d  median=%g  max=%d  (expected %d)\n',
+            min(genes_per_cell), median(genes_per_cell), max(genes_per_cell),
+            as.integer(params$n_genes)))
+
+hist(umis_per_cell,
+     main  = 'Total UMIs per recovered cell',
+     xlab  = 'UMI count',
+     col   = 'steelblue', border = 'white')
+abline(v = expected_umis_per_cell, col = 'red', lty = 2)
+```
+
+# Barcode recovery
+
+```{r barcodes}
+expected_barcodes  <- readLines(params$barcodes_path)
+recovered_barcodes <- colnames(mat)
+n_matched <- sum(recovered_barcodes %in% expected_barcodes)
+cat(sprintf('%d / %d recovered barcodes match simulated whitelist — %s\n',
+            n_matched, length(recovered_barcodes),
+            ifelse(n_matched == length(recovered_barcodes), 'PASS', 'FAIL')))
+```
+
+# Summary
+
+```{r summary}
+pass <- (n_recovered       == as.integer(params$n_cells)) &&
+        (n_genes_detected  == as.integer(params$n_genes)) &&
+        all(umis_per_cell  >= expected_umis_per_cell * 0.99)
+
+cat(sprintf('\nOverall validation: %s\n', if (pass) 'PASS' else 'FAIL'))
+```
+
+# Session info
+
+```{r sessioninfo}
+sessionInfo()
+```

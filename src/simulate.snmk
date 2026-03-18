@@ -1,0 +1,102 @@
+## Snakemake rules for generating a synthetic BD Rhapsody WTA test dataset and
+## validating that the downstream pipeline recovers the expected count table.
+## Included unconditionally; the validate_simulation rule is only defined when
+## config['use_simulated'] is True.
+
+_SIM_DIR       = op.join(config['working_dir'], 'simulate')
+_WHITELIST_DIR = op.join(config['repo_path'], 'data', 'whitelist_384x3')
+_ST_FA         = config.get('sampletag_fa', '')
+
+
+rule simulate_genome_gtf_transcriptome_fastqs:
+    conda:
+        op.join('envs', 'simulate.yaml')
+    input:
+        script = op.join(config['repo_path'], 'src', 'simulate_data.py'),
+        cls1   = op.join(_WHITELIST_DIR, 'BD_CLS1.txt'),
+        cls2   = op.join(_WHITELIST_DIR, 'BD_CLS2.txt'),
+        cls3   = op.join(_WHITELIST_DIR, 'BD_CLS3.txt')
+    output:
+        genome        = op.join(_SIM_DIR, 'genome.fa'),
+        gtf           = op.join(_SIM_DIR, 'genes.gtf'),
+        transcriptome = op.join(_SIM_DIR, 'transcriptome.fa.gz'),
+        barcodes      = op.join(_SIM_DIR, 'cell_barcodes.txt'),
+        r1            = op.join(_SIM_DIR, 'sim_R1.fq.gz'),
+        r2            = op.join(_SIM_DIR, 'sim_R2.fq.gz'),
+        st_assignments = op.join(_SIM_DIR, 'sampletag_assignments.txt'),
+        true_mex      = op.join(_SIM_DIR, 'true_mex', 'matrix.mtx.gz')
+    params:
+        n_cells       = config.get('sim_n_cells',    100),
+        n_genes       = config.get('sim_n_genes',    100),
+        n_umis        = config.get('sim_n_umis',     100),
+        seed          = config.get('sim_seed',        42),
+        chr_len       = config.get('sim_chr_len',   2000),
+        gene_pos      = config.get('sim_gene_pos',  1000),
+        read_len      = config.get('sim_read_len',   100),
+        n_sampletags    = config.get('sim_n_sampletags', 3),
+        n_st_reads      = config.get('sim_n_st_reads',  100),
+        n_empty_droplets = config.get('sim_n_empty_droplets', 0),
+        sampletag_arg = ('--sampletag_fa ' + _ST_FA + ' --n_sampletags ' +
+                         str(config.get('sim_n_sampletags', 3)) +
+                         ' --n_st_reads ' + str(config.get('sim_n_st_reads', 100))
+                         ) if _ST_FA else '',
+        whitelist_dir = _WHITELIST_DIR,
+        out_dir       = _SIM_DIR
+    log:
+        op.join(config['working_dir'], 'logs', 'simulate_data.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'simulate_data.txt')
+    shell:
+        """
+        python {input.script} \
+            --whitelist_dir {params.whitelist_dir} \
+            --out_dir       {params.out_dir}       \
+            --n_cells       {params.n_cells}       \
+            --n_genes       {params.n_genes}       \
+            --n_umis        {params.n_umis}        \
+            --seed          {params.seed}          \
+            --chr_len       {params.chr_len}       \
+            --gene_pos      {params.gene_pos}      \
+            --read_len      {params.read_len}      \
+            --n_empty_droplets {params.n_empty_droplets} \
+            {params.sampletag_arg} &> {log}
+        [ -f {output.st_assignments} ] || touch {output.st_assignments}
+        """
+
+
+if config.get('use_simulated', False):
+    _sim_sample = get_sample_names()[0]
+
+    rule validate_simulation:
+        conda:
+            op.join('envs', 'all_in_one.yaml')
+        input:
+            sce      = op.join(config['working_dir'], 'starsolo', _sim_sample,
+                               f'{_sim_sample}_starsolo_sce.rds'),
+            barcodes = op.join(_SIM_DIR, 'cell_barcodes.txt'),
+            script   = op.join(config['repo_path'], 'src', 'validate_simulation.Rmd'),
+            installs = op.join(config['working_dir'], 'logs', 'installs.log')
+        output:
+            html = op.join(config['working_dir'], 'simulation_validation.html')
+        params:
+            Rbin    = config['Rbin'],
+            n_cells = config.get('sim_n_cells', 100),
+            n_genes = config.get('sim_n_genes', 100),
+            n_umis  = config.get('sim_n_umis',  100)
+        log:
+            op.join(config['working_dir'], 'logs', 'validate_simulation.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'validate_simulation.txt')
+        shell:
+            """
+            {params.Rbin} --vanilla -e \
+              'rmarkdown::render(
+                  "{input.script}",
+                  output_file  = "{output.html}",
+                  params = list(
+                      sce_path      = "{input.sce}",
+                      barcodes_path = "{input.barcodes}",
+                      n_cells       = {params.n_cells},
+                      n_genes       = {params.n_genes},
+                      n_umis        = {params.n_umis}))' &> {log}
+            """
