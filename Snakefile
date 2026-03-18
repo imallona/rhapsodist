@@ -769,6 +769,7 @@ rule extract_unmapped_startsolo_wta_tagged_fastqs:
         op.join(config['working_dir'], 'benchmarks', '{sample}_unaligned_tagged.txt')
     shell:
         """
+        mkdir -p $(dirname {output})
         samtools view -@ {threads} -f 4 -d CB {input.bam} | \
             awk -F '\\t' '{{
                 cb=""; ub="";
@@ -1087,13 +1088,18 @@ _any_sbg_ref_url = (
     config.get('sbg_reference_url') or
     any(_sbg_uses(s, 'sbg_reference_url') for s in get_sample_names())
 )
+_global_sbg_ref_url = config.get('sbg_reference_url') or next(
+    (_sbg_uses(s, 'sbg_reference_url') for s in get_sample_names()
+     if _sbg_uses(s, 'sbg_reference_url')),
+    ''
+)
 if _any_sbg_ref_url and not config.get('use_simulated'):
     rule download_sbg_reference:
         output:
             archive = op.join(config['working_dir'], 'sbg_reference',
                               'rhapsody_reference.tar.gz')
         params:
-            url = config.get('sbg_reference_url', '')
+            url = _global_sbg_ref_url
         log:
             op.join(config['working_dir'], 'logs', 'download_sbg_reference.log')
         benchmark:
@@ -1184,6 +1190,11 @@ ENDOFYML
             ## cwl-runner places the unfiltered MEX output as a zip in --outdir.
             ## Unzip into the expected unfiltered_MEX_output/ subdirectory.
             MEX_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
+            if [ -z "$MEX_ZIP" ] || [ ! -f "$MEX_ZIP" ]; then
+                echo "ERROR: expected unfiltered MEX zip not found in {params.outdir}" >> {log}
+                ls -l {params.outdir} >> {log} 2>&1
+                exit 1
+            fi
             mkdir -p {params.outdir}/unfiltered_MEX_output
             unzip -o "$MEX_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
             """

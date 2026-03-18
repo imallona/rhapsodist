@@ -146,6 +146,12 @@ def sample_cell_barcodes(whitelist_dir, n_cells, rng):
     for cls in ('BD_CLS1.txt', 'BD_CLS2.txt', 'BD_CLS3.txt'):
         with open(os.path.join(whitelist_dir, cls)) as fh:
             wl.append([line.strip() for line in fh if line.strip()])
+    max_cells = len(wl[0]) * len(wl[1]) * len(wl[2])
+    if n_cells > max_cells:
+        raise ValueError(
+            f"Requested n_cells={n_cells} exceeds the {max_cells} unique barcode "
+            "combinations available from the provided whitelists."
+        )
     chosen, barcodes = set(), []
     while len(barcodes) < n_cells:
         combo = (rng.choice(wl[0]), rng.choice(wl[1]), rng.choice(wl[2]))

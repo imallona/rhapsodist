@@ -40,6 +40,13 @@ parser$add_argument('--whitelist_dir',
 
 args <- parser$parse_args()
 
+if (identical(args$bead_version, 'EnhV2') && is.null(args$whitelist_dir)) {
+    stop(
+        "--whitelist_dir is required when --bead_version EnhV2. ",
+        "Supply the directory containing BD_CLS1.txt, BD_CLS2.txt, BD_CLS3.txt."
+    )
+}
+
 source(args$index2barcode_script)
 
 ## Load 384-sequence whitelist into B384_cell_key1/2/3 for EnhV2 decoding.

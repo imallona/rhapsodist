@@ -38,6 +38,9 @@ colnames(counts) <- gene_ids
 # which is robust to tail artifacts that trip up simple slope-based methods.
 lib_sizes <- Matrix::rowSums(counts)
 nonzero <- lib_sizes[lib_sizes > 0]
+if (length(nonzero) == 0L) {
+    stop("No non-zero library sizes detected; kallisto output appears empty or invalid.")
+}
 ranked <- sort(nonzero, decreasing = TRUE)
 n <- length(ranked)
 log_rank <- log10(seq_len(n))
@@ -46,7 +49,7 @@ x1 <- log_rank[1]; y1 <- log_count[1]
 x2 <- log_rank[n]; y2 <- log_count[n]
 dx <- x2 - x1; dy <- y2 - y1
 dist <- (dy * log_rank - dx * log_count + x2*y1 - y2*x1) / sqrt(dy^2 + dx^2)
-knee_idx <- which.min(dist)
+knee_idx <- which.max(abs(dist))
 knee_threshold <- ranked[knee_idx]
 n_before <- length(lib_sizes)
 keep <- lib_sizes >= knee_threshold
