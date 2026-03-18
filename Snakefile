@@ -1309,6 +1309,7 @@ rule render_benchmarks_report:
             aligner = get_aligners(),
             sample  = get_sample_names()
         ),
+        sbg_sce = _sbg_sce_targets,
         doc = op.join(config['repo_path'], 'docs', '03_benchmarks.Rmd'),
         installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:

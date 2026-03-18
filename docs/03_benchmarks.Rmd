@@ -165,8 +165,8 @@ recovery <- rbindlist(lapply(pipelines, function(pl) {
         sce <- tryCatch(readRDS(fn), error = function(e) NULL)
         if (is.null(sce)) return(NULL)
         data.table(pipeline = pl, sample = samp, n_cells = ncol(sce))
-    }))
-}))
+    }), fill = TRUE)
+}), fill = TRUE)
 
 if (nrow(recovery) > 0) {
     cmp <- merge(
