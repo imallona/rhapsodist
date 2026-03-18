@@ -156,7 +156,8 @@ if (nrow(bm_mem) > 0) {
 
 ```{r recovery-vs-time, fig.width=6, fig.height=4, eval=n_exp > 0}
 pipelines <- c("starsolo", "kallisto", "alevin", "sbg")
-sample_names <- basename(list.dirs(wd, recursive = FALSE))
+pl_dirs <- Filter(dir.exists, file.path(wd, pipelines))
+sample_names <- if (length(pl_dirs) > 0) basename(list.dirs(pl_dirs[1], recursive = FALSE)) else character(0)
 
 recovery <- rbindlist(lapply(pipelines, function(pl) {
     rbindlist(lapply(sample_names, function(samp) {

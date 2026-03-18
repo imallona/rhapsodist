@@ -90,7 +90,15 @@ def get_sbg_sample_tags_version_by_name(name):
     return get_species_by_name(name)   # 'human' or 'mouse'
 
 def get_sbg_bead_version_by_name(name):
-    return _sbg_uses(name, 'sbg_bead_version') or config.get('sbg_bead_version', 'Enh')
+    explicit = _sbg_uses(name, 'sbg_bead_version') or config.get('sbg_bead_version')
+    if explicit:
+        return explicit
+    ## infer from whitelist: 384x3 = EnhV2 (384 unique seqs per component),
+    ##                        96x3  = Enh   (96  unique seqs per component)
+    wl = get_barcode_whitelist_by_name(name)
+    if wl == '384x3':
+        return 'EnhV2'
+    return 'Enh'
 
 def get_sbg_reference_url_by_name(name):
     return _sbg_uses(name, 'sbg_reference_url') or config.get('sbg_reference_url')

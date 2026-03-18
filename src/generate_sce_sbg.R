@@ -34,10 +34,20 @@ parser$add_argument('--bead_version',
 parser$add_argument('--index2barcode_script',
     type = 'character',
     help = 'Path to scripts/index2barcode.R containing index_to_sequence()')
+parser$add_argument('--whitelist_dir',
+    type = 'character', default = NULL,
+    help = 'Directory with BD_CLS1.txt, BD_CLS2.txt, BD_CLS3.txt (required for EnhV2)')
 
 args <- parser$parse_args()
 
 source(args$index2barcode_script)
+
+## Load 384-sequence whitelist into B384_cell_key1/2/3 for EnhV2 decoding.
+if (!is.null(args$whitelist_dir)) {
+    B384_cell_key1 <<- readLines(file.path(args$whitelist_dir, 'BD_CLS1.txt'))
+    B384_cell_key2 <<- readLines(file.path(args$whitelist_dir, 'BD_CLS2.txt'))
+    B384_cell_key3 <<- readLines(file.path(args$whitelist_dir, 'BD_CLS3.txt'))
+}
 
 ## locate MEX files, accepting both compressed and plain variants
 .find <- function(dir, base) {

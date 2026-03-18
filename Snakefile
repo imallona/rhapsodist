@@ -1220,6 +1220,11 @@ if _has_sbg:
                 )
             ),
             bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),
+            whitelist_dir = lambda wildcards: (
+                op.join(config['repo_path'], 'data',
+                        'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
+                if get_sbg_bead_version_by_name(wildcards.sample) == 'EnhV2' else ''
+            ),
             Rbin = config['Rbin']
         log:
             op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_sbg.log')
@@ -1233,7 +1238,9 @@ if _has_sbg:
                  --mex_dir {params.mex_dir} \
                  --output_fn {output.sce} \
                  --bead_version {params.bead_version} \
-                 --index2barcode_script {input.index2barcode} &> {log}
+                 --index2barcode_script {input.index2barcode} \
+                 $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
+                 &> {log}
             """
 
 

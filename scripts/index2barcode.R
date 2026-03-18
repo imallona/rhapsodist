@@ -88,25 +88,12 @@ index_to_sequence <- function(index, bead_version) {
         
         
     } else if (bead_version == "EnhV2") {
-        
-        diversityInsert <- ""
-        subIndex <- ((cl1 - 1) %% 96) + 1
-        
-        if (subIndex >= 1 && subIndex <= 24) {
-            diversityInsert <- ""
-        } else if (subIndex >= 25 && subIndex <= 48) {
-            diversityInsert <- "A"
-        } else if (subIndex >= 49 && subIndex <= 72) {
-            diversityInsert <- "GT"
-        } else { # subIndex >= 73 && subIndex <= 96
-            diversityInsert <- "TCA"
-        }
-        
+
         cls1_sequence <- B384_cell_key1[cl1]
         cls2_sequence <- B384_cell_key2[cl2]
         cls3_sequence <- B384_cell_key3[cl3]
-        
-        return(paste0(diversityInsert, cls1_sequence, Enh_linker1, cls2_sequence, Enh_linker2, cls3_sequence))
+
+        return(paste0(cls1_sequence, cls2_sequence, cls3_sequence))
     }
 }
 
