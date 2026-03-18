@@ -23,7 +23,8 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         barcodes      = op.join(_SIM_DIR, 'cell_barcodes.txt'),
         r1            = op.join(_SIM_DIR, 'sim_R1.fq.gz'),
         r2            = op.join(_SIM_DIR, 'sim_R2.fq.gz'),
-        st_assignments = op.join(_SIM_DIR, 'sampletag_assignments.txt') if _ST_FA else []
+        st_assignments = op.join(_SIM_DIR, 'sampletag_assignments.txt') if _ST_FA else [],
+        true_mex      = op.join(_SIM_DIR, 'true_mex', 'matrix.mtx.gz')
     params:
         n_cells       = config.get('sim_n_cells',    100),
         n_genes       = config.get('sim_n_genes',    100),

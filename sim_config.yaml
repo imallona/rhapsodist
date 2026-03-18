@@ -43,35 +43,13 @@ sim_n_sampletags: 3
 sim_n_st_reads: 100
 
 ## SevenBridges / BD Rhapsody official pipeline (optional)
-##
-## Run mode: set sbg_cwl. The workflow generates the CWL input.yml from
-## config values and runs:
-##   cwltool --singularity --outdir <outdir> <cwl> input.yml
-## cwltool pulls the BD Docker image from DockerHub automatically.
-## Place the CWL file under docker/cwl/ (it is gitignored).
-##
-## Reference archive (BD_Rhapsody_Reference_Files/ tar.gz):
-##   - Simulated data (use_simulated: true): auto-built from the simulated
-##     STAR index + GTF. No extra config needed.
-##   - Real data: either provide sbg_reference_url to download from the BD
-##     public S3 bucket, or sbg_reference_archive for a pre-built local copy.
-##     Available references:
-##       http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
-##
+## Set sbg_cwl to the CWL workflow file. Place it under docker/cwl/ (gitignored).
+## For real data, provide sbg_reference_url or sbg_reference_archive (mutually exclusive).
+## For ingest mode (skip CWL re-run), provide sbg_mex_dir with pre-computed MEX output.
 sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
-# sbg_sample_tags_version: mouse   # human | mouse (default: sample species)
-# sbg_bead_version: EnhV2          # v1 | Enh | EnhV2 (default: Enh)
-## For real data: download reference (mutually exclusive with sbg_reference_archive):
 # sbg_reference_url: "http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/Rhapsody_WTA_Analysis_Pipeline_Reference_Files_GRCh38_2022-09_gencode.v41.tar.gz"
-## Or point to a pre-built local copy:
 # sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
-##
-## Ingest mode (no CWL re-run): provide sbg_mex_dir with pre-computed MEX output.
-## Use per-sample subdirectories sbg_mex_dir/<sample>/ for multiple samples.
-##
 # sbg_mex_dir: /path/to/sbg/mex_output
-##
-## All options can be set per sample in uses: to override global values.
 
 aligner:
   - starsolo

@@ -1,78 +1,47 @@
-## software stack, will work out of the box if within the supplied docker container
-#Rbin: R
-R: "R_LIBS_USER=/home/jiayiwang/lib/ /usr/local/R/R-4.3.1/bin/R"
-Rbin: /usr/local/R/R-4.3.1/bin/R
+## software paths - adjust if not on PATH
+## If R packages are in a non-default library, set R_LIBS_USER, e.g.:
+##   R: "R_LIBS_USER=/path/to/rlibs R"
+R: "R"
+Rbin: "R"
 STAR: STAR
 
 repo_path: '.'
 
 ## run limits
-nthreads: 80
-max_mem_mb: 20000 ## these are megabytes
-
-# downsampled: 50000000 # or 0
+nthreads: 10
+max_mem_mb: 20000
 
 ## cell filtering
-# soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
-soloCellFilter: "EmptyDrops_CR" # "CellRanger2.2" # None, TopCells, CellRanger2.2
+soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
 
 ## multimappers
-soloMultiMappers: "Unique" # Uniform, Rescue , PropUnique, EM
+soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 
 ## extra STARsolo arguments
-# extraStarSoloArgs: "--soloStrand Forward"
 extraStarSoloArgs: ""
 
-## full, absolute path where outputs will be generated at
-working_dir: /home/jiayiwang/rhapsodist/testrun
+## full, absolute path where outputs will be generated
+working_dir: /path/to/output
 
-gtf_origin: "gencode"
-# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz
-# caution uncompressed
-gtf: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.primary_assembly.annotation.gtf
+gtf_origin: "gencode" # gencode or ensembl
+# caution: uncompressed
+gtf: /path/to/annotation.gtf
 
-# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/GRCh38.p14.genome.fa.gz
-# caution uncompressed
-genome:  /home/jiayiwang/rhapsodist/data/reference/GRCh38.p14.genome.fa
+# caution: uncompressed
+genome: /path/to/genome.fa
 
-# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.pc_transcripts.fa.gz
-# caution compressed
-transcriptome: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.pc_transcripts.fa.gz
+# can be gzipped
+transcriptome: /path/to/transcriptome.fa.gz
 
-# cDNA readlength is 71
+# readLength - 1
 sjdbOverhang: 70
 
-# aligner: ['starsolo']
 aligner: ['starsolo', 'kallisto', 'alevin']
-      
-# samples:
-#   - name: example_50M
-#     uses:
-#       ##cb_umi_fq: /home/gmoro/concatenated_bd_demo/WTA_SMK_R1.fastq.gz
-#       ##cdna_fq: /home/gmoro/concatenated_bd_demo/WTA_SMK_R2.fastq.gz
-#       cb_umi_fq: /home/gmoro/concatenated_bd_demo/combined_50M_R1_WTA_SMK.fastq.gz
-#       cdna_fq: /home/gmoro/concatenated_bd_demo/combined_50M_R2_WTA_SMK.fastq.gz
-#       whitelist: 384x3
-#       species: 'human'
-
-  # this doesn't work, the named pipe is not "seekable" for cutadapt
-  # cd /home/imallona/tmp//bdrhapsody_demo/12WTA-ABC-SMK-EB-5kJRT/
-  # mkfifo r1.fq.gz
-  # mkfifo r2.fq.gz
-  # cat 12SMK_S1_L432_R1_001.fastq.gz 12WTA_S1_L432_R1_001.fastq.gz > r1.fq.gz &
-  # cat 12SMK_S1_L432_R2_001.fastq.gz 12WTA_S1_L432_R2_001.fastq.gz > r2.fq.gz &
-  # concatenate physically instead, with cat
 
 samples:
-  - name: example_full
+  - name: my_sample
     uses:
-      cb_umi_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
-      cdna_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
-      whitelist: 384x3
-      species: 'human'
-  # - name: example_50M
-  #   uses:
-  #     cb_umi_fq: /home/gmoro/concatenated_bd_demo/combined_50M_R1_WTA_SMK.fastq.gz
-  #     cdna_fq: /home/gmoro/concatenated_bd_demo/combined_50M_R2_WTA_SMK.fastq.gz
-  #     whitelist: 384x3
-  #     species: 'human'
+      cb_umi_fq: /path/to/R1.fastq.gz
+      cdna_fq: /path/to/R2.fastq.gz
+      whitelist: 384x3  # 384x3 for Enhanced beads, 96x3 for v1/Enh beads
+      species: 'human'  # human or mouse

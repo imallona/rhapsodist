@@ -14,6 +14,8 @@ params:
   has_sbg:          false
   n_expected_cells: 1000
   barcodes_file:    ""
+  n_umis_per_cell:  0
+  true_mex_dir:     ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -26,11 +28,13 @@ suppressPackageStartupMessages({
     library(patchwork)
 })
 
-wd       <- params$working_dir
-samp     <- params$sample
-aligners <- strsplit(params$aligners, ",")[[1]]
-has_sbg  <- isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
-n_exp    <- as.integer(params$n_expected_cells)
+wd           <- params$working_dir
+samp         <- params$sample
+aligners     <- strsplit(params$aligners, ",")[[1]]
+has_sbg      <- isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
+n_exp        <- as.integer(params$n_expected_cells)
+n_umis_truth <- as.integer(params$n_umis_per_cell)
+true_mex_dir <- params$true_mex_dir
 ```
 
 ## Data loading
@@ -144,6 +148,7 @@ Genes detected in at least two methods are used. Counts are summed across cells
 
 ```{r gene-correlation, fig.width=9, fig.height=8}
 all_genes <- Reduce(union, lapply(sces, rownames))
+length(all_genes)
 
 pb <- lapply(names(sces), function(m) {
     s  <- sces[[m]]
@@ -155,25 +160,29 @@ pb_mat <- do.call(cbind, pb)
 rownames(pb_mat) <- all_genes
 
 n_detected <- rowSums(!is.na(pb_mat) & pb_mat > 0)
+table(n_detected)
 pb_mat <- pb_mat[n_detected >= 2, ]
 pb_mat[is.na(pb_mat)] <- 0
 
 cat("Genes used for correlation:", nrow(pb_mat), "\n")
 
 method_pairs <- combn(names(sces), 2, simplify = FALSE)
+
 plots <- lapply(method_pairs, function(pair) {
-    x <- log1p(pb_mat[, pair[1]])
-    y <- log1p(pb_mat[, pair[2]])
-    r <- round(cor(x, y, use = "complete.obs"), 3)
+    x <- pb_mat[, pair[1]]
+    y <- pb_mat[, pair[2]]
+    rho <- round(cor(x, y, use = "complete.obs", method = "spearman"), 3)
+    mad_val <- round(mean(abs(x - y), na.rm = TRUE), 1)
     df <- data.frame(x = x, y = y)
     ggplot(df, aes(x, y)) +
         geom_point(alpha = 0.4, size = 0.8) +
         geom_abline(slope = 1, intercept = 0, colour = "firebrick",
                     linetype = "dashed") +
         labs(title = paste0(pair[1], " vs ", pair[2]),
-             subtitle = paste0("r = ", r),
-             x = paste0("log1p — ", pair[1]),
-             y = paste0("log1p — ", pair[2])) +
+             subtitle = paste0("Spearman rho = ", rho,
+                               "  |  mean |diff| = ", mad_val),
+             x = pair[1],
+             y = pair[2]) +
         theme_bw(base_size = 10)
 })
 wrap_plots(plots, ncol = min(length(plots), 3))
@@ -182,17 +191,67 @@ wrap_plots(plots, ncol = min(length(plots), 3))
 ## Correlation matrix
 
 ```{r corr-matrix, fig.width=5, fig.height=4}
-cor_mat  <- cor(log1p(pb_mat), use = "pairwise.complete.obs")
+cor_mat  <- cor(pb_mat, use = "pairwise.complete.obs", method = "spearman")
 cor_long <- as.data.frame(as.table(cor_mat))
-names(cor_long) <- c("method1", "method2", "r")
+names(cor_long) <- c("method1", "method2", "rho")
 
-ggplot(cor_long, aes(method1, method2, fill = r)) +
+ggplot(cor_long, aes(method1, method2, fill = rho)) +
     geom_tile() +
-    geom_text(aes(label = round(r, 3)), size = 3.5) +
+    geom_text(aes(label = round(rho, 3)), size = 3.5) +
     scale_fill_distiller(palette = "RdYlGn", limits = c(0, 1), direction = 1) +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-    labs(title = "Per-gene pseudo-bulk count correlation", x = NULL, y = NULL)
+    labs(title = "Per-gene pseudo-bulk count correlation (Spearman)", x = NULL, y = NULL)
+```
+
+## Deviation from simulated truth
+
+```{r truth-deviation, eval=nchar(true_mex_dir) > 0, fig.width=8, fig.height=4}
+## Load the ground-truth count matrix saved by simulate_data.py.
+## Every simulated cell has exactly n_umis_per_cell counts for every gene,
+## so the per-gene pseudo-bulk for a method's detected cell set equals
+## n_detected * n_umis_per_cell.  The truth matrix lets us compare directly.
+.find_mex <- function(dir, base) {
+    gz <- file.path(dir, paste0(base, '.gz'))
+    if (file.exists(gz)) return(gz)
+    file.path(dir, base)
+}
+truth_counts  <- readMM(.find_mex(true_mex_dir, 'matrix.mtx'))
+truth_barcodes <- readLines(.find_mex(true_mex_dir, 'barcodes.tsv'))
+truth_features <- read.table(.find_mex(true_mex_dir, 'features.tsv'),
+                              sep = '\t', header = FALSE)
+rownames(truth_counts) <- truth_features$V1
+colnames(truth_counts) <- truth_barcodes
+
+truth_pb <- rowSums(truth_counts)
+
+truth_df <- rbindlist(lapply(names(sces), function(m) {
+    pb <- rowSums(counts(sces[[m]]))
+    ## restrict to genes present in both
+    shared <- intersect(names(pb), names(truth_pb))
+    rel_err <- (pb[shared] - truth_pb[shared]) / truth_pb[shared]
+    data.table(method = m, gene = shared, rel_err = rel_err,
+               observed = pb[shared], expected = truth_pb[shared])
+}))
+
+ggplot(truth_df, aes(x = rel_err, colour = method)) +
+    geom_density(linewidth = 0.8) +
+    facet_wrap(~method) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+    scale_colour_brewer(palette = "Set2") +
+    theme_bw() +
+    labs(title = "Per-gene count relative error vs simulated truth",
+         x = "(observed - expected) / expected", y = "Density", colour = NULL)
+```
+
+```{r truth-summary, eval=nchar(true_mex_dir) > 0}
+truth_sum <- truth_df[, .(
+    mean_rel_err   = round(mean(rel_err), 4),
+    median_rel_err = round(median(rel_err), 4),
+    rmse           = round(sqrt(mean(rel_err^2)), 4)
+), by = method]
+knitr::kable(truth_sum,
+    caption = "Per-method deviation from simulated truth (relative error per gene)")
 ```
 
 ## Per-cell total-count distribution

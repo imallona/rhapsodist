@@ -115,6 +115,32 @@ def write_transcriptome_gz(gene_seqs, path):
             fh.write(f'>{tid} {gid}\n{seq}\n')
 
 
+def write_true_counts_mex(cell_barcodes, n_genes, n_umis, out_dir):
+    """Write ground-truth count matrix (MEX format) to out_dir/true_mex/."""
+    import struct
+    mex_dir = os.path.join(out_dir, 'true_mex')
+    os.makedirs(mex_dir, exist_ok=True)
+    n_cells = len(cell_barcodes)
+    width = len(str(n_genes))
+
+    with gzip.open(os.path.join(mex_dir, 'barcodes.tsv.gz'), 'wt') as fh:
+        for cb1, cb2, cb3 in cell_barcodes:
+            fh.write(f'{cb1}{cb2}{cb3}\n')
+
+    with gzip.open(os.path.join(mex_dir, 'features.tsv.gz'), 'wt') as fh:
+        for i in range(n_genes):
+            gid = f'gene{i + 1:0{width}d}'
+            fh.write(f'{gid}\t{gid}\tGene Expression\n')
+
+    n_entries = n_cells * n_genes
+    with gzip.open(os.path.join(mex_dir, 'matrix.mtx.gz'), 'wt') as fh:
+        fh.write('%%MatrixMarket matrix coordinate integer general\n%\n')
+        fh.write(f'{n_genes} {n_cells} {n_entries}\n')
+        for j in range(1, n_cells + 1):
+            for i in range(1, n_genes + 1):
+                fh.write(f'{i} {j} {n_umis}\n')
+
+
 def sample_cell_barcodes(whitelist_dir, n_cells, rng):
     wl = []
     for cls in ('BD_CLS1.txt', 'BD_CLS2.txt', 'BD_CLS3.txt'):
@@ -236,6 +262,8 @@ def main():
     next_idx = write_fastqs(cell_barcodes, gene_seqs, args.n_umis, rng,
                             os.path.join(args.out_dir, 'sim_R1.fq.gz'),
                             os.path.join(args.out_dir, 'sim_R2.fq.gz'))
+
+    write_true_counts_mex(cell_barcodes, args.n_genes, args.n_umis, args.out_dir)
 
     print(f'Generated {args.n_genes} chromosomes, {args.n_cells} cells x '
           f'{args.n_genes} genes x {args.n_umis} UMIs = {next_idx} cDNA reads')

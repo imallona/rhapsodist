@@ -1,6 +1,6 @@
 #!/usr/bin/env snakemake -s
 ##
-## Snakefile to process rock/roi data (general method)
+## Snakefile to process BD Rhapsody WTA data
 ##
 ## Started 11th Oct 2023
 ##
@@ -12,7 +12,7 @@ import os
 
 configfile: "config.yaml"
 
-## to ease whitelists symlinking — must be absolute before any include uses it
+## whitelists symlinking requires an absolute path before any include uses it
 if not op.isabs(config['repo_path']):
     config['repo_path'] = op.join(workflow.basedir, config['repo_path'])
 
@@ -1265,6 +1265,10 @@ rule render_comparison_report:
             op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
             if config.get('use_simulated', False) else []
         ),
+        true_mex = (
+            op.join(config['working_dir'], 'simulate', 'true_mex', 'matrix.mtx.gz')
+            if config.get('use_simulated', False) else []
+        ),
         doc = op.join(config['repo_path'], 'docs', '02_comparison.Rmd'),
         installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
@@ -1273,11 +1277,15 @@ rule render_comparison_report:
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
         aligners = ','.join(get_aligners()),
-        has_sbg = 'TRUE' if _has_sbg else 'FALSE',
+        has_sbg = 'true' if _has_sbg else 'false',
         n_expected_cells = (config.get('sim_n_cells', 0)
                             if config.get('use_simulated', False) else 0),
+        n_umis_per_cell = (config.get('sim_n_umis', 0)
+                           if config.get('use_simulated', False) else 0),
         barcodes_file = (op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                          if config.get('use_simulated', False) else ''),
+        true_mex_dir = (op.join(config['working_dir'], 'simulate', 'true_mex')
+                        if config.get('use_simulated', False) else ''),
         Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', '{sample}_comparison_report.log')
@@ -1293,9 +1301,11 @@ rule render_comparison_report:
               working_dir      = "{params.working_dir}",
               sample           = "{params.sample}",
               aligners         = "{params.aligners}",
-              has_sbg          = {params.has_sbg},
+              has_sbg          = "{params.has_sbg}",
               n_expected_cells = {params.n_expected_cells},
-              barcodes_file    = "{params.barcodes_file}"))' &> {log}
+              n_umis_per_cell  = {params.n_umis_per_cell},
+              barcodes_file    = "{params.barcodes_file}",
+              true_mex_dir     = "{params.true_mex_dir}"))' &> {log}
         """
 
 

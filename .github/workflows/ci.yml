@@ -1,7 +1,6 @@
 name: rhapsodist CI
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
 
@@ -30,6 +29,7 @@ jobs:
         with:
           micromamba-version: latest
           init-shell: bash
+          activate-environment: base
           cache-environment: false
           post-cleanup: none
 
@@ -103,6 +103,7 @@ jobs:
         with:
           micromamba-version: latest
           init-shell: bash
+          activate-environment: base
           cache-environment: false
           post-cleanup: none
 
