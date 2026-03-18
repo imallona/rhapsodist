@@ -79,9 +79,6 @@ def get_sbg_cwl_by_name(name):
 def get_sbg_reference_by_name(name):
     return _sbg_uses(name, 'sbg_reference_archive')
 
-def get_sbg_mex_dir_by_name(name):
-    return _sbg_uses(name, 'sbg_mex_dir')
-
 def get_sbg_sample_tags_version_by_name(name):
     """Derive Sample_Tags_Version: per-sample override → global config → species."""
     v = _sbg_uses(name, 'sbg_sample_tags_version')
@@ -102,10 +99,6 @@ def get_sbg_bead_version_by_name(name):
 
 def get_sbg_reference_url_by_name(name):
     return _sbg_uses(name, 'sbg_reference_url') or config.get('sbg_reference_url')
-
-def sample_has_sbg(name):
-    """True if this sample has either sbg_cwl or sbg_mex_dir configured."""
-    return bool(get_sbg_cwl_by_name(name) or get_sbg_mex_dir_by_name(name))
 
 ## bd offers a couple of sets of whitelists, so we fetch the right one according to the config.yaml file
 def symlink_whitelist(sample):
