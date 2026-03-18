@@ -23,6 +23,7 @@ suppressPackageStartupMessages({
     library(SingleCellExperiment)
     library(Matrix)
     library(ggplot2)
+    library(ggrepel)
     library(UpSetR)
     library(data.table)
     library(patchwork)
@@ -206,45 +207,64 @@ ggplot(cor_long, aes(method1, method2, fill = rho)) +
 
 ## Deviation from simulated truth
 
-```{r truth-deviation, eval=nchar(true_mex_dir) > 0, fig.width=8, fig.height=4}
-## Load the ground-truth count matrix saved by simulate_data.py.
-## Every simulated cell has exactly n_umis_per_cell counts for every gene,
-## so the per-gene pseudo-bulk for a method's detected cell set equals
-## n_detected * n_umis_per_cell.  The truth matrix lets us compare directly.
+```{r truth-load, eval=nchar(true_mex_dir) > 0}
 .find_mex <- function(dir, base) {
     gz <- file.path(dir, paste0(base, '.gz'))
     if (file.exists(gz)) return(gz)
     file.path(dir, base)
 }
-truth_counts  <- readMM(.find_mex(true_mex_dir, 'matrix.mtx'))
+truth_counts   <- readMM(.find_mex(true_mex_dir, 'matrix.mtx'))
 truth_barcodes <- readLines(.find_mex(true_mex_dir, 'barcodes.tsv'))
 truth_features <- read.table(.find_mex(true_mex_dir, 'features.tsv'),
                               sep = '\t', header = FALSE)
 rownames(truth_counts) <- truth_features$V1
 colnames(truth_counts) <- truth_barcodes
-
 truth_pb <- rowSums(truth_counts)
+```
 
-truth_df <- rbindlist(lapply(names(sces), function(m) {
-    pb <- rowSums(counts(sces[[m]]))
-    ## restrict to genes present in both
-    shared <- intersect(names(pb), names(truth_pb))
-    rel_err <- (pb[shared] - truth_pb[shared]) / truth_pb[shared]
-    data.table(method = m, gene = shared, rel_err = rel_err,
-               observed = pb[shared], expected = truth_pb[shared])
-}))
+```{r truth-heatmap, eval=nchar(true_mex_dir) > 0, fig.width=5, fig.height=4}
+## Build a pseudo-bulk matrix that includes truth as an additional column,
+## then compute pairwise mean absolute relative difference (MARD) between
+## all methods and truth.  MARD = mean(|x-y| / ((x+y)/2)).
+shared_genes <- Reduce(intersect, c(lapply(sces, rownames), list(names(truth_pb))))
 
-ggplot(truth_df, aes(x = rel_err, colour = method)) +
-    geom_density(linewidth = 0.8) +
-    facet_wrap(~method) +
-    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
-    scale_colour_brewer(palette = "Set2") +
+pb_with_truth <- do.call(cbind, c(
+    lapply(names(sces), function(m) rowSums(counts(sces[[m]]))[shared_genes]),
+    list(truth = truth_pb[shared_genes])
+))
+colnames(pb_with_truth) <- c(names(sces), "truth")
+
+mard_mat <- outer(
+    colnames(pb_with_truth), colnames(pb_with_truth),
+    Vectorize(function(a, b) {
+        x <- pb_with_truth[, a]
+        y <- pb_with_truth[, b]
+        denom <- (x + y) / 2
+        mean(abs(x - y)[denom > 0] / denom[denom > 0], na.rm = TRUE)
+    })
+)
+dimnames(mard_mat) <- list(colnames(pb_with_truth), colnames(pb_with_truth))
+
+mard_long <- as.data.frame(as.table(mard_mat))
+names(mard_long) <- c("method1", "method2", "mard")
+
+ggplot(mard_long, aes(method1, method2, fill = mard * 100)) +
+    geom_tile(colour = "white") +
+    geom_text(aes(label = sprintf("%.2f%%", mard * 100)), size = 3.2) +
+    scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
     theme_bw() +
-    labs(title = "Per-gene count relative error vs simulated truth",
-         x = "(observed - expected) / expected", y = "Density", colour = NULL)
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(title = "Pairwise mean absolute relative difference",
+         subtitle = "Including simulated truth; lower is better",
+         x = NULL, y = NULL, fill = "MARD (%)")
 ```
 
 ```{r truth-summary, eval=nchar(true_mex_dir) > 0}
+truth_df <- rbindlist(lapply(names(sces), function(m) {
+    pb <- rowSums(counts(sces[[m]]))[shared_genes]
+    rel_err <- (pb - truth_pb[shared_genes]) / truth_pb[shared_genes]
+    data.table(method = m, gene = shared_genes, rel_err = rel_err)
+}))
 truth_sum <- truth_df[, .(
     mean_rel_err   = round(mean(rel_err), 4),
     median_rel_err = round(median(rel_err), 4),
@@ -252,6 +272,53 @@ truth_sum <- truth_df[, .(
 ), by = method]
 knitr::kable(truth_sum,
     caption = "Per-method deviation from simulated truth (relative error per gene)")
+```
+
+## Accuracy vs speed
+
+```{r accuracy-vs-speed, eval=nchar(true_mex_dir) > 0, fig.width=6, fig.height=4, message=FALSE, warning=FALSE}
+bm_dir   <- file.path(wd, "benchmarks")
+bm_files <- list.files(bm_dir, pattern = "\\.txt$", full.names = TRUE)
+
+if (length(bm_files) > 0) {
+    bm <- rbindlist(Filter(Negate(is.null), lapply(bm_files, function(fn) {
+        tryCatch({
+            dt <- fread(fn, sep = "\t")
+            dt[, step := gsub("\\.txt$", "", basename(fn))]
+            dt
+        }, error = function(e) NULL)
+    })), fill = TRUE)
+
+    classify_pipeline <- function(step) {
+        if (grepl("^starsolo|^star|r_sce_generation_starsolo|starsolo_descriptive", step)) return("starsolo")
+        if (grepl("^kallisto|^bustools|r_sce_generation_kallisto|kallisto_descriptive", step)) return("kallisto")
+        if (grepl("^alevin|r_sce_generation_alevin|alevin_descriptive", step)) return("alevin")
+        if (grepl("^sbg|r_sce_generation_sbg|sbg_descriptive", step)) return("sbg")
+        return(NA_character_)
+    }
+    bm[, pipeline := sapply(step, classify_pipeline)]
+    bm[, minutes  := s / 60]
+
+    pipeline_sum <- bm[!is.na(pipeline),
+                       .(total_min = sum(minutes)), by = pipeline]
+
+    acc <- truth_sum[, .(pipeline = method, rmse)]
+
+    cmp <- merge(pipeline_sum, acc, by = "pipeline")
+
+    ggplot(cmp, aes(x = total_min, y = rmse, colour = pipeline, label = pipeline)) +
+        geom_point(size = 4) +
+        ggrepel::geom_text_repel(size = 3.5, show.legend = FALSE) +
+        scale_colour_brewer(palette = "Set2") +
+        theme_bw() +
+        labs(title = "Accuracy vs speed",
+             subtitle = "RMSE of relative error vs simulated truth",
+             x = "Total pipeline time (minutes)",
+             y = "RMSE (relative error vs truth)",
+             colour = NULL)
+} else {
+    cat("No benchmark files found; skipping.\n")
+}
 ```
 
 ## Per-cell total-count distribution
