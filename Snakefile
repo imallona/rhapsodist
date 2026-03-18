@@ -1025,7 +1025,8 @@ rule alevin_align:
 ## Run mode (sbg_cwl is set):
 ##   Executes the BD Rhapsody CWL workflow via cwl-runner --singularity.
 ##   cwl-runner pulls the BD Docker image listed inside the CWL file from
-##   DockerHub automatically; no manual docker/singularity pull is needed.
+##   DockerHub and converts it to a Singularity image automatically; no
+##   manual docker/singularity pull is needed.
 ##   The CWL input.yml is generated entirely from config values; users never
 ##   edit a separate yml file.
 ##
@@ -1153,9 +1154,6 @@ for _sbg_sample in get_sample_names():
             ## Generate the CWL input.yml entirely from config values.
             INPUT_YML={params.outdir}/input.yml
             cat > "$INPUT_YML" << 'ENDOFYML'
-#!/usr/bin/env cwl-runner
-cwl:tool: rhapsody
-
 Reads:
   - class: File
     location: "PLACEHOLDER_R1"
@@ -1179,46 +1177,7 @@ ENDOFYML
             sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
 
-            ## cwltool --singularity passes --pid --ipc --net --network none to
-            ## Apptainer/Singularity, which fails on systems where unprivileged
-            ## Linux namespaces are disabled. Work around by intercepting the
-            ## singularity call with a wrapper that strips those flags before
-            ## forwarding to the real binary.
-            SING_REAL=$(command -v singularity || command -v apptainer)
-            SING_WRAP_DIR=$(mktemp -d)
-            SING_WRAPPER="$SING_WRAP_DIR/singularity"
-
-            ## Write the wrapper using a quoted heredoc so no variable expansion
-            ## happens inside it; then sed in the real binary path afterwards.
-            cat > "$SING_WRAPPER" << 'ENDWRAP'
-#!/bin/bash
-args=()
-i=1
-while [[ $i -le $# ]]; do
-  arg="${{!i}}"
-  case "$arg" in
-    --ipc|--pid|--net) ;;
-    --network) ((i++)) ;;
-    *) args+=("$arg") ;;
-  esac
-  ((i++))
-done
-exec REAL_SING "${{args[@]}}"
-ENDWRAP
-
-            sed -i "s|REAL_SING|$SING_REAL|" "$SING_WRAPPER"
-            chmod +x "$SING_WRAPPER"
-            export PATH="$SING_WRAP_DIR:$PATH"
-
-            ## Trap ensures the wrapper dir is removed even if cwltool fails,
-            ## without masking cwltool's exit code (which rm -rf would do if
-            ## placed after the cwltool call in strict-mode bash).
-            trap 'rm -rf "$SING_WRAP_DIR"' EXIT
-
-            ## --debug captures each container's stdout/stderr in the log,
-            ## which is essential for diagnosing mist tool failures.
-            cwltool --singularity \
-                --debug \
+            cwl-runner --singularity \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
             """

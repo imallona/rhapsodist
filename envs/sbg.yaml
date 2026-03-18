@@ -3,9 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  ## CWL reference runner — drives the BD Rhapsody singularity container
-  - conda-forge::cwltool
+  - conda-forge::cwl_runner
   ## schema-salad is pulled in by cwltool but pinning it avoids resolver conflicts
   - conda-forge::schema-salad
-  ## pyyaml for input.yml generation in Python helper
-  - conda-forge::pyyaml
+  - conda-forge::pyyaml ## python helper

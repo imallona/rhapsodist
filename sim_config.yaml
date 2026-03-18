@@ -58,7 +58,7 @@ sim_n_st_reads: 100
 ##     Available references:
 ##       http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
 ##
-sbg_cwl: docker/cwl/v3.0/rhapsody_pipeline_3.0.cwl
+sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
 # sbg_sample_tags_version: mouse   # human | mouse (default: sample species)
 # sbg_bead_version: EnhV2          # v1 | Enh | EnhV2 (default: Enh)
 ## For real data: download reference (mutually exclusive with sbg_reference_archive):
