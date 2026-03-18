@@ -1,0 +1,54 @@
+R: "R"
+Rbin: R
+STAR: STAR
+
+repo_path: '.'
+
+## run limits
+nthreads: 10
+max_mem_mb: 20000 ## these are megabytes
+
+# downsampled: 50000000 # or 0
+
+## cell filtering
+# soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
+soloCellFilter: "EmptyDrops_CR" # "CellRanger2.2" # None, TopCells, CellRanger2.2
+
+## multimappers
+soloMultiMappers: "Unique" # Uniform, Rescue , PropUnique, EM
+
+## extra STARsolo arguments
+# extraStarSoloArgs: "--soloStrand Forward"
+extraStarSoloArgs: ""
+
+## full, absolute path where outputs will be generated at
+working_dir: /home/imallona/tmp/rhapsodist/testrun
+
+gtf_origin: "gencode"
+# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz
+# caution uncompressed
+gtf: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.primary_assembly.annotation.gtf
+
+# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/GRCh38.p14.genome.fa.gz
+# caution uncompressed
+genome:  /home/jiayiwang/rhapsodist/data/reference/GRCh38.p14.genome.fa
+
+# https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.pc_transcripts.fa.gz
+# caution compressed
+transcriptome: /home/jiayiwang/rhapsodist/data/reference/gencode.v46.pc_transcripts.fa.gz
+
+# cDNA readlength is 71
+sjdbOverhang: 70
+
+# aligner: ['starsolo']
+aligner: ['starsolo', 'kallisto', 'alevin']
+
+samples:
+  - name: example_full
+    uses:
+      cb_umi_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
+      cdna_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
+      whitelist: 384x3
+      species: 'human'
+
+# no sbg for now
