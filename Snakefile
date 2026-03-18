@@ -1180,6 +1180,12 @@ ENDOFYML
             cwl-runner --singularity \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
+
+            ## cwl-runner places the unfiltered MEX output as a zip in --outdir.
+            ## Unzip into the expected unfiltered_MEX_output/ subdirectory.
+            MEX_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
+            mkdir -p {params.outdir}/unfiltered_MEX_output
+            unzip -o "$MEX_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
             """
 
 
