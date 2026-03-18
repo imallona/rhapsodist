@@ -10,7 +10,10 @@ Outputs (all written to --out_dir):
   cell_barcodes.txt         Whitelist-sampled CB1+CB2+CB3 concatenations, one per simulated cell.
   sampletag_assignments.txt CB (concatenated) TAB sampletag_name, one per cell (if --sampletag_fa).
   sim_R1.fq.gz              R1 reads: BD Rhapsody dT barcode structure with random diversity inserts.
+                            Headers carry ' 1:N:0:0' Illumina read-pair tag so mist_run_qualclalign.py
+                            can pair files by metadata without falling back to sequence comparison.
   sim_R2.fq.gz              R2 reads: cDNA (gene sequence) + sampletag reads appended.
+                            Headers carry ' 2:N:0:0' Illumina read-pair tag.
 
 Barcode structure in R1:
   [diversity_insert (none|A|GT|TCA)] [CB1(9)] GTGA [CB2(9)] GACA [CB3(9)] [UMI(8)] [polyT(20)]
@@ -159,8 +162,8 @@ def write_fastqs(cell_barcodes, gene_seqs, n_umis, rng, r1_path, r2_path):
                 for umi in umis:
                     r1 = make_r1(cb1, cb2, cb3, umi, rng)
                     tag = f'sim{read_idx}'
-                    fq1.write(f'@{tag}\n{r1}\n+\n{"I" * len(r1)}\n')
-                    fq2.write(f'@{tag}\n{gseq}\n+\n{"I" * len(gseq)}\n')
+                    fq1.write(f'@{tag} 1:N:0:0\n{r1}\n+\n{"I" * len(r1)}\n')
+                    fq2.write(f'@{tag} 2:N:0:0\n{gseq}\n+\n{"I" * len(gseq)}\n')
                     read_idx += 1
     return read_idx
 
@@ -188,8 +191,8 @@ def append_empty_droplets(cell_barcodes_set, n_empty, gene_seqs, read_len, rng,
                 umi = rand_seq(8, rng)
                 r1 = make_r1(cb1, cb2, cb3, umi, rng)
                 tag = f'emp{read_idx}'
-                fq1.write(f'@{tag}\n{r1}\n+\n{"I" * len(r1)}\n')
-                fq2.write(f'@{tag}\n{gseq}\n+\n{"I" * len(gseq)}\n')
+                fq1.write(f'@{tag} 1:N:0:0\n{r1}\n+\n{"I" * len(r1)}\n')
+                fq2.write(f'@{tag} 2:N:0:0\n{gseq}\n+\n{"I" * len(gseq)}\n')
                 read_idx += 1
             added += 1
     return read_idx
@@ -206,8 +209,8 @@ def append_sampletag_fastqs(cell_barcodes, sampletags, n_st_reads, rng,
             for umi in umis:
                 r1 = make_r1(cb1, cb2, cb3, umi, rng)
                 tag = f'st{read_idx}'
-                fq1.write(f'@{tag}\n{r1}\n+\n{"I" * len(r1)}\n')
-                fq2.write(f'@{tag}\n{st_seq}\n+\n{"I" * len(st_seq)}\n')
+                fq1.write(f'@{tag} 1:N:0:0\n{r1}\n+\n{"I" * len(r1)}\n')
+                fq2.write(f'@{tag} 2:N:0:0\n{st_seq}\n+\n{"I" * len(st_seq)}\n')
                 read_idx += 1
     return read_idx
 
