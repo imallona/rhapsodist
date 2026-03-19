@@ -1252,7 +1252,7 @@ if _has_sbg:
                         'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
                 if get_sbg_bead_version_by_name(wildcards.sample) == 'EnhV2' else ''
             ),
-            log:
+        log:
             op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_sbg.log')
         benchmark:
             op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_sbg.txt')
