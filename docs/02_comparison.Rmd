@@ -98,7 +98,7 @@ if (n_exp > 0) {
 p
 ```
 
-## Ground-truth barcode recovery (simulated data)
+## Ground-truth barcode recovery
 
 ```{r ground-truth, eval=nchar(params$barcodes_file) > 0}
 truth <- readLines(params$barcodes_file)

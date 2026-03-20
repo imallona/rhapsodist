@@ -79,7 +79,6 @@ if config.get('use_simulated', False):
         output:
             html = op.join(config['working_dir'], 'simulation_validation.html')
         params:
-            Rbin    = config['Rbin'],
             n_cells = config.get('sim_n_cells', 100),
             n_genes = config.get('sim_n_genes', 100),
             n_umis  = config.get('sim_n_umis',  100)
@@ -89,7 +88,7 @@ if config.get('use_simulated', False):
             op.join(config['working_dir'], 'benchmarks', 'validate_simulation.txt')
         shell:
             """
-            {params.Rbin} --vanilla -e \
+            R --vanilla -e \
               'rmarkdown::render(
                   "{input.script}",
                   output_file  = "{output.html}",

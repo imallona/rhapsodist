@@ -59,10 +59,11 @@ _sampletag_reports = (
            sample = get_sample_names())
 )
 
-## SBG is enabled for a run when at least one sample has sbg_cwl or sbg_mex_dir
-## configured (per-sample uses: block or top-level config fallback).
-_sbg_samples = [s for s in get_sample_names() if sample_has_sbg(s)]
-_has_sbg = bool(_sbg_samples)
+_has_sbg = 'sbg' in get_aligners()
+_sbg_samples = get_sample_names() if _has_sbg else []
+
+if _has_sbg and not config.get('sbg_cwl'):
+    raise ValueError("'sbg' is in the aligner list but 'sbg_cwl' is not configured.")
 
 _sbg_sce_targets = (
     expand(op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds'),
@@ -170,7 +171,6 @@ rule star_index:
     params:
         processing_path = op.join(config['working_dir'], 'data', 'index', 'star/'),
         nthreads = config['nthreads'],
-        star = config['STAR'],
         sjdbOverhang = config['sjdbOverhang'],
         indexNbases = config.get('genomeSAindexNbases', 14)
     log:
@@ -182,7 +182,7 @@ rule star_index:
     mkdir -p {params.processing_path}
     # cd {params.processing_path}
 
-    ({params.star} --runThreadN {params.nthreads} \
+    (STAR --runThreadN {params.nthreads} \
      --runMode genomeGenerate \
      --sjdbGTFfile {input.gtf} \
      --genomeDir {params.processing_path} \
@@ -233,7 +233,6 @@ rule starsolo:
         threads = min(10, workflow.cores),
         path = op.join(config['working_dir'], 'starsolo', "{sample}/"),
         index_path = op.join(config['working_dir'] , 'data', 'index', 'star'),
-        STAR = config['STAR'],
         # num_cells = get_expected_cells_by_name("{sample}"),
         tmp = op.join(config['working_dir'], 'tmp_starsolo_{sample}'),
         maxmem = config['max_mem_mb'] * 1024 * 1024,
@@ -249,7 +248,7 @@ rule starsolo:
    rm -rf {params.tmp} {params.path}/Solo.out
    mkdir -p {params.path} 
 
-   {params.STAR} --runThreadN {params.threads} \
+   STAR --runThreadN {params.threads} \
         --genomeDir {params.index_path} \
         --readFilesCommand zcat \
         --outFileNamePrefix {params.path} \
@@ -331,25 +330,6 @@ rule starsolo:
 #         samtools index -@ {threads} {input.bam}     
 #         """
 
-## yes the log is considered an output - to pass as a flag
-## R_LIBS are conda's if run in conda, but /home/rock/R_LIBs if run in docker, and user's if run directly
-rule install_r_deps:
-    conda:
-        op.join('envs', 'all_in_one.yaml')
-    input:
-        script = op.join(config['repo_path'], 'src', 'installs.R')
-    output:
-        log = op.join(config['working_dir'], 'logs', 'installs.log')
-    params:
-        working_dir = config['working_dir'],
-        Rbin = config['Rbin'],
-    benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'r_install.txt')
-    shell:
-        """
-        {params.Rbin} -q --no-save --no-restore --slave \
-             -f {input.script} &> {output.log}
-         """
 
 # todo fixme so it gets the filtered mtx
 rule generate_sce_starsolo:
@@ -360,14 +340,12 @@ rule generate_sce_starsolo:
                                'Gene', 'filtered', 'matrix.mtx'),
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_star.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'starsolo', '{sample}', '{sample}_starsolo_sce.rds')
     params:
         align_path = op.join(config['working_dir']),
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
-        Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_star.log')
     benchmark:
@@ -377,7 +355,7 @@ rule generate_sce_starsolo:
         ## this is unrelated to the bamgeneration; fixes starsolo's default permissions
         chmod -R ug+rwX $(dirname {input.bam})
 
-        {params.Rbin} -q --no-save --no-restore --slave \
+        R -q --no-save --no-restore --slave \
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
@@ -392,20 +370,18 @@ rule generate_sce_kallisto:
         flag = op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx'),
         # gtf = config['gtf'],
         script = op.join(config['repo_path'], 'src', 'generate_sce_kallisto.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'kallisto', '{sample}', '{sample}_kallisto_sce.rds')
     params:
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
-        Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_kallisto.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_kallisto.txt')
     shell:
         """
-        {params.Rbin} -q --no-save --no-restore --slave \
+        R -q --no-save --no-restore --slave \
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
@@ -418,20 +394,18 @@ rule generate_sce_alevin:
     input:
         flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_alevin.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
     params:
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
-        Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_alevin.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_alevin.txt')
     shell:
         """
-        {params.Rbin} -q --no-save --no-restore --slave \
+        R -q --no-save --no-restore --slave \
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
@@ -453,10 +427,9 @@ rule generate_sce_alevin:
 #         align_path = op.join(config['working_dir'], 'tasseq'),
 #         working_dir = config['working_dir'],
 #         sample = lambda wildcards: wildcards.sample,
-#         Rbin = config['Rbin']
-#     shell:
+# #     shell:
 #         """
-#         {params.Rbin} -q --no-save --no-restore --slave \
+#         R -q --no-save --no-restore --slave \
 #              -f {input.script} --args \
 #              --sample {wildcards.sample} \
 #              --working_dir {params.working_dir} \
@@ -471,7 +444,6 @@ rule render_descriptive_report:
         script = op.join(config['repo_path'], 'src', 'generate_descriptive_singlecell_report.Rmd'),
         sces = expand(op.join(config['working_dir'], '{{aligner}}', '{sample}', '{sample}_{{aligner}}_sce.rds'),
                       sample = get_sample_names()),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log'),
         counts = ([] if config.get('skip_sampletags', False) else
                   expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
                          sample = get_sample_names()))
@@ -487,12 +459,11 @@ rule render_descriptive_report:
         path = op.join(config['working_dir'], '{aligner}', '{sample}'),
         working_dir = op.join(config['working_dir'], '{aligner}'),
         sample = lambda wildcards: wildcards.sample,
-        Rbin = config['Rbin']
     shell:
         """
         cd {params.working_dir}
         mkdir -p {params.path}
-        {params.Rbin} --vanilla -e 'rmarkdown::render(\"{input.script}\", 
+        R --vanilla -e 'rmarkdown::render(\"{input.script}\", 
           output_file = \"{output.html}\", 
           params = list(path = \"{params.path}\"))' &> {log}
         """
@@ -873,7 +844,6 @@ rule render_sampletag_report:
     input:
         counts   = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
         script   = op.join(config['repo_path'], 'src', 'generate_sampletag_report.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html')
     log:
@@ -881,14 +851,13 @@ rule render_sampletag_report:
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_sampletag_report.txt')
     params:
-        Rbin = config['Rbin'],
         assignments = lambda wildcards: (
             op.join(config['working_dir'], 'simulate', 'sampletag_assignments.txt')
             if config.get('use_simulated', False) else ''
         )
     shell:
         """
-        {params.Rbin} --vanilla -e \
+        R --vanilla -e \
           'rmarkdown::render("{input.script}",
             output_file = "{output.html}",
             params = list(
@@ -1036,22 +1005,18 @@ rule alevin_align:
 ##   edit a separate yml file.
 ##
 ##   Reference archive handling:
-##   - Simulated data (use_simulated: true): automatically assembled from the
-##     simulated STAR index and GTF following the BD Rhapsody format:
+##   - Simulated data (use_simulated: true): assembled from the simulated STAR
+##     index and GTF following the BD Rhapsody format:
 ##       BD_Rhapsody_Reference_Files/
 ##         star_index/   [STAR genomeGenerate output]
 ##         *.gtf
 ##   - Real data, sbg_reference_url set: downloaded from the BD public S3 bucket
 ##       http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
-##   - Real data, sbg_reference_archive set: path to a pre-built archive
+##   - Real data, sbg_reference_archive set: path to a pre-built local archive
+##   - Real data, neither set: built automatically from the STAR index and GTF
 ##
-## Ingest mode (sbg_mex_dir is set, sbg_cwl is not):
-##   Reads pre-computed MEX output (features.tsv.gz, matrix.mtx.gz,
-##   barcodes.tsv.gz). Use per-sample subdirectories sbg_mex_dir/<sample>/
-##   when processing multiple samples.
-##
-## In both modes generate_sce_sbg decodes numeric BD barcode indices to 27-bp
-## sequences via scripts/index2barcode.R.
+## generate_sce_sbg decodes numeric BD barcode indices to 27-bp sequences
+## via scripts/index2barcode.R.
 
 ## Simulated reference: built from the simulated STAR index + GTF.
 ## Required format documented at:
@@ -1084,10 +1049,10 @@ if config.get('use_simulated') and any(get_sbg_cwl_by_name(s) for s in get_sampl
             """
 
 
-## Real-data reference: download from the BD public S3 bucket.
-## Set sbg_reference_url in config (or sample uses:) to the specific archive, e.g.:
-##   http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/
-##     Rhapsody_WTA_Analysis_Pipeline_Reference_Files_GRCh38_2022-09_gencode.v41.tar.gz
+## Real-data reference: three modes (mutually exclusive, evaluated at parse time):
+##   1. sbg_reference_url set   → download_sbg_reference (curl from URL)
+##   2. sbg_reference_archive set → use pre-built archive, no Snakemake tracking
+##   3. neither set             → build_sbg_reference_real (package STAR index + GTF)
 _any_sbg_ref_url = (
     config.get('sbg_reference_url') or
     any(_sbg_uses(s, 'sbg_reference_url') for s in get_sample_names())
@@ -1097,6 +1062,10 @@ _global_sbg_ref_url = config.get('sbg_reference_url') or next(
      if _sbg_uses(s, 'sbg_reference_url')),
     ''
 )
+_any_sbg_ref_archive = any(
+    get_sbg_reference_by_name(s) for s in get_sample_names()
+)
+
 if _any_sbg_ref_url and not config.get('use_simulated'):
     rule download_sbg_reference:
         output:
@@ -1114,12 +1083,41 @@ if _any_sbg_ref_url and not config.get('use_simulated'):
             curl -fsSL -o {output.archive} "{params.url}" &> {log}
             """
 
+## Build the SBG reference locally from the existing STAR index and GTF.
+## Same layout as build_sbg_reference_simulated; triggered when sbg_cwl is
+## configured but neither sbg_reference_url nor sbg_reference_archive is set.
+if (not config.get('use_simulated') and _has_sbg
+        and not _any_sbg_ref_url and not _any_sbg_ref_archive):
+    rule build_sbg_reference_real:
+        conda:
+            op.join('envs', 'all_in_one.yaml')
+        input:
+            star_flag = op.join(config['working_dir'], 'data', 'index', 'star', 'SAindex'),
+            gtf = config['gtf']
+        output:
+            archive = op.join(config['working_dir'], 'sbg_reference',
+                              'rhapsody_reference.tar.gz')
+        params:
+            star_index_dir = op.join(config['working_dir'], 'data', 'index', 'star'),
+            staging = op.join(config['working_dir'], 'sbg_reference', 'staging')
+        log:
+            op.join(config['working_dir'], 'logs', 'build_sbg_reference_real.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'build_sbg_reference_real.txt')
+        shell:
+            """
+            rm -rf {params.staging}
+            mkdir -p {params.staging}/BD_Rhapsody_Reference_Files/star_index
+            cp {params.star_index_dir}/* {params.staging}/BD_Rhapsody_Reference_Files/star_index/
+            cp {input.gtf} {params.staging}/BD_Rhapsody_Reference_Files/
+            tar -czf {output.archive} -C {params.staging} BD_Rhapsody_Reference_Files 2> {log}
+            rm -rf {params.staging}
+            """
 
-## run_sbg_cwl fires per sample that has sbg_cwl configured.
+
+## run_sbg_cwl fires for every sample when 'sbg' is in the aligner list.
 ## At parse time we decide which reference file to track based on the mode.
-for _sbg_sample in get_sample_names():
-    if not get_sbg_cwl_by_name(_sbg_sample):
-        continue
+for _sbg_sample in _sbg_samples:
 
     _sbg_ref_url = (
         _sbg_uses(_sbg_sample, 'sbg_reference_url') or config.get('sbg_reference_url')
@@ -1133,14 +1131,14 @@ for _sbg_sample in get_sample_names():
         _ref_path = op.join(config['working_dir'], 'sbg_reference',
                             'rhapsody_reference.tar.gz')
         _ref_input = [_ref_path]
-    else:
-        _ref_path = get_sbg_reference_by_name(_sbg_sample) or ''
-        if not _ref_path:
-            raise ValueError(
-                f"sbg_cwl is set for sample '{_sbg_sample}' but no reference was "
-                "configured. Set 'sbg_reference_url' or 'sbg_reference_archive'."
-            )
+    elif get_sbg_reference_by_name(_sbg_sample):
+        _ref_path = get_sbg_reference_by_name(_sbg_sample)
         _ref_input = []  # pre-existing archive; not tracked by Snakemake
+    else:
+        ## auto-build from local STAR index + GTF (build_sbg_reference_real)
+        _ref_path = op.join(config['working_dir'], 'sbg_reference',
+                            'rhapsody_reference.tar.gz')
+        _ref_input = [_ref_path]
 
     rule:
         name: f"run_sbg_cwl_{_sbg_sample}"
@@ -1151,8 +1149,10 @@ for _sbg_sample in get_sample_names():
             r2 = get_cdna_by_name(_sbg_sample),
             ref = _ref_input
         output:
-            matrix = op.join(config['working_dir'], 'sbg', _sbg_sample,
-                             'unfiltered_MEX_output', 'matrix.mtx.gz')
+            matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
+                                        'unfiltered_MEX_output', 'matrix.mtx.gz'),
+            matrix_filtered = op.join(config['working_dir'], 'sbg', _sbg_sample,
+                                      'filtered_MEX_output', 'matrix.mtx.gz')
         params:
             cwl = get_sbg_cwl_by_name(_sbg_sample),
             outdir = op.join(config['working_dir'], 'sbg', _sbg_sample),
@@ -1196,16 +1196,25 @@ ENDOFYML
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
 
-            ## cwl-runner places the unfiltered MEX output as a zip in --outdir.
-            ## Unzip into the expected unfiltered_MEX_output/ subdirectory.
-            MEX_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
-            if [ -z "$MEX_ZIP" ] || [ ! -f "$MEX_ZIP" ]; then
+            ## cwl-runner places MEX outputs as zips in --outdir.
+            ## Unzip both filtered and unfiltered into their respective subdirectories.
+            UNFILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
+            if [ -z "$UNFILTERED_ZIP" ] || [ ! -f "$UNFILTERED_ZIP" ]; then
                 echo "ERROR: expected unfiltered MEX zip not found in {params.outdir}" >> {log}
                 ls -l {params.outdir} >> {log} 2>&1
                 exit 1
             fi
             mkdir -p {params.outdir}/unfiltered_MEX_output
-            unzip -o "$MEX_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
+            unzip -o "$UNFILTERED_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
+
+            FILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_MEX.zip 2>/dev/null | grep -v Unfiltered | head -1)
+            if [ -z "$FILTERED_ZIP" ] || [ ! -f "$FILTERED_ZIP" ]; then
+                echo "ERROR: expected filtered MEX zip not found in {params.outdir}" >> {log}
+                ls -l {params.outdir} >> {log} 2>&1
+                exit 1
+            fi
+            mkdir -p {params.outdir}/filtered_MEX_output
+            unzip -o "$FILTERED_ZIP" -d {params.outdir}/filtered_MEX_output >> {log} 2>&1
             """
 
 
@@ -1214,45 +1223,32 @@ if _has_sbg:
         conda:
             op.join('envs', 'all_in_one.yaml')
         input:
-            ## In run mode, depend on the CWL matrix output so Snakemake
-            ## chains run_sbg_cwl -> generate_sce_sbg correctly.
-            mex_flag = lambda wildcards: (
-                [op.join(config['working_dir'], 'sbg', wildcards.sample,
-                         'unfiltered_MEX_output', 'matrix.mtx.gz')]
-                if get_sbg_cwl_by_name(wildcards.sample) else []
-            ),
+            mex_flag = lambda wildcards: op.join(
+                config['working_dir'], 'sbg', wildcards.sample,
+                'filtered_MEX_output', 'matrix.mtx.gz'),
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
-            installs = op.join(config['working_dir'], 'logs', 'installs.log'),
             index2barcode = op.join(config['repo_path'], 'scripts', 'index2barcode.R')
         output:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
         params:
-            ## run mode: MEX is inside the CWL outdir
-            ## ingest mode: sbg_mex_dir per-sample subdir or flat
-            mex_dir = lambda wildcards: (
-                op.join(config['working_dir'], 'sbg', wildcards.sample,
-                        'unfiltered_MEX_output')
-                if get_sbg_cwl_by_name(wildcards.sample) else (
-                    op.join(get_sbg_mex_dir_by_name(wildcards.sample), wildcards.sample)
-                    if op.isdir(op.join(get_sbg_mex_dir_by_name(wildcards.sample) or '',
-                                       wildcards.sample))
-                    else (get_sbg_mex_dir_by_name(wildcards.sample) or '')
-                )
-            ),
+            mex_dir = lambda wildcards: op.join(
+                config['working_dir'], 'sbg', wildcards.sample, 'filtered_MEX_output'),
             bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),
             whitelist_dir = lambda wildcards: (
                 op.join(config['repo_path'], 'data',
                         'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
                 if get_sbg_bead_version_by_name(wildcards.sample) == 'EnhV2' else ''
             ),
-            Rbin = config['Rbin']
+            features_map = lambda wildcards: op.join(
+                config['working_dir'], 'starsolo', wildcards.sample,
+                'Solo.out', 'Gene', 'filtered', 'features.tsv'),
         log:
             op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_sbg.log')
         benchmark:
             op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_sbg.txt')
         shell:
             """
-            {params.Rbin} -q --no-save --no-restore --slave \
+            R -q --no-save --no-restore --slave \
                  -f {input.script} --args \
                  --sample {wildcards.sample} \
                  --mex_dir {params.mex_dir} \
@@ -1260,6 +1256,7 @@ if _has_sbg:
                  --bead_version {params.bead_version} \
                  --index2barcode_script {input.index2barcode} \
                  $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
+                 $([ -f "{params.features_map}" ] && echo "--features_map {params.features_map}") \
                  &> {log}
             """
 
@@ -1278,7 +1275,7 @@ rule render_comparison_report:
             ) + (
                 [op.join(config['working_dir'], 'sbg', wildcards.sample,
                          wildcards.sample + '_sbg_sce.rds')]
-                if _has_sbg and sample_has_sbg(wildcards.sample) else []
+                if _has_sbg else []
             )
         ),
         barcodes = (
@@ -1290,14 +1287,13 @@ rule render_comparison_report:
             if config.get('use_simulated', False) else []
         ),
         doc = op.join(config['repo_path'], 'docs', '02_comparison.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], '{sample}_comparison.html')
     params:
         working_dir = config['working_dir'],
         sample = lambda wildcards: wildcards.sample,
         aligners = ','.join(get_aligners()),
-        has_sbg = lambda wildcards: 'true' if _has_sbg and sample_has_sbg(wildcards.sample) else 'false',
+        has_sbg = 'true' if _has_sbg else 'false',
         n_expected_cells = (config.get('sim_n_cells', 0)
                             if config.get('use_simulated', False) else 0),
         n_umis_per_cell = (config.get('sim_n_umis', 0)
@@ -1306,14 +1302,13 @@ rule render_comparison_report:
                          if config.get('use_simulated', False) else ''),
         true_mex_dir = (op.join(config['working_dir'], 'simulate', 'true_mex')
                         if config.get('use_simulated', False) else ''),
-        Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', '{sample}_comparison_report.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_comparison_report.txt')
     shell:
         """
-        {params.Rbin} --vanilla -e '
+        R --vanilla -e '
           rmarkdown::render(
             "{input.doc}",
             output_file  = "{output.html}",
@@ -1341,21 +1336,19 @@ rule render_benchmarks_report:
         ),
         sbg_sce = _sbg_sce_targets,
         doc = op.join(config['repo_path'], 'docs', '03_benchmarks.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], 'benchmarks_report.html')
     params:
         working_dir = config['working_dir'],
         n_expected_cells = (config.get('sim_n_cells', 0)
                             if config.get('use_simulated', False) else 0),
-        Rbin = config['Rbin']
     log:
         op.join(config['working_dir'], 'logs', 'benchmarks_report.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'benchmarks_report.txt')
     shell:
         """
-        {params.Rbin} --vanilla -e '
+        R --vanilla -e '
           rmarkdown::render(
             "{input.doc}",
             output_file  = "{output.html}",
@@ -1388,7 +1381,6 @@ rule render_benchmarks_report:
 #         threads = min(10, workflow.cores),
 #         path = op.join(config['working_dir'], 'tasseq', "{sample}/"),
 #         index_path = op.join(config['working_dir'] , 'data', 'index'),
-#         STAR = config['STAR'],
 #         # num_cells = get_expected_cells_by_name("{sample}"),
 #         tmp = op.join(config['working_dir'], 'tmp_tasseq_{sample}'),
 #         maxmem = config['max_mem_mb'] * 1024 * 1024,
@@ -1399,7 +1391,7 @@ rule render_benchmarks_report:
 #         rm -rf {params.tmp}
 #         mkdir -p {params.path} 
 
-#         {params.STAR} --runThreadN {params.threads} \
+#         STAR --runThreadN {params.threads} \
 #           --genomeDir {params.index_path} \
 #         --readFilesIn {input.cdna} {input.cbumi} \
 #         --outFileNamePrefix {params.path} \

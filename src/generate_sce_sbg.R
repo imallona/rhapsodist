@@ -37,6 +37,9 @@ parser$add_argument('--index2barcode_script',
 parser$add_argument('--whitelist_dir',
     type = 'character', default = NULL,
     help = 'Directory with BD_CLS1.txt, BD_CLS2.txt, BD_CLS3.txt (required for EnhV2)')
+parser$add_argument('--features_map',
+    type = 'character', default = NULL,
+    help = 'STARsolo features.tsv (gene_id<TAB>gene_name<TAB>...) used to remap SBG gene symbols to Ensembl IDs')
 
 args <- parser$parse_args()
 
@@ -85,6 +88,22 @@ sce <- SingleCellExperiment(assays = list(counts = counts),
 ## Decode numeric barcode indices → 27-bp concatenated CB1·CB2·CB3 sequences
 colnames(sce) <- sapply(colnames(sce), index_to_sequence,
                         bead_version = args$bead_version)
+
+## Remap SBG gene symbols to Ensembl IDs using STARsolo features.tsv so that
+## rownames match the other aligners in the comparison report.
+if (!is.null(args$features_map) && file.exists(args$features_map)) {
+    feat <- read.table(args$features_map, header = FALSE, sep = '\t',
+                       stringsAsFactors = FALSE)
+    ## col 1 = gene_id (Ensembl), col 2 = gene_name (symbol)
+    name_to_id <- setNames(feat$V1, feat$V2)
+    remapped <- name_to_id[rownames(sce)]
+    valid <- !is.na(remapped)
+    cat(sprintf('Gene symbol remapping: %d / %d genes matched to Ensembl IDs\n',
+                sum(valid), nrow(sce)))
+    rownames(sce)[valid] <- remapped[valid]
+} else {
+    cat('No features_map provided; keeping gene symbols as rownames\n')
+}
 
 dir.create(dirname(args$output_fn), recursive = TRUE, showWarnings = FALSE)
 saveRDS(sce, args$output_fn)

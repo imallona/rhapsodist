@@ -1,7 +1,3 @@
-R: "R"
-Rbin: "R"
-STAR: STAR
-
 repo_path: '.'
 
 nthreads: 4
@@ -44,17 +40,17 @@ sim_n_st_reads: 100
 
 ## SevenBridges / BD Rhapsody official pipeline (optional)
 ## Set sbg_cwl to the CWL workflow file. Place it under docker/cwl/ (gitignored).
-## For real data, provide sbg_reference_url or sbg_reference_archive (mutually exclusive).
-## For ingest mode (skip CWL re-run), provide sbg_mex_dir with pre-computed MEX output.
+## For real data, optionally set sbg_reference_url or sbg_reference_archive.
+## Without either, the reference is built from the STAR index and GTF.
 sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
 # sbg_reference_url: "http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/Rhapsody-WTA/Rhapsody_WTA_Analysis_Pipeline_Reference_Files_GRCh38_2022-09_gencode.v41.tar.gz"
 # sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
-# sbg_mex_dir: /path/to/sbg/mex_output
 
 aligner:
   - starsolo
   - kallisto
   - alevin
+  - sbg
 
 samples:
   - name: simulated

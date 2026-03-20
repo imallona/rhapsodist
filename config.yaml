@@ -1,10 +1,3 @@
-## software paths - adjust if not on PATH
-## If R packages are in a non-default library, set R_LIBS_USER, e.g.:
-##   R: "R_LIBS_USER=/path/to/rlibs R"
-R: "R"
-Rbin: "R"
-STAR: STAR
-
 repo_path: '.'
 
 ## run limits
@@ -37,6 +30,12 @@ transcriptome: /path/to/transcriptome.fa.gz
 sjdbOverhang: 70
 
 aligner: ['starsolo', 'kallisto', 'alevin']
+# To also run the BD Rhapsody official pipeline, add 'sbg' to the list above
+# and set sbg_cwl to the CWL workflow file:
+# sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+# The reference is built automatically from STAR index + GTF unless you set:
+# sbg_reference_url: "http://..."      # download from BD S3
+# sbg_reference_archive: /path/to/archive.tar.gz  # use pre-built local copy
 
 samples:
   - name: my_sample

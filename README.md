@@ -20,10 +20,8 @@ snakemake --use-conda --cores 10 --configfile config.yaml
 
 Copy `config.yaml` and fill in the fields below before running on real data.
 
-**Paths and resources**
+**Resources**
 
-- `Rbin`: path to the R binary (e.g. `/usr/bin/R`)
-- `STAR`: path to the STAR binary, or `STAR` if on `PATH`
 - `nthreads`: number of CPU threads
 - `max_mem_mb`: RAM limit in MB
 - `working_dir`: absolute path where outputs will be written
@@ -38,7 +36,7 @@ Copy `config.yaml` and fill in the fields below before running on real data.
 
 **Aligners**
 
-- `aligner`: list of one or more aligners to run, e.g. `['starsolo', 'kallisto', 'alevin']`
+- `aligner`: list of aligners to run — any combination of `starsolo`, `kallisto`, `alevin`, `sbg`
 
 **Samples**
 
@@ -54,7 +52,20 @@ samples:
 
 **BD Rhapsody official pipeline (optional)**
 
-To also run the SBG/CWL pipeline, set `sbg_cwl` to the CWL workflow file path. For real data, provide either `sbg_reference_url` (URL to download the reference archive) or `sbg_reference_archive` (path to a local copy). For ingest mode (skip re-running CWL), set `sbg_mex_dir` to a directory of pre-computed MEX output.
+Add `'sbg'` to the `aligner` list and set `sbg_cwl` to the CWL workflow file:
+
+```yaml
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+```
+
+The reference archive is built automatically from the STAR index and GTF. To use a pre-built BD archive instead:
+
+```yaml
+sbg_reference_url: "http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com/..."
+# or
+sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
+```
 
 ## Contributors
 
