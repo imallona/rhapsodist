@@ -74,8 +74,7 @@ if config.get('use_simulated', False):
             sce      = op.join(config['working_dir'], 'starsolo', _sim_sample,
                                f'{_sim_sample}_starsolo_sce.rds'),
             barcodes = op.join(_SIM_DIR, 'cell_barcodes.txt'),
-            script   = op.join(config['repo_path'], 'src', 'validate_simulation.Rmd'),
-            installs = op.join(config['working_dir'], 'logs', 'installs.log')
+            script   = op.join(config['repo_path'], 'src', 'validate_simulation.Rmd')
         output:
             html = op.join(config['working_dir'], 'simulation_validation.html')
         params:
