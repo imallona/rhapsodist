@@ -1239,6 +1239,9 @@ if _has_sbg:
                         'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
                 if get_sbg_bead_version_by_name(wildcards.sample) == 'EnhV2' else ''
             ),
+            features_map = lambda wildcards: op.join(
+                config['working_dir'], 'starsolo', wildcards.sample,
+                'Solo.out', 'Gene', 'filtered', 'features.tsv'),
         log:
             op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_sbg.log')
         benchmark:
@@ -1253,6 +1256,7 @@ if _has_sbg:
                  --bead_version {params.bead_version} \
                  --index2barcode_script {input.index2barcode} \
                  $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
+                 $([ -f "{params.features_map}" ] && echo "--features_map {params.features_map}") \
                  &> {log}
             """
 
