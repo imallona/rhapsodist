@@ -330,24 +330,6 @@ rule starsolo:
 #         samtools index -@ {threads} {input.bam}     
 #         """
 
-## yes the log is considered an output - to pass as a flag
-## R_LIBS are conda's if run in conda, but /home/rock/R_LIBs if run in docker, and user's if run directly
-rule install_r_deps:
-    conda:
-        op.join('envs', 'all_in_one.yaml')
-    input:
-        script = op.join(config['repo_path'], 'src', 'installs.R')
-    output:
-        log = op.join(config['working_dir'], 'logs', 'installs.log')
-    params:
-        working_dir = config['working_dir'],
-    benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'r_install.txt')
-    shell:
-        """
-        R -q --no-save --no-restore --slave \
-             -f {input.script} &> {output.log}
-         """
 
 # todo fixme so it gets the filtered mtx
 rule generate_sce_starsolo:
@@ -358,7 +340,6 @@ rule generate_sce_starsolo:
                                'Gene', 'filtered', 'matrix.mtx'),
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_star.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'starsolo', '{sample}', '{sample}_starsolo_sce.rds')
     params:
@@ -389,7 +370,6 @@ rule generate_sce_kallisto:
         flag = op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx'),
         # gtf = config['gtf'],
         script = op.join(config['repo_path'], 'src', 'generate_sce_kallisto.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'kallisto', '{sample}', '{sample}_kallisto_sce.rds')
     params:
@@ -414,7 +394,6 @@ rule generate_sce_alevin:
     input:
         flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_alevin.R'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
     params:
@@ -465,7 +444,6 @@ rule render_descriptive_report:
         script = op.join(config['repo_path'], 'src', 'generate_descriptive_singlecell_report.Rmd'),
         sces = expand(op.join(config['working_dir'], '{{aligner}}', '{sample}', '{sample}_{{aligner}}_sce.rds'),
                       sample = get_sample_names()),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log'),
         counts = ([] if config.get('skip_sampletags', False) else
                   expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
                          sample = get_sample_names()))
@@ -866,7 +844,6 @@ rule render_sampletag_report:
     input:
         counts   = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
         script   = op.join(config['repo_path'], 'src', 'generate_sampletag_report.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html')
     log:
@@ -1250,7 +1227,6 @@ if _has_sbg:
                 config['working_dir'], 'sbg', wildcards.sample,
                 'filtered_MEX_output', 'matrix.mtx.gz'),
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
-            installs = op.join(config['working_dir'], 'logs', 'installs.log'),
             index2barcode = op.join(config['repo_path'], 'scripts', 'index2barcode.R')
         output:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
@@ -1307,7 +1283,6 @@ rule render_comparison_report:
             if config.get('use_simulated', False) else []
         ),
         doc = op.join(config['repo_path'], 'docs', '02_comparison.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], '{sample}_comparison.html')
     params:
@@ -1357,7 +1332,6 @@ rule render_benchmarks_report:
         ),
         sbg_sce = _sbg_sce_targets,
         doc = op.join(config['repo_path'], 'docs', '03_benchmarks.Rmd'),
-        installs = op.join(config['working_dir'], 'logs', 'installs.log')
     output:
         html = op.join(config['working_dir'], 'benchmarks_report.html')
     params:

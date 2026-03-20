@@ -4,6 +4,7 @@ suppressPackageStartupMessages( {
   library(SingleCellExperiment)
   library(argparse)
   library(Matrix)
+  library(DropletUtils)
 })
 
 parser <- ArgumentParser(description='Builds a WTA SingleCellExperiment object for a given sample - from Kallisto.')
@@ -30,43 +31,24 @@ counts <- Matrix::readMM(file.path(wd, 'bustools', id, 'output.mtx'))
 gene_ids <- readLines(file.path(wd, 'bustools', id, 'output.genes.txt'))
 barcodes <- readLines(file.path(wd, 'bustools', id, 'output.barcodes.txt'))
 
-rownames(counts) <- barcodes
-colnames(counts) <- gene_ids
-
-# Cell filtering: elbow detection in log-log barcode rank space.
-# A min-count pre-filter (>= 5 UMIs) is applied before elbow detection to
-# ignore the massive tail of likely-empty barcodes from unfiltered bustools
-# output, then the maximum-distance-from-diagonal method finds the knee.
-lib_sizes <- Matrix::rowSums(counts)
-nonzero <- lib_sizes[lib_sizes > 0]
-if (length(nonzero) == 0L) {
-    stop("No non-zero library sizes detected; kallisto output appears empty or invalid.")
-}
-candidates <- nonzero[nonzero >= 5]
-if (length(candidates) < 10L) {
-    candidates <- nonzero
-}
-ranked <- sort(candidates, decreasing = TRUE)
-n <- length(ranked)
-log_rank <- log10(seq_len(n))
-log_count <- log10(ranked)
-x1 <- log_rank[1]; y1 <- log_count[1]
-x2 <- log_rank[n]; y2 <- log_count[n]
-dx <- x2 - x1; dy <- y2 - y1
-dist <- (dy * log_rank - dx * log_count + x2*y1 - y2*x1) / sqrt(dy^2 + dx^2)
-knee_idx <- which.max(dist)
-knee_threshold <- ranked[knee_idx]
-n_before <- length(lib_sizes)
-keep <- lib_sizes >= knee_threshold
-cat(sprintf('Elbow threshold: %g counts  Kept %d / %d barcodes\n',
-            knee_threshold, sum(keep), n_before))
-
-counts <- counts[keep, ]
-barcodes <- barcodes[keep]
-
+# bustools output: rows = barcodes, cols = genes; SCE convention: rows = genes
 sce <- SingleCellExperiment(list(counts = t(counts)),
                             colData = DataFrame(Barcode = barcodes),
                             rowData = DataFrame(ID = gene_ids, SYMBOL = gene_ids))
 rownames(sce) <- gene_ids
+colnames(sce) <- barcodes
+
+# Cell filtering via DropletUtils::barcodeRanks().
+# bustools count produces unfiltered output (no bustools correct step), so
+# the matrix contains all barcodes including empty droplets.  barcodeRanks
+# fits a smooth rank-count curve and returns the inflection point, which is
+# more robust on the large unfiltered pools than a simple diagonal heuristic.
+br <- barcodeRanks(counts(sce))
+knee_threshold <- metadata(br)$inflection
+n_before <- ncol(sce)
+keep <- colSums(counts(sce)) >= knee_threshold
+cat(sprintf('DropletUtils inflection threshold: %g counts  Kept %d / %d barcodes\n',
+            knee_threshold, sum(keep), n_before))
+sce <- sce[, keep]
 
 saveRDS(object = sce, file = args$output_fn)
