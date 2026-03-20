@@ -184,7 +184,8 @@ plots <- lapply(method_pairs, function(pair) {
                                "  |  mean |diff| = ", mad_val),
              x = pair[1],
              y = pair[2]) +
-        theme_bw(base_size = 10)
+        theme_bw(base_size = 10) +
+        theme(aspect.ratio = 1)
 })
 wrap_plots(plots, ncol = min(length(plots), 3))
 ```
@@ -201,7 +202,7 @@ ggplot(cor_long, aes(method1, method2, fill = rho)) +
     geom_text(aes(label = round(rho, 3)), size = 3.5) +
     scale_fill_distiller(palette = "RdYlGn", limits = c(0, 1), direction = 1) +
     theme_bw() +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1), aspect.ratio = 1) +
     labs(title = "Per-gene pseudo-bulk count correlation (Spearman)", x = NULL, y = NULL)
 ```
 

@@ -33,12 +33,12 @@ aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
 # Required when 'sbg' is in the aligner list.
 # The reference is built automatically from the STAR index and GTF above.
 # To use a pre-built BD archive instead, set sbg_reference_url or sbg_reference_archive.
-sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
 
 samples:
   - name: example_full
     uses:
       cb_umi_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
       cdna_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
-      whitelist: 384x3
+      whitelist: 96x3
       species: 'human'

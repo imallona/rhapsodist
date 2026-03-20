@@ -1227,7 +1227,7 @@ if _has_sbg:
                 config['working_dir'], 'sbg', wildcards.sample,
                 'filtered_MEX_output', 'matrix.mtx.gz'),
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
-            index2barcode = op.join(config['repo_path'], 'scripts', 'index2barcode.R')
+            index2barcode = op.join(config['repo_path'], 'src', 'index2barcode.R')
         output:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
         params:
