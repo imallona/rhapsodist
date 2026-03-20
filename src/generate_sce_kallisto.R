@@ -34,14 +34,19 @@ rownames(counts) <- barcodes
 colnames(counts) <- gene_ids
 
 # Cell filtering: elbow detection in log-log barcode rank space.
-# Uses maximum distance from the diagonal connecting the first and last point,
-# which is robust to tail artifacts that trip up simple slope-based methods.
+# A min-count pre-filter (>= 5 UMIs) is applied before elbow detection to
+# ignore the massive tail of likely-empty barcodes from unfiltered bustools
+# output, then the maximum-distance-from-diagonal method finds the knee.
 lib_sizes <- Matrix::rowSums(counts)
 nonzero <- lib_sizes[lib_sizes > 0]
 if (length(nonzero) == 0L) {
     stop("No non-zero library sizes detected; kallisto output appears empty or invalid.")
 }
-ranked <- sort(nonzero, decreasing = TRUE)
+candidates <- nonzero[nonzero >= 5]
+if (length(candidates) < 10L) {
+    candidates <- nonzero
+}
+ranked <- sort(candidates, decreasing = TRUE)
 n <- length(ranked)
 log_rank <- log10(seq_len(n))
 log_count <- log10(ranked)
@@ -49,7 +54,7 @@ x1 <- log_rank[1]; y1 <- log_count[1]
 x2 <- log_rank[n]; y2 <- log_count[n]
 dx <- x2 - x1; dy <- y2 - y1
 dist <- (dy * log_rank - dx * log_count + x2*y1 - y2*x1) / sqrt(dy^2 + dx^2)
-knee_idx <- which.max(abs(dist))
+knee_idx <- which.max(dist)
 knee_threshold <- ranked[knee_idx]
 n_before <- length(lib_sizes)
 keep <- lib_sizes >= knee_threshold

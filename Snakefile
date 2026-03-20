@@ -1172,8 +1172,10 @@ for _sbg_sample in _sbg_samples:
             r2 = get_cdna_by_name(_sbg_sample),
             ref = _ref_input
         output:
-            matrix = op.join(config['working_dir'], 'sbg', _sbg_sample,
-                             'unfiltered_MEX_output', 'matrix.mtx.gz')
+            matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
+                                        'unfiltered_MEX_output', 'matrix.mtx.gz'),
+            matrix_filtered = op.join(config['working_dir'], 'sbg', _sbg_sample,
+                                      'filtered_MEX_output', 'matrix.mtx.gz')
         params:
             cwl = get_sbg_cwl_by_name(_sbg_sample),
             outdir = op.join(config['working_dir'], 'sbg', _sbg_sample),
@@ -1217,16 +1219,25 @@ ENDOFYML
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
 
-            ## cwl-runner places the unfiltered MEX output as a zip in --outdir.
-            ## Unzip into the expected unfiltered_MEX_output/ subdirectory.
-            MEX_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
-            if [ -z "$MEX_ZIP" ] || [ ! -f "$MEX_ZIP" ]; then
+            ## cwl-runner places MEX outputs as zips in --outdir.
+            ## Unzip both filtered and unfiltered into their respective subdirectories.
+            UNFILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
+            if [ -z "$UNFILTERED_ZIP" ] || [ ! -f "$UNFILTERED_ZIP" ]; then
                 echo "ERROR: expected unfiltered MEX zip not found in {params.outdir}" >> {log}
                 ls -l {params.outdir} >> {log} 2>&1
                 exit 1
             fi
             mkdir -p {params.outdir}/unfiltered_MEX_output
-            unzip -o "$MEX_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
+            unzip -o "$UNFILTERED_ZIP" -d {params.outdir}/unfiltered_MEX_output >> {log} 2>&1
+
+            FILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_MEX.zip 2>/dev/null | grep -v Unfiltered | head -1)
+            if [ -z "$FILTERED_ZIP" ] || [ ! -f "$FILTERED_ZIP" ]; then
+                echo "ERROR: expected filtered MEX zip not found in {params.outdir}" >> {log}
+                ls -l {params.outdir} >> {log} 2>&1
+                exit 1
+            fi
+            mkdir -p {params.outdir}/filtered_MEX_output
+            unzip -o "$FILTERED_ZIP" -d {params.outdir}/filtered_MEX_output >> {log} 2>&1
             """
 
 
@@ -1237,7 +1248,7 @@ if _has_sbg:
         input:
             mex_flag = lambda wildcards: op.join(
                 config['working_dir'], 'sbg', wildcards.sample,
-                'unfiltered_MEX_output', 'matrix.mtx.gz'),
+                'filtered_MEX_output', 'matrix.mtx.gz'),
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
             installs = op.join(config['working_dir'], 'logs', 'installs.log'),
             index2barcode = op.join(config['repo_path'], 'scripts', 'index2barcode.R')
@@ -1245,7 +1256,7 @@ if _has_sbg:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
         params:
             mex_dir = lambda wildcards: op.join(
-                config['working_dir'], 'sbg', wildcards.sample, 'unfiltered_MEX_output'),
+                config['working_dir'], 'sbg', wildcards.sample, 'filtered_MEX_output'),
             bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),
             whitelist_dir = lambda wildcards: (
                 op.join(config['repo_path'], 'data',
