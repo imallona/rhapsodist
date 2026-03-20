@@ -33,7 +33,7 @@ parser$add_argument('--bead_version',
     help = 'BD bead version for barcode decoding: v1, Enh, or EnhV2 (default: Enh)')
 parser$add_argument('--index2barcode_script',
     type = 'character',
-    help = 'Path to scripts/index2barcode.R containing index_to_sequence()')
+    help = 'Path to src/index2barcode.R containing index_to_sequence()')
 parser$add_argument('--whitelist_dir',
     type = 'character', default = NULL,
     help = 'Directory with BD_CLS1.txt, BD_CLS2.txt, BD_CLS3.txt (required for EnhV2)')
