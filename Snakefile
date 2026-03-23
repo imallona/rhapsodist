@@ -1117,6 +1117,7 @@ if (not config.get('use_simulated') and _has_sbg
 
 ## run_sbg_cwl fires for every sample when 'sbg' is in the aligner list.
 ## At parse time we decide which reference file to track based on the mode.
+## caution it provides the unfiltered counts as filtered ones if the filtering fails
 for _sbg_sample in _sbg_samples:
 
     _sbg_ref_url = (
@@ -1201,7 +1202,7 @@ ENDOFYML
             UNFILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)
             if [ -z "$UNFILTERED_ZIP" ] || [ ! -f "$UNFILTERED_ZIP" ]; then
                 echo "ERROR: expected unfiltered MEX zip not found in {params.outdir}" >> {log}
-                ls -l {params.outdir} >> {log} 2>&1
+                ls -lR {params.outdir} >> {log} 2>&1
                 exit 1
             fi
             mkdir -p {params.outdir}/unfiltered_MEX_output
@@ -1209,9 +1210,12 @@ ENDOFYML
 
             FILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_MEX.zip 2>/dev/null | grep -v Unfiltered | head -1)
             if [ -z "$FILTERED_ZIP" ] || [ ! -f "$FILTERED_ZIP" ]; then
-                echo "ERROR: expected filtered MEX zip not found in {params.outdir}" >> {log}
-                ls -l {params.outdir} >> {log} 2>&1
-                exit 1
+                echo "WARNING: expected filtered MEX zip not found in {params.outdir}, using unfiltered instead" >> {log}
+                
+                ## fallback to link the unfiltered as filtered
+                FILTERED_ZIP="${{UNFILTERED_ZIP/Unfiltered_/Filtered_}}"
+                ln -sf "$UNFILTERED_ZIP" "$FILTERED_ZIP"
+            
             fi
             mkdir -p {params.outdir}/filtered_MEX_output
             unzip -o "$FILTERED_ZIP" -d {params.outdir}/filtered_MEX_output >> {log} 2>&1
@@ -1223,14 +1227,16 @@ if _has_sbg:
         conda:
             op.join('envs', 'all_in_one.yaml')
         input:
+            ## could use the unfiltered if that exists and filtered doesn't, caution
             mex_flag = lambda wildcards: op.join(
                 config['working_dir'], 'sbg', wildcards.sample,
-                'filtered_MEX_output', 'matrix.mtx.gz'),
+                'filtered_MEX_output', 'matrix.mtx.gz'), 
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
             index2barcode = op.join(config['repo_path'], 'src', 'index2barcode.R')
         output:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
         params:
+            ## will use the unfiltered instead if that exists and filtered doesn't, caution
             mex_dir = lambda wildcards: op.join(
                 config['working_dir'], 'sbg', wildcards.sample, 'filtered_MEX_output'),
             bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),

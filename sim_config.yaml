@@ -1,6 +1,6 @@
 repo_path: '.'
 
-nthreads: 4
+nthreads: 20
 max_mem_mb: 14000
 
 soloCellFilter: "EmptyDrops_CR"
@@ -8,7 +8,7 @@ soloMultiMappers: "Unique"
 soloUMIdedup: "Exact"
 extraStarSoloArgs: ""
 
-working_dir: /tmp/rhapsodist_simulate
+working_dir: /home/imallona/tmp/rhapsodist/simul #/tmp/rhapsodist_simulate
 
 gtf_origin: "ensembl"
 
