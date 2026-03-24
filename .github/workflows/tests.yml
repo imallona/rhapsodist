@@ -42,4 +42,33 @@ jobs:
             --configfile sim_config.yaml \
             --config "aligner=['starsolo','kallisto','alevin']" \
             --dry-run \
-            --nolock
+            --nolock --cores 2
+
+  integration-run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+
+      - name: cache conda environments created by snakemake
+        uses: actions/cache@v4
+        with:
+          path: .snakemake/conda
+          key: snakemake-conda-${{ hashFiles('envs/all_in_one.yaml') }}
+
+      - name: run simulation workflow
+        run: |
+          snakemake \
+            --configfile sim_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete
