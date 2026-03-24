@@ -222,7 +222,9 @@ rule starsolo:
     output:
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         raw_count_table = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out', 'Gene',
-                                  'filtered', 'matrix.mtx')
+                                  'filtered', 'matrix.mtx'),
+        raw_matrix = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out', 'Gene',
+                             'raw', 'matrix.mtx')
     threads:
         min(10, config['nthreads'])
     log:
@@ -331,50 +333,48 @@ rule starsolo:
 #         """
 
 
-# todo fixme so it gets the filtered mtx
 rule generate_sce_starsolo:
     conda:
         op.join('envs', 'all_in_one.yaml')
     input:
-        filtered  = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out',
-                               'Gene', 'filtered', 'matrix.mtx'),
+        matrix = lambda wildcards: op.join(
+            config['working_dir'], 'starsolo', wildcards.sample, 'Solo.out', 'Gene',
+            'raw' if config.get('cell_filtering', 'native') == 'emptydrops' else 'filtered',
+            'matrix.mtx'),
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_star.R'),
     output:
         sce = op.join(config['working_dir'], 'starsolo', '{sample}', '{sample}_starsolo_sce.rds')
     params:
-        align_path = op.join(config['working_dir']),
         working_dir = config['working_dir'],
-        sample = lambda wildcards: wildcards.sample,
+        cell_filtering = config.get('cell_filtering', 'native'),
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_star.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_star.txt')
     shell:
         """
-        ## this is unrelated to the bamgeneration; fixes starsolo's default permissions
         chmod -R ug+rwX $(dirname {input.bam})
 
         R -q --no-save --no-restore --slave \
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
+             --cell_filtering {params.cell_filtering} \
              --output_fn {output.sce} &> {log}
         """
 
-# todo fixme so it gets the filtered mtx
 rule generate_sce_kallisto:
     conda:
         op.join('envs', 'all_in_one.yaml')
     input:
         flag = op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx'),
-        # gtf = config['gtf'],
         script = op.join(config['repo_path'], 'src', 'generate_sce_kallisto.R'),
     output:
         sce = op.join(config['working_dir'], 'kallisto', '{sample}', '{sample}_kallisto_sce.rds')
     params:
         working_dir = config['working_dir'],
-        sample = lambda wildcards: wildcards.sample,
+        cell_filtering = config.get('cell_filtering', 'native'),
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_kallisto.log')
     benchmark:
@@ -385,6 +385,7 @@ rule generate_sce_kallisto:
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
+             --cell_filtering {params.cell_filtering} \
              --output_fn {output.sce} &> {log}
         """
 
@@ -398,7 +399,7 @@ rule generate_sce_alevin:
         sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
     params:
         working_dir = config['working_dir'],
-        sample = lambda wildcards: wildcards.sample,
+        cell_filtering = config.get('cell_filtering', 'native'),
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_alevin.log')
     benchmark:
@@ -409,6 +410,7 @@ rule generate_sce_alevin:
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
+             --cell_filtering {params.cell_filtering} \
              --output_fn {output.sce} &> {log}
         """
 
@@ -1223,22 +1225,25 @@ ENDOFYML
 
 
 if _has_sbg:
+    _sbg_mex_subdir = ('unfiltered_MEX_output'
+                       if config.get('cell_filtering', 'native') == 'emptydrops'
+                       else 'filtered_MEX_output')
+
     rule generate_sce_sbg:
         conda:
             op.join('envs', 'all_in_one.yaml')
         input:
-            ## could use the unfiltered if that exists and filtered doesn't, caution
             mex_flag = lambda wildcards: op.join(
                 config['working_dir'], 'sbg', wildcards.sample,
-                'filtered_MEX_output', 'matrix.mtx.gz'), 
+                _sbg_mex_subdir, 'matrix.mtx.gz'),
             script = op.join(config['repo_path'], 'src', 'generate_sce_sbg.R'),
             index2barcode = op.join(config['repo_path'], 'src', 'index2barcode.R')
         output:
             sce = op.join(config['working_dir'], 'sbg', '{sample}', '{sample}_sbg_sce.rds')
         params:
-            ## will use the unfiltered instead if that exists and filtered doesn't, caution
             mex_dir = lambda wildcards: op.join(
-                config['working_dir'], 'sbg', wildcards.sample, 'filtered_MEX_output'),
+                config['working_dir'], 'sbg', wildcards.sample, _sbg_mex_subdir),
+            cell_filtering = config.get('cell_filtering', 'native'),
             bead_version = lambda wildcards: get_sbg_bead_version_by_name(wildcards.sample),
             whitelist_dir = lambda wildcards: (
                 op.join(config['repo_path'], 'data',
@@ -1261,6 +1266,7 @@ if _has_sbg:
                  --output_fn {output.sce} \
                  --bead_version {params.bead_version} \
                  --index2barcode_script {input.index2barcode} \
+                 --cell_filtering {params.cell_filtering} \
                  $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
                  $([ -f "{params.features_map}" ] && echo "--features_map {params.features_map}") \
                  &> {log}

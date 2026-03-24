@@ -4,7 +4,8 @@ suppressPackageStartupMessages( {
   library(SingleCellExperiment)
   library(argparse)
   library(Matrix)
-  library(tximeta) # need to add to environment for R 
+  library(tximeta)
+  library(DropletUtils)
 })
 
 
@@ -18,9 +19,13 @@ parser$add_argument('--working_dir',
                     type = 'character',
                     help = 'Working directory')
 
-parser$add_argument('--output_fn', 
+parser$add_argument('--output_fn',
                     type = 'character',
                     help = 'Output SCE filename (path)')
+
+parser$add_argument('--cell_filtering',
+                    type = 'character', default = 'native',
+                    help = 'native: tximeta filterBarcodes=TRUE; emptydrops: load unfiltered and apply DropletUtils emptyDrops')
 
 args <- parser$parse_args()
 
@@ -32,8 +37,18 @@ dir<-file.path(wd, 'alevin', id)
 files<-file.path(dir, "alevin", "quants_mat.gz")
 file.exists(files)
 
-se<- tximeta(files, type="alevin", alevinArgs=list(filterBarcodes=TRUE),txOut = TRUE,skipMeta = TRUE)
+filter_barcodes <- args$cell_filtering != 'emptydrops'
+se <- tximeta(files, type="alevin", alevinArgs=list(filterBarcodes=filter_barcodes),
+              txOut=TRUE, skipMeta=TRUE)
 
 sce <- as(se, "SingleCellExperiment")
+
+if (args$cell_filtering == 'emptydrops') {
+    set.seed(42)
+    ed <- emptyDrops(counts(sce))
+    keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
+    cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+    sce <- sce[, keep]
+}
 
 saveRDS(object = sce, file = args$output_fn)

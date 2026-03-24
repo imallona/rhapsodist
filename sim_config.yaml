@@ -4,6 +4,7 @@ nthreads: 20
 max_mem_mb: 14000
 
 soloCellFilter: "EmptyDrops_CR"
+cell_filtering: "emptydrops"
 soloMultiMappers: "Unique"
 soloUMIdedup: "Exact"
 extraStarSoloArgs: ""
