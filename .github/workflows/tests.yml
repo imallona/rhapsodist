@@ -8,22 +8,20 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mamba-org/setup-micromamba@v2
+      - uses: actions/setup-python@v5
         with:
-          environment-name: snakemake
-          create-args: python=3.12 pytest pytest-cov
+          python-version: '3.12'
+
+      - name: install test dependencies
+        run: pip install -r requirements-test.txt
 
       - name: run unit tests with coverage
         run: pytest
 
   integration-dry-run:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,6 +33,10 @@ jobs:
         with:
           environment-name: snakemake
           create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
 
       - name: dry-run simulation workflow
         run: |
@@ -42,7 +44,8 @@ jobs:
             --configfile sim_config.yaml \
             --config "aligner=['starsolo','kallisto','alevin']" \
             --dry-run \
-            --nolock --cores 2
+            --nolock \
+            --cores 2
 
   integration-run:
     runs-on: ubuntu-latest
@@ -56,6 +59,10 @@ jobs:
         with:
           environment-name: snakemake
           create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
 
       - name: cache conda environments created by snakemake
         uses: actions/cache@v4
