@@ -23,7 +23,7 @@ parser$add_argument('--output_fn',
 
 parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
-                    help = 'native: use DropletUtils barcodeRanks inflection; emptydrops: use DropletUtils emptyDrops')
+                    help = 'native: no filtering applied (raw bustools output); emptydrops: apply DropletUtils emptyDrops')
 
 args <- parser$parse_args()
 
@@ -42,21 +42,12 @@ sce <- SingleCellExperiment(list(counts = t(counts)),
 rownames(sce) <- gene_ids
 colnames(sce) <- barcodes
 
-# bustools count produces unfiltered output so the matrix contains all barcodes including empty droplets.
-n_before <- ncol(sce)
 if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
     ed <- emptyDrops(counts(sce))
     keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-    cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), n_before))
-} else {
-    # barcodeRanks inflection point is the default
-    br <- barcodeRanks(counts(sce))
-    knee_threshold <- metadata(br)$inflection
-    keep <- colSums(counts(sce)) >= knee_threshold
-    cat(sprintf('barcodeRanks inflection threshold: %g  kept %d / %d barcodes\n',
-                knee_threshold, sum(keep), n_before))
+    cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+    sce <- sce[, keep]
 }
-sce <- sce[, keep]
 
 saveRDS(object = sce, file = args$output_fn)

@@ -18,8 +18,8 @@ soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
 
-## full, absolute path where outputs will be generated
-working_dir: /path/to/output
+## path where outputs will be generated; relative paths are resolved from the repo root
+working_dir: output
 
 gtf_origin: "gencode" # gencode or ensembl
 # caution: uncompressed

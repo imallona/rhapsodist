@@ -9,7 +9,7 @@ soloMultiMappers: "Unique"
 soloUMIdedup: "Exact"
 extraStarSoloArgs: ""
 
-working_dir: /home/imallona/tmp/rhapsodist/simul #/tmp/rhapsodist_simulate
+working_dir: output/simul
 
 gtf_origin: "ensembl"
 

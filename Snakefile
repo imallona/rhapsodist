@@ -16,6 +16,9 @@ configfile: "config.yaml"
 if not op.isabs(config['repo_path']):
     config['repo_path'] = op.join(workflow.basedir, config['repo_path'])
 
+if not op.isabs(config['working_dir']):
+    config['working_dir'] = op.join(workflow.basedir, config['working_dir'])
+
 ## when use_simulated is true, point genome/gtf/transcriptome/fastqs at generated outputs
 if config.get('use_simulated', False):
     _sim_dir = op.join(config['working_dir'], 'simulate')

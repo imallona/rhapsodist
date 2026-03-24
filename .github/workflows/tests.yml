@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 pytest pytest-cov
+
+      - name: run unit tests with coverage
+        run: pytest
+
+  integration-dry-run:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+
+      - name: dry-run simulation workflow
+        run: |
+          snakemake \
+            --configfile sim_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
+            --dry-run \
+            --nolock
