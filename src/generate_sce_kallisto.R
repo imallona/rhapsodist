@@ -17,9 +17,13 @@ parser$add_argument('--working_dir',
                     type = 'character',
                     help = 'Working directory')
 
-parser$add_argument('--output_fn', 
+parser$add_argument('--output_fn',
                     type = 'character',
                     help = 'Output SCE filename (path)')
+
+parser$add_argument('--cell_filtering',
+                    type = 'character', default = 'native',
+                    help = 'native: no filtering applied (raw bustools output); emptydrops: apply DropletUtils emptyDrops')
 
 args <- parser$parse_args()
 
@@ -38,17 +42,20 @@ sce <- SingleCellExperiment(list(counts = t(counts)),
 rownames(sce) <- gene_ids
 colnames(sce) <- barcodes
 
-# Cell filtering via DropletUtils::barcodeRanks().
-# bustools count produces unfiltered output (no bustools correct step), so
-# the matrix contains all barcodes including empty droplets.  barcodeRanks
-# fits a smooth rank-count curve and returns the inflection point, which is
-# more robust on the large unfiltered pools than a simple diagonal heuristic.
-br <- barcodeRanks(counts(sce))
-knee_threshold <- metadata(br)$inflection
-n_before <- ncol(sce)
-keep <- colSums(counts(sce)) >= knee_threshold
-cat(sprintf('DropletUtils inflection threshold: %g counts  Kept %d / %d barcodes\n',
-            knee_threshold, sum(keep), n_before))
-sce <- sce[, keep]
+if (args$cell_filtering == 'emptydrops') {
+    set.seed(42)
+    ed <- tryCatch(
+        emptyDrops(counts(sce)),
+        error = function(e) {
+            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+            NULL
+        }
+    )
+    if (!is.null(ed)) {
+        keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
+        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        sce <- sce[, keep]
+    }
+}
 
 saveRDS(object = sce, file = args$output_fn)

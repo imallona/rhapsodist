@@ -7,14 +7,19 @@ max_mem_mb: 20000
 ## cell filtering
 soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
 
+# cell_filtering controls how cells are selected from raw count matrices.
+# native: each aligner uses its own method (STARsolo: soloCellFilter, kallisto: barcodeRanks, alevin: filterBarcodes, SBG: built-in)
+# emptydrops: apply DropletUtils::emptyDrops on raw/unfiltered counts for all aligners
+cell_filtering: "native"
+
 ## multimappers
 soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
 
-## full, absolute path where outputs will be generated
-working_dir: /path/to/output
+## path where outputs will be generated; relative paths are resolved from the repo root
+working_dir: output
 
 gtf_origin: "gencode" # gencode or ensembl
 # caution: uncompressed

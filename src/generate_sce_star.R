@@ -9,6 +9,7 @@ suppressPackageStartupMessages( {
     library(SingleCellExperiment)
     library(argparse)
     library(Matrix)
+    library(DropletUtils)
 })
 
 parser <- ArgumentParser(description='Builds a WTA SingleCellExperiment object for a given sample.')
@@ -25,9 +26,13 @@ parser$add_argument('--working_dir',
                     type = 'character',
                     help = 'Working directory')
 
-parser$add_argument('--output_fn', 
+parser$add_argument('--output_fn',
                     type = 'character',
                     help = 'Output SCE filename (path)')
+
+parser$add_argument('--cell_filtering',
+                    type = 'character', default = 'native',
+                    help = 'native: use pre-filtered STARsolo output; emptydrops: apply DropletUtils emptyDrops on raw counts')
 
 ## parser$add_argument('--captured_gtf', 
 ##                     type = 'character',
@@ -75,13 +80,16 @@ read_matrix <- function(mtx, cells, features, cell.column = 1, feature.column = 
 
 wd <- args$working_dir
 id <- args$sample
-wta <- read_matrix(mtx = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'matrix.mtx'),
-                   cells = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'barcodes.tsv'),
-                   features = file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'features.tsv'),
+
+gene_dir <- if (args$cell_filtering == 'emptydrops') 'raw' else 'filtered'
+
+wta <- read_matrix(mtx = file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'matrix.mtx'),
+                   cells = file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'barcodes.tsv'),
+                   features = file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'features.tsv'),
                    cell.column = 1,
                    feature.column = 1)
 
-wta_feat <- read.table(file.path(wd, 'starsolo', id,  'Solo.out', 'Gene', 'filtered', 'features.tsv'),
+wta_feat <- read.table(file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'features.tsv'),
                        row.names = 1,
                        header = FALSE)
 
@@ -96,5 +104,21 @@ colnames(wta_feat) <- c("name", "type", "value")
 sce <- SingleCellExperiment(assays = list(counts = wta),
                             mainExpName = id,
                             rowData = wta_feat)
+
+if (args$cell_filtering == 'emptydrops') {
+    set.seed(42)
+    ed <- tryCatch(
+        emptyDrops(counts(sce)),
+        error = function(e) {
+            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+            NULL
+        }
+    )
+    if (!is.null(ed)) {
+        keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
+        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        sce <- sce[, keep]
+    }
+}
 
 saveRDS(object = sce, file = args$output_fn)

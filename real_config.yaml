@@ -7,7 +7,7 @@ soloCellFilter: "EmptyDrops_CR"
 soloMultiMappers: "Unique"
 extraStarSoloArgs: ""
 
-working_dir: /home/imallona/tmp/rhapsodist/testrun
+working_dir: output/testrun
 
 gtf_origin: "gencode"
 # https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz

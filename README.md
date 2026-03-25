@@ -1,6 +1,29 @@
 # Aim
 
-Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA (enhanced beads) data.
+Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA (enhanced beads) single-cell RNA-seq data. It pre-processes raw FASTQ reads through barcode standardisation with cutadapt, then runs alignment and UMI counting in parallel with STARsolo, kallisto/bustools, salmon/alevin, and optionally the official BD Rhapsody CWL pipeline. Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
+
+## Analysis paths
+
+```mermaid
+flowchart TD
+    reads[raw FASTQ\nR1 + R2] --> cutadapt[cutadapt\nbarcode standardisation]
+
+    cutadapt --> starsolo[STARsolo\nalignment + UMI count]
+    cutadapt --> kallisto[kallisto bus\nalignment]
+    cutadapt --> alevin[salmon alevin\nalignment + UMI count]
+    cutadapt --> sbg[BD Rhapsody CWL\nvia cwl-runner]
+
+    starsolo --> sce_star[SingleCellExperiment\nSTARsolo]
+    kallisto --> bustools[bustools sort + count]
+    bustools --> sce_kallisto[SingleCellExperiment\nkallisto]
+    alevin --> sce_alevin[SingleCellExperiment\nalevin]
+    sbg --> sce_sbg[SingleCellExperiment\nSBG]
+
+    sce_star & sce_kallisto & sce_alevin & sce_sbg --> report[comparison report]
+
+    starsolo --> sampletags[sampletag\ndemultiplexing]
+    sampletags --> st_report[sampletag report]
+```
 
 ## TL/DR
 
@@ -56,7 +79,7 @@ Add `'sbg'` to the `aligner` list and set `sbg_cwl` to the CWL workflow file:
 
 ```yaml
 aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
-sbg_cwl: docker/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
 ```
 
 The reference archive is built automatically from the STAR index and GTF. To use a pre-built BD archive instead:
