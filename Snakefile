@@ -35,11 +35,6 @@ include: "src/workflow_functions.py"
 
 include: op.join('src', 'simulate.snmk')
 
-## kallisto and bustools from bioconda are not reliable, so we compile them
-kallisto = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src')
-bustools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src')
-shell.prefix('export PATH=' + kallisto + ':' + bustools + ":$PATH;")
-
 try:
     os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
     os.makedirs(op.join(config['working_dir'], 'benchmarks'), exist_ok=True)
@@ -105,62 +100,6 @@ rule all:
         # expand(op.join(config['working_dir'], 'starsolo', '{sample}', '{sample}_starsolo_sce.rds'),
         #        sample = get_sample_names())
 
-rule compile_kallisto:
-    output:
-        op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto')
-    log:
-        op.join(config['working_dir'], 'logs', 'kallisto_install.log')
-    benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'kallisto_install.txt')
-    params:
-        soft = op.join(config['working_dir'], 'software')
-    threads:
-        1 # min(5, workflow.cores)
-    shell:
-        """
-        mkdir -p {params.soft}
-        cd {params.soft}
-        
-        rm -rf kallisto
-        # kallisto
-        git clone https://github.com/pachterlab/kallisto.git --depth 1
-        cd kallisto 
-        git log | head &> {log}
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_INSTALL_PREFIX:PATH=$HOME &>> {log}
-        make -j {threads} &>> {log}
-        """
-
-rule compile_bustools:
-    output:
-        op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
-    log:
-        op.join(config['working_dir'], 'logs', 'bustools_install.log')
-    benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'bustools_install.txt')
-    params:
-        soft = op.join(config['working_dir'], 'software')
-    threads:
-        min(5, workflow.cores)
-    shell:
-        """
-        mkdir -p {params.soft}
-        cd {params.soft}
-        rm -rf bustools
-        
-        # bustools
-       
-        git clone https://github.com/BUStools/bustools.git --depth 1
-        cd bustools
-        git log | head &> {log}
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_INSTALL_PREFIX:PATH=$HOME &>> {log}
-        make -j {threads} &>> {log}
-        """
-
-        
 rule star_index:
     conda:
         op.join('envs', 'all_in_one.yaml')
@@ -577,14 +516,11 @@ rule standardize_cb_umis_cutadapt:
             cut -c1-9,14-22,27- | pigz -p {threads} > {output.standardized_cb_umi}
         """
 
-## conda recipe is broken        
 rule kallisto_index:
-    # conda:
-    #     op.join('envs', 'kallisto.yaml')
+    conda:
+        op.join('envs', 'kallisto.yaml')
     input:
         transcriptome = config['transcriptome'],
-        kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')  
     params:
         index_name = 'kallisto.index',
         output_dir= op.join(config['working_dir'], 'data', 'index', 'kallisto')        
@@ -604,10 +540,9 @@ rule kallisto_index:
         kallisto index --threads {threads} -i {params.index_name} {input.transcriptome} &> {log}
         """
 
-## conda recipe is broken 
 rule kallisto_bus:
-    # conda:
-    #     op.join('envs', 'kallisto.yaml')
+    conda:
+        op.join('envs', 'kallisto.yaml')
     input:
         transcriptome = config['transcriptome'],
         # transcriptome = op.join(config['working_dir'], 'data', 'index', 'salmon', 'transcriptome.fa'),        
@@ -615,8 +550,6 @@ rule kallisto_bus:
         standardized_cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
         kallisto_index = op.join(config['working_dir'], 'data', 'index', 'kallisto', 'kallisto.index'),
-        kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
         matrix_ec = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
@@ -655,9 +588,10 @@ rule kallisto_bus:
 
         
 rule bustools_sort:
+    conda:
+        op.join('envs', 'kallisto.yaml')
     input:
-        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus'),
-        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus')
     output:
         sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')
     threads: workflow.cores
@@ -670,11 +604,65 @@ rule bustools_sort:
         bustools sort -t {threads} -o {output.sorted_bus} {input.bus} &> {log}
         """
 
-rule bustools_correct_simulated:
+rule derive_kallisto_observed_whitelist:
+    conda:
+        op.join('envs', 'all_in_one.yaml')
+    input:
+        sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
+        cb_umi_fq = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
+        cb1 = lambda wildcards: op.join(config['repo_path'], 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS1.txt'),
+        cb2 = lambda wildcards: op.join(config['repo_path'], 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS2.txt'),
+        cb3 = lambda wildcards: op.join(config['repo_path'], 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS3.txt')
+    output:
+        observed_whitelist = op.join(config['working_dir'], 'kallisto', '{sample}', 'observed_whitelist.txt')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_derive_observed_whitelist.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_derive_observed_whitelist.txt')
+    shell:
+        """
+        set -euo pipefail
+        python - <<'PY' > {output.observed_whitelist}
+import gzip
+
+with open("{input.cb1}") as fh:
+    cb1 = {line.strip() for line in fh if line.strip()}
+with open("{input.cb2}") as fh:
+    cb2 = {line.strip() for line in fh if line.strip()}
+with open("{input.cb3}") as fh:
+    cb3 = {line.strip() for line in fh if line.strip()}
+
+observed_valid_barcodes = set()
+with gzip.open("{input.cb_umi_fq}", "rt") as fh:
+    for line_index, line in enumerate(fh):
+        if line_index % 4 != 1:
+            continue
+        sequence = line.strip()
+        if len(sequence) < 27:
+            continue
+        barcode = sequence[:27]
+        barcode_1 = barcode[:9]
+        barcode_2 = barcode[9:18]
+        barcode_3 = barcode[18:27]
+        if barcode_1 in cb1 and barcode_2 in cb2 and barcode_3 in cb3:
+            observed_valid_barcodes.add(barcode)
+
+for barcode in sorted(observed_valid_barcodes):
+    print(barcode)
+PY
+        wc -l {output.observed_whitelist} > {log}
+        """
+
+rule bustools_correct:
+    conda:
+        op.join('envs', 'kallisto.yaml')
     input:
         bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
-        whitelist = op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt'),
-        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+        whitelist = (
+            op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+            if config.get('use_simulated', False)
+            else op.join(config['working_dir'], 'kallisto', '{sample}', 'observed_whitelist.txt')
+        )
     output:
         corrected_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
     threads: 1
@@ -688,17 +676,13 @@ rule bustools_correct_simulated:
         """
 
 rule bustools_count:
-    # conda:
-    #     op.join('envs', 'kallisto.yaml')
+    conda:
+        op.join('envs', 'kallisto.yaml')
     input:
         txp2gene   = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
         matrix_ec  = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
-        bus        = (op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
-                      if config.get('use_simulated', False)
-                      else op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')),
-        kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        btools     = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
     output:
         op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx')
     params:
@@ -914,7 +898,7 @@ rule deversion_transcriptome:
 
             # no transcript versions
             #  e.g. ENST4654.1, the .1 needs to go because the matching GTF doesn't have it
-            zcat {input.transcriptome} | awk '/^>/ {{sub(/\..*/, "", $1)}} {{print}}' > {output.deversioned_fasta}
+            zcat {input.transcriptome} | awk '/^>/ {{split($1, a, "."); $1=a[1]}} {{print}}' > {output.deversioned_fasta}
 
          elif [[ {params.gtf_style} == 'gencode' ]]
          then

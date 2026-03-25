@@ -47,7 +47,7 @@ if (args$cell_filtering == 'emptydrops') {
     ed <- tryCatch(
         emptyDrops(counts(sce)),
         error = function(e) {
-            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+            warning(sprintf('emptyDrops failed (%s); keeping all %d barcodes', conditionMessage(e), ncol(sce)))
             NULL
         }
     )
