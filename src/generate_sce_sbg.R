@@ -111,10 +111,18 @@ if (!is.null(args$features_map) && file.exists(args$features_map)) {
 
 if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
-    ed <- emptyDrops(counts(sce))
-    keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-    cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
-    sce <- sce[, keep]
+    ed <- tryCatch(
+        emptyDrops(counts(sce)),
+        error = function(e) {
+            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+            NULL
+        }
+    )
+    if (!is.null(ed)) {
+        keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
+        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        sce <- sce[, keep]
+    }
 }
 
 dir.create(dirname(args$output_fn), recursive = TRUE, showWarnings = FALSE)
