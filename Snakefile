@@ -670,6 +670,23 @@ rule bustools_sort:
         bustools sort -t {threads} -o {output.sorted_bus} {input.bus} &> {log}
         """
 
+rule bustools_correct_simulated:
+    input:
+        bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
+        whitelist = op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt'),
+        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+    output:
+        corrected_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
+    threads: 1
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_bustools_correct.txt')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_bustools_correct.log')
+    shell:
+        """
+        bustools correct -w {input.whitelist} -o {output.corrected_bus} {input.bus} &> {log}
+        """
+
 rule bustools_count:
     # conda:
     #     op.join('envs', 'kallisto.yaml')
@@ -677,7 +694,9 @@ rule bustools_count:
         txp2gene   = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
         matrix_ec  = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
-        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
+        bus        = (op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
+                      if config.get('use_simulated', False)
+                      else op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')),
         kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
         btools     = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
