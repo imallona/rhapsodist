@@ -21,10 +21,18 @@ Barcode structure in R1:
 After cutadapt (min_overlap=43, noindels, e=0) and cut -c1-9,14-22,27- the standardised R1
 yields CB1+CB2+CB3 (27 nt, positions 1-27) followed by UMI (8 nt, positions 28-35), which is
 exactly the layout expected by the STARsolo / alevin / kallisto rules in this workflow.
+
+Count model:
+  Per-cell library sizes are drawn from NB(mu=n_umis, size=20), giving cells similar but not
+  identical total counts (~22% CV). Per-gene expression levels are drawn from log-normal(0, 1)
+  and normalised so they sum to 1. Final counts per (cell, gene) are drawn from
+  NB(mu=cell_total * gene_frac, size=2), giving realistic overdispersed counts across both
+  cells and genes. The true count matrix is written to true_mex/ for downstream evaluation.
 """
 
 import argparse
 import gzip
+import math
 import os
 import random
 
@@ -36,7 +44,8 @@ def parse_args():
     p.add_argument('--out_dir', required=True)
     p.add_argument('--n_cells',      type=int, default=100)
     p.add_argument('--n_genes',      type=int, default=100)
-    p.add_argument('--n_umis',       type=int, default=100)
+    p.add_argument('--n_umis',       type=int, default=100,
+                   help='Mean UMIs per cell per gene; actual counts vary across cells and genes')
     p.add_argument('--seed',         type=int, default=42)
     p.add_argument('--chr_len',      type=int, default=2000,
                    help='Total chromosome length (nt)')
@@ -67,6 +76,59 @@ def unique_sequences(n, length, rng):
             seen.add(s)
             seqs.append(s)
     return seqs
+
+
+def _poisson_sample(lam, rng):
+    """Knuth's exact Poisson sampler for small lam; normal approx for lam > 30."""
+    if lam <= 0:
+        return 0
+    if lam > 30:
+        return max(0, round(rng.gauss(lam, math.sqrt(lam))))
+    threshold = math.exp(-lam)
+    k, p = 0, 1.0
+    while True:
+        p *= rng.random()
+        if p <= threshold:
+            return k
+        k += 1
+
+
+def _nb_sample(mu, size, rng):
+    """Sample from negative binomial NB(mu, size) via Gamma-Poisson mixture.
+
+    size controls overdispersion: variance = mu + mu^2/size.
+    larger size -> closer to Poisson; size=1 -> geometric distribution.
+    """
+    if mu <= 0:
+        return 0
+    g = rng.gammavariate(size, mu / size)
+    return _poisson_sample(g, rng)
+
+
+def sample_count_matrix(n_cells, n_genes, n_umis_mean, rng,
+                        cell_size=20.0, gene_size=2.0):
+    """Sample a (n_cells x n_genes) count matrix with realistic count variability.
+
+    Per-cell library-size factors are drawn from NB(mu=n_umis_mean, size=cell_size)
+    so cells have similar but not identical total counts (cell_size=20 gives ~22% CV).
+    Per-gene expression levels are drawn from log-normal(mu=0, sigma=1) and normalised
+    to mean 1, giving a realistic range of expression levels across genes.
+    Final counts per (cell, gene) are drawn from NB(mu=cell_total * gene_frac, size=gene_size)
+    where cell_total is the cell library size and gene_frac is the gene's relative expression.
+    """
+    ## per-cell library sizes: similar but not identical
+    cell_totals = [max(1, _nb_sample(n_umis_mean, cell_size, rng)) for _ in range(n_cells)]
+
+    ## per-gene expression weights: log-normal, normalised to sum to 1
+    gene_weights_raw = [math.exp(rng.gauss(0.0, 1.0)) for _ in range(n_genes)]
+    total_weight = sum(gene_weights_raw)
+    gene_fracs = [w / total_weight for w in gene_weights_raw]
+
+    counts = []
+    for ct in cell_totals:
+        row = [max(1, _nb_sample(ct * gf, gene_size, rng)) for gf in gene_fracs]
+        counts.append(row)
+    return counts
 
 
 def make_chromosomes(gene_seqs, chr_len, gene_pos, rng):
@@ -115,9 +177,12 @@ def write_transcriptome_gz(gene_seqs, path):
             fh.write(f'>{tid} {gid}\n{seq}\n')
 
 
-def write_true_counts_mex(cell_barcodes, n_genes, n_umis, out_dir):
-    """Write ground-truth count matrix (MEX format) to out_dir/true_mex/."""
-    import struct
+def write_true_counts_mex(cell_barcodes, n_genes, count_matrix, out_dir):
+    """Write ground-truth count matrix (MEX format) to out_dir/true_mex/.
+
+    count_matrix is a list of n_cells lists, each of length n_genes, holding
+    the true integer UMI count for that (cell, gene) pair.
+    """
     mex_dir = os.path.join(out_dir, 'true_mex')
     os.makedirs(mex_dir, exist_ok=True)
     n_cells = len(cell_barcodes)
@@ -132,13 +197,15 @@ def write_true_counts_mex(cell_barcodes, n_genes, n_umis, out_dir):
             gid = f'gene{i + 1:0{width}d}'
             fh.write(f'{gid}\t{gid}\tGene Expression\n')
 
-    n_entries = n_cells * n_genes
+    ## count non-zero entries for the MEX header
+    n_entries = sum(1 for row in count_matrix for v in row if v > 0)
     with gzip.open(os.path.join(mex_dir, 'matrix.mtx.gz'), 'wt') as fh:
         fh.write('%%MatrixMarket matrix coordinate integer general\n%\n')
         fh.write(f'{n_genes} {n_cells} {n_entries}\n')
-        for j in range(1, n_cells + 1):
-            for i in range(1, n_genes + 1):
-                fh.write(f'{i} {j} {n_umis}\n')
+        for j, row in enumerate(count_matrix, start=1):
+            for i, v in enumerate(row, start=1):
+                if v > 0:
+                    fh.write(f'{i} {j} {v}\n')
 
 
 def sample_cell_barcodes(whitelist_dir, n_cells, rng):
@@ -185,12 +252,18 @@ def make_r1(cb1, cb2, cb3, umi, rng):
     return div + cb1 + 'GTGA' + cb2 + 'GACA' + cb3 + umi + 'T' * 20
 
 
-def write_fastqs(cell_barcodes, gene_seqs, n_umis, rng, r1_path, r2_path):
+def write_fastqs(cell_barcodes, gene_seqs, count_matrix, rng, r1_path, r2_path):
+    """Write R1/R2 FASTQs.
+
+    count_matrix[cell_idx][gene_idx] gives the number of unique UMIs to emit
+    for that (cell, gene) pair, reflecting the true count that will be evaluated.
+    """
     read_idx = 0
     with gzip.open(r1_path, 'wt') as fq1, gzip.open(r2_path, 'wt') as fq2:
-        for cb1, cb2, cb3 in cell_barcodes:
-            for gseq in gene_seqs:
-                umis = unique_sequences(n_umis, 8, rng)
+        for cell_idx, (cb1, cb2, cb3) in enumerate(cell_barcodes):
+            for gene_idx, gseq in enumerate(gene_seqs):
+                n = count_matrix[cell_idx][gene_idx]
+                umis = unique_sequences(n, 8, rng)
                 for umi in umis:
                     r1 = make_r1(cb1, cb2, cb3, umi, rng)
                     tag = f'sim{read_idx}'
@@ -211,7 +284,6 @@ def append_empty_droplets(cell_barcodes_set, n_empty, gene_seqs, read_len, rng,
     added = 0
     with gzip.open(r1_path, 'at') as fq1, gzip.open(r2_path, 'at') as fq2:
         while added < n_empty:
-            # random barcode tuple unlikely to collide with real cells
             cb1 = rand_seq(9, rng)
             cb2 = rand_seq(9, rng)
             cb3 = rand_seq(9, rng)
@@ -265,14 +337,18 @@ def main():
         for cb1, cb2, cb3 in cell_barcodes:
             fh.write(f'{cb1}{cb2}{cb3}\n')
 
-    next_idx = write_fastqs(cell_barcodes, gene_seqs, args.n_umis, rng,
+    count_matrix = sample_count_matrix(args.n_cells, args.n_genes, args.n_umis, rng)
+
+    next_idx = write_fastqs(cell_barcodes, gene_seqs, count_matrix, rng,
                             os.path.join(args.out_dir, 'sim_R1.fq.gz'),
                             os.path.join(args.out_dir, 'sim_R2.fq.gz'))
 
-    write_true_counts_mex(cell_barcodes, args.n_genes, args.n_umis, args.out_dir)
+    write_true_counts_mex(cell_barcodes, args.n_genes, count_matrix, args.out_dir)
 
+    total_umis = sum(v for row in count_matrix for v in row)
     print(f'Generated {args.n_genes} chromosomes, {args.n_cells} cells x '
-          f'{args.n_genes} genes x {args.n_umis} UMIs = {next_idx} cDNA reads')
+          f'{args.n_genes} genes, {total_umis} total UMIs (mean {args.n_umis}/cell/gene) '
+          f'= {next_idx} cDNA reads')
 
     if args.n_empty_droplets > 0:
         cell_barcodes_set = set(cell_barcodes)

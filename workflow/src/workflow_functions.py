@@ -107,14 +107,14 @@ def symlink_whitelist(sample):
     if get_barcode_whitelist_by_name(name = sample) == '96x3':
         for x in ['BD_CLS1.txt', 'BD_CLS2.txt', 'BD_CLS3.txt']:
             try:
-                os.symlink(src = op.join(config['repo_path'], 'data', 'whitelist_96x3', x),
+                os.symlink(src = op.join(workflow.basedir, 'data', 'whitelist_96x3', x),
                            dst = op.join(config['working_dir'], 'starsolo', sample, 'whitelists', x))
             except FileExistsError:
                 continue
     elif get_barcode_whitelist_by_name(name = sample) == '384x3':
         for x in ['BD_CLS1.txt', 'BD_CLS2.txt', 'BD_CLS3.txt']:
             try:
-                os.symlink(src = op.join(config['repo_path'], 'data', 'whitelist_384x3', x),
+                os.symlink(src = op.join(workflow.basedir, 'data', 'whitelist_384x3', x),
                            dst = op.join(config['working_dir'], 'starsolo', sample, 'whitelists', x))
             except FileExistsError:
                 continue

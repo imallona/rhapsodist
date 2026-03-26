@@ -4,15 +4,15 @@
 ## config['use_simulated'] is True.
 
 _SIM_DIR       = op.join(config['working_dir'], 'simulate')
-_WHITELIST_DIR = op.join(config['repo_path'], 'data', 'whitelist_384x3')
+_WHITELIST_DIR = op.join(workflow.basedir, 'data', 'whitelist_384x3')
 _ST_FA         = config.get('sampletag_fa', '')
 
 
 rule simulate_genome_gtf_transcriptome_fastqs:
     conda:
-        op.join('envs', 'simulate.yaml')
+        op.join(workflow.basedir, 'envs', 'simulate.yaml')
     input:
-        script = op.join(config['repo_path'], 'src', 'simulate_data.py'),
+        script = op.join(workflow.basedir, 'src', 'simulate_data.py'),
         cls1   = op.join(_WHITELIST_DIR, 'BD_CLS1.txt'),
         cls2   = op.join(_WHITELIST_DIR, 'BD_CLS2.txt'),
         cls3   = op.join(_WHITELIST_DIR, 'BD_CLS3.txt')
@@ -69,12 +69,12 @@ if config.get('use_simulated', False):
 
     rule validate_simulation:
         conda:
-            op.join('envs', 'all_in_one.yaml')
+            op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
         input:
             sce      = op.join(config['working_dir'], 'starsolo', _sim_sample,
                                f'{_sim_sample}_starsolo_sce.rds'),
             barcodes = op.join(_SIM_DIR, 'cell_barcodes.txt'),
-            script   = op.join(config['repo_path'], 'src', 'validate_simulation.Rmd')
+            script   = op.join(workflow.basedir, 'src', 'validate_simulation.Rmd')
         output:
             html = op.join(config['working_dir'], 'simulation_validation.html')
         params:

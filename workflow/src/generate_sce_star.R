@@ -34,7 +34,11 @@ parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
                     help = 'native: use pre-filtered STARsolo output; emptydrops: apply DropletUtils emptyDrops on raw counts')
 
-## parser$add_argument('--captured_gtf', 
+parser$add_argument('--solo_cell_filter',
+                    type = 'character', default = 'CellRanger2',
+                    help = 'soloCellFilter value used during STARsolo alignment (e.g. EmptyDrops_CR)')
+
+## parser$add_argument('--captured_gtf',
 ##                     type = 'character',
 ##                     help = 'Captured features GTF (path)')
 
@@ -81,7 +85,12 @@ read_matrix <- function(mtx, cells, features, cell.column = 1, feature.column = 
 wd <- args$working_dir
 id <- args$sample
 
-gene_dir <- if (args$cell_filtering == 'emptydrops') 'raw' else 'filtered'
+## when starsolo already ran an emptydrops variant (e.g. EmptyDrops_CR), the
+## filtered output is already emptydrops-filtered; reading raw and re-running
+## would double-filter and drop real cells
+solo_already_emptydrops <- grepl('EmptyDrops', args$solo_cell_filter, ignore.case = TRUE)
+
+gene_dir <- if (args$cell_filtering == 'emptydrops' && !solo_already_emptydrops) 'raw' else 'filtered'
 
 wta <- read_matrix(mtx = file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'matrix.mtx'),
                    cells = file.path(wd, 'starsolo', id, 'Solo.out', 'Gene', gene_dir, 'barcodes.tsv'),
@@ -106,18 +115,27 @@ sce <- SingleCellExperiment(assays = list(counts = wta),
                             rowData = wta_feat)
 
 if (args$cell_filtering == 'emptydrops') {
-    set.seed(42)
-    ed <- tryCatch(
-        emptyDrops(counts(sce)),
-        error = function(e) {
-            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
-            NULL
+    if (solo_already_emptydrops) {
+        warning(sprintf(
+            paste0('skipping R-level emptyDrops: STARsolo was run with soloCellFilter=%s; ',
+                   'the filtered output is already emptydrops-filtered and ',
+                   're-running would double-filter and discard real cells'),
+            args$solo_cell_filter
+        ))
+    } else {
+        set.seed(42)
+        ed <- tryCatch(
+            emptyDrops(counts(sce)),
+            error = function(e) {
+                cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+                NULL
+            }
+        )
+        if (!is.null(ed)) {
+            keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
+            cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+            sce <- sce[, keep]
         }
-    )
-    if (!is.null(ed)) {
-        keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
-        sce <- sce[, keep]
     }
 }
 

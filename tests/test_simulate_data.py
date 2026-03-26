@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from src.simulate_data import (
+from workflow.src.simulate_data import (
     append_empty_droplets,
     append_sampletag_fastqs,
     make_chromosomes,
@@ -12,6 +12,7 @@ from src.simulate_data import (
     rand_seq,
     read_sampletag_fasta,
     sample_cell_barcodes,
+    sample_count_matrix,
     unique_sequences,
     write_fasta,
     write_fastqs,
@@ -21,7 +22,7 @@ from src.simulate_data import (
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WHITELIST_DIR = os.path.join(REPO_ROOT, 'data', 'whitelist_384x3')
+WHITELIST_DIR = os.path.join(REPO_ROOT, 'workflow', 'data', 'whitelist_384x3')
 
 
 @pytest.fixture
@@ -143,7 +144,8 @@ def test_write_transcriptome_gz_sequences(tmp_path, rng, small_gene_seqs):
 
 def test_write_true_counts_mex_files_exist(tmp_path):
     barcodes = [('AAAAAAAAA', 'CCCCCCCCC', 'GGGGGGGGG')]
-    write_true_counts_mex(barcodes, n_genes=2, n_umis=5, out_dir=str(tmp_path))
+    count_matrix = [[5, 3]]
+    write_true_counts_mex(barcodes, n_genes=2, count_matrix=count_matrix, out_dir=str(tmp_path))
     mex = tmp_path / 'true_mex'
     assert (mex / 'barcodes.tsv.gz').exists()
     assert (mex / 'features.tsv.gz').exists()
@@ -153,20 +155,24 @@ def test_write_true_counts_mex_files_exist(tmp_path):
 def test_write_true_counts_mex_header(tmp_path):
     barcodes = [('AAAAAAAAA', 'CCCCCCCCC', 'GGGGGGGGG'),
                 ('TTTTTTTTT', 'CCCCCCCCC', 'GGGGGGGGG')]
-    write_true_counts_mex(barcodes, n_genes=3, n_umis=7, out_dir=str(tmp_path))
+    count_matrix = [[7, 2, 4], [1, 3, 9]]
+    write_true_counts_mex(barcodes, n_genes=3, count_matrix=count_matrix, out_dir=str(tmp_path))
     with gzip.open(str(tmp_path / 'true_mex' / 'matrix.mtx.gz'), 'rt') as fh:
         lines = [l for l in fh if not l.startswith('%')]
     dims = lines[0].split()
-    # n_genes rows, n_cells cols, n_genes*n_cells entries
+    ## n_genes rows, n_cells cols, all entries non-zero so n_genes*n_cells
     assert dims == ['3', '2', '6']
 
 
-def test_write_true_counts_mex_umi_values(tmp_path):
+def test_write_true_counts_mex_values(tmp_path):
     barcodes = [('AAAAAAAAA', 'CCCCCCCCC', 'GGGGGGGGG')]
-    write_true_counts_mex(barcodes, n_genes=2, n_umis=11, out_dir=str(tmp_path))
+    count_matrix = [[11, 7]]
+    write_true_counts_mex(barcodes, n_genes=2, count_matrix=count_matrix, out_dir=str(tmp_path))
     with gzip.open(str(tmp_path / 'true_mex' / 'matrix.mtx.gz'), 'rt') as fh:
         entries = [l.split() for l in fh if not l.startswith('%')][1:]
-    assert all(e[2] == '11' for e in entries)
+    values = {int(e[0]): int(e[2]) for e in entries}
+    assert values[1] == 11
+    assert values[2] == 7
 
 
 def test_read_sampletag_fasta_count(tmp_path):
@@ -228,16 +234,19 @@ def test_sample_cell_barcodes_overflow(rng):
 def test_write_fastqs_read_count(tmp_path, small_barcodes, small_gene_seqs, rng):
     r1 = str(tmp_path / 'R1.fq.gz')
     r2 = str(tmp_path / 'R2.fq.gz')
-    n_umis = 2
-    count = write_fastqs(small_barcodes, small_gene_seqs, n_umis=n_umis, rng=rng,
-                         r1_path=r1, r2_path=r2)
-    assert count == len(small_barcodes) * len(small_gene_seqs) * n_umis
+    ## fixed count matrix: 2 UMIs per (cell, gene)
+    count_matrix = [[2] * len(small_gene_seqs) for _ in small_barcodes]
+    total = write_fastqs(small_barcodes, small_gene_seqs, count_matrix=count_matrix,
+                         rng=rng, r1_path=r1, r2_path=r2)
+    assert total == len(small_barcodes) * len(small_gene_seqs) * 2
 
 
 def test_write_fastqs_files_created(tmp_path, small_barcodes, small_gene_seqs, rng):
     r1 = str(tmp_path / 'R1.fq.gz')
     r2 = str(tmp_path / 'R2.fq.gz')
-    write_fastqs(small_barcodes, small_gene_seqs, n_umis=1, rng=rng, r1_path=r1, r2_path=r2)
+    count_matrix = [[1] * len(small_gene_seqs) for _ in small_barcodes]
+    write_fastqs(small_barcodes, small_gene_seqs, count_matrix=count_matrix,
+                 rng=rng, r1_path=r1, r2_path=r2)
     assert os.path.exists(r1)
     assert os.path.exists(r2)
 
@@ -245,7 +254,9 @@ def test_write_fastqs_files_created(tmp_path, small_barcodes, small_gene_seqs, r
 def test_write_fastqs_paired_headers(tmp_path, small_barcodes, small_gene_seqs, rng):
     r1 = str(tmp_path / 'R1.fq.gz')
     r2 = str(tmp_path / 'R2.fq.gz')
-    write_fastqs(small_barcodes, small_gene_seqs, n_umis=1, rng=rng, r1_path=r1, r2_path=r2)
+    count_matrix = [[1] * len(small_gene_seqs) for _ in small_barcodes]
+    write_fastqs(small_barcodes, small_gene_seqs, count_matrix=count_matrix,
+                 rng=rng, r1_path=r1, r2_path=r2)
     with gzip.open(r1, 'rt') as fh:
         r1_headers = [l.strip() for l in fh if l.startswith('@')]
     with gzip.open(r2, 'rt') as fh:

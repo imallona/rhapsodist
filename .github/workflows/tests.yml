@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
 
       - name: install test dependencies
-        run: pip install -r requirements-test.txt
+        run: pip install pytest pytest-cov
 
       - name: run unit tests with coverage
         run: pytest
@@ -41,8 +41,9 @@ jobs:
       - name: dry-run simulation workflow
         run: |
           snakemake \
-            --configfile sim_config.yaml \
-            --config "aligner=['starsolo','kallisto','alevin']" \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
             --dry-run \
             --nolock \
             --cores 2
@@ -68,14 +69,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .snakemake/conda
-          key: snakemake-conda-${{ hashFiles('envs/all_in_one.yaml') }}
+          key: snakemake-conda-${{ hashFiles('workflow/envs/all_in_one.yaml') }}
 
       - name: run simulation workflow
         run: |
           snakemake \
-            --configfile sim_config.yaml \
-            --config "aligner=['starsolo','kallisto','alevin']" \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
             --cores 2 \
             --use-conda \
             --nolock \
             --rerun-incomplete
+
+      - name: upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-and-reports
+          path: |
+            output/simul/logs/
+            .snakemake/log/
+            output/simul/**/*.html
+          if-no-files-found: ignore
