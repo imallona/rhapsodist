@@ -338,7 +338,11 @@ rule generate_sce_starsolo:
     input:
         matrix = lambda wildcards: op.join(
             config['working_dir'], 'starsolo', wildcards.sample, 'Solo.out', 'Gene',
-            'raw' if config.get('cell_filtering', 'native') == 'emptydrops' else 'filtered',
+            ## when starsolo already ran an emptydrops variant, filtered output is ready
+            'filtered' if (
+                config.get('cell_filtering', 'native') != 'emptydrops'
+                or 'EmptyDrops' in config.get('soloCellFilter', '')
+            ) else 'raw',
             'matrix.mtx'),
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         script = op.join(config['repo_path'], 'src', 'generate_sce_star.R'),
@@ -347,6 +351,7 @@ rule generate_sce_starsolo:
     params:
         working_dir = config['working_dir'],
         cell_filtering = config.get('cell_filtering', 'native'),
+        solo_cell_filter = config.get('soloCellFilter', 'CellRanger2'),
     log:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_star.log')
     benchmark:
@@ -360,6 +365,7 @@ rule generate_sce_starsolo:
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
              --cell_filtering {params.cell_filtering} \
+             --solo_cell_filter {params.solo_cell_filter} \
              --output_fn {output.sce} &> {log}
         """
 
@@ -1253,6 +1259,8 @@ ENDOFYML
             sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
 
+            CWL_SINGULARITY_CACHE=$(realpath .) \
+            SINGULARITY_PULLFOLDER=$(realpath .) \
             cwl-runner --singularity \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}

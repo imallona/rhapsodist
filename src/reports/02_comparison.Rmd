@@ -142,70 +142,6 @@ upset(fromList(bc_lists), order.by = "freq", text.scale = 1.4,
       point.size = 3, line.size = 0.8, mb.ratio = c(0.6, 0.4))
 ```
 
-## Per-gene expression correlation
-
-Genes detected in at least two methods are used. Counts are summed across cells
-(pseudo-bulk) to give one value per gene per method.
-
-```{r gene-correlation, fig.width=9, fig.height=8}
-all_genes <- Reduce(union, lapply(sces, rownames))
-length(all_genes)
-
-pb <- lapply(names(sces), function(m) {
-    s  <- sces[[m]]
-    gs <- rowSums(counts(s))
-    gs[match(all_genes, rownames(s))]
-}) |> setNames(names(sces))
-
-pb_mat <- do.call(cbind, pb)
-rownames(pb_mat) <- all_genes
-
-n_detected <- rowSums(!is.na(pb_mat) & pb_mat > 0)
-table(n_detected)
-pb_mat <- pb_mat[n_detected >= 2, ]
-pb_mat[is.na(pb_mat)] <- 0
-
-cat("Genes used for correlation:", nrow(pb_mat), "\n")
-
-method_pairs <- combn(names(sces), 2, simplify = FALSE)
-
-plots <- lapply(method_pairs, function(pair) {
-    x <- pb_mat[, pair[1]]
-    y <- pb_mat[, pair[2]]
-    rho <- round(cor(x, y, use = "complete.obs", method = "spearman"), 3)
-    mad_val <- round(mean(abs(x - y), na.rm = TRUE), 1)
-    df <- data.frame(x = x, y = y)
-    ggplot(df, aes(x, y)) +
-        geom_point(alpha = 0.4, size = 0.8) +
-        geom_abline(slope = 1, intercept = 0, colour = "firebrick",
-                    linetype = "dashed") +
-        labs(title = paste0(pair[1], " vs ", pair[2]),
-             subtitle = paste0("Spearman rho = ", rho,
-                               "  |  mean |diff| = ", mad_val),
-             x = pair[1],
-             y = pair[2]) +
-        theme_bw(base_size = 10) +
-        theme(aspect.ratio = 1)
-})
-wrap_plots(plots, ncol = min(length(plots), 3))
-```
-
-## Correlation matrix
-
-```{r corr-matrix, fig.width=5, fig.height=4}
-cor_mat  <- cor(pb_mat, use = "pairwise.complete.obs", method = "spearman")
-cor_long <- as.data.frame(as.table(cor_mat))
-names(cor_long) <- c("method1", "method2", "rho")
-
-ggplot(cor_long, aes(method1, method2, fill = rho)) +
-    geom_tile() +
-    geom_text(aes(label = round(rho, 3)), size = 3.5) +
-    scale_fill_distiller(palette = "RdYlGn", limits = c(0, 1), direction = 1) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1), aspect.ratio = 1) +
-    labs(title = "Per-gene pseudo-bulk count correlation (Spearman)", x = NULL, y = NULL)
-```
-
 ## Deviation from simulated truth
 
 ```{r truth-load, eval=nchar(true_mex_dir) > 0}
@@ -326,14 +262,32 @@ if (length(bm_files) > 0) {
 
 ```{r umi-dist, fig.width=8, fig.height=4}
 umi_df <- rbindlist(lapply(names(sces), function(m) {
-    data.table(method = m, total_counts = colSums(counts(sces[[m]])))
+    data.table(method = m, source = "recovered", total_counts = colSums(counts(sces[[m]])))
 }))
 
-ggplot(umi_df, aes(x = log10(total_counts + 1), colour = method)) +
+## overlay simulated truth when available
+has_truth_counts <- nchar(true_mex_dir) > 0 && exists("truth_counts")
+if (has_truth_counts) {
+    truth_totals <- colSums(truth_counts)
+    umi_df <- rbind(
+        umi_df,
+        data.table(method = "simulated truth", source = "simulated", total_counts = truth_totals)
+    )
+}
+
+## fixed colour for truth; Set2 for recovered methods
+method_levels <- c(names(sces), if (has_truth_counts) "simulated truth")
+set2_cols     <- RColorBrewer::brewer.pal(max(3, length(names(sces))), "Set2")[seq_along(names(sces))]
+colour_map    <- setNames(c(set2_cols, if (has_truth_counts) "black"), method_levels)
+
+ggplot(umi_df, aes(x = log10(total_counts + 1),
+                   colour = method, linetype = source)) +
     geom_density(linewidth = 0.8) +
-    facet_wrap(~method, scales = "free_y") +
+    scale_colour_manual(values = colour_map) +
+    scale_linetype_manual(values = c(simulated = "dashed", recovered = "solid")) +
     theme_bw() +
-    scale_colour_brewer(palette = "Set2") +
-    labs(title = "Distribution of per-cell total counts",
-         x = "log10(total counts + 1)", y = "Density", colour = NULL)
+    labs(title = "Per-cell total-count distribution",
+         subtitle = "recovered methods (solid) vs simulated truth (dashed black)",
+         x = "log10(total counts + 1)", y = "Density",
+         colour = NULL, linetype = NULL)
 ```
