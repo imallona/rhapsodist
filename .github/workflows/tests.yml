@@ -43,7 +43,7 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
-            --config "aligner=['starsolo','alevin']" sim_n_cells=100 \
+            --config "aligner=['starsolo','alevin']" \
             --dry-run \
             --nolock \
             --cores 2
@@ -76,8 +76,18 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
-            --config "aligner=['starsolo','alevin']" sim_n_cells=100 \
+            --config "aligner=['starsolo','alevin']" \
             --cores 2 \
             --use-conda \
             --nolock \
             --rerun-incomplete
+
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            output/simul/logs/
+            .snakemake/log/
+          if-no-files-found: ignore
