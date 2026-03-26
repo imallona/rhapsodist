@@ -41,8 +41,9 @@ jobs:
       - name: dry-run simulation workflow
         run: |
           snakemake \
+            --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
-            --config "aligner=['starsolo','kallisto','alevin']" \
+            --config "aligner=['starsolo','alevin']" sim_n_cells=100 \
             --dry-run \
             --nolock \
             --cores 2
@@ -68,13 +69,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .snakemake/conda
-          key: snakemake-conda-${{ hashFiles('envs/all_in_one.yaml') }}
+          key: snakemake-conda-${{ hashFiles('workflow/envs/all_in_one.yaml') }}
 
       - name: run simulation workflow
         run: |
           snakemake \
+            --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
-            --config "aligner=['starsolo','kallisto','alevin']" \
+            --config "aligner=['starsolo','alevin']" sim_n_cells=100 \
             --cores 2 \
             --use-conda \
             --nolock \

@@ -17,15 +17,15 @@ from pathlib import Path
 
 
 def find_snakefile():
-    """locate snakefile: next to this file's package root, then cwd."""
-    candidate = Path(__file__).resolve().parent.parent / "Snakefile"
+    """locate snakefile at workflow/Snakefile next to the package root, then cwd."""
+    candidate = Path(__file__).resolve().parent.parent / "workflow" / "Snakefile"
     if candidate.exists():
         return candidate
-    candidate = Path("Snakefile")
+    candidate = Path("workflow") / "Snakefile"
     if candidate.exists():
         return candidate
     sys.exit(
-        "cannot find Snakefile. run rhapsodist from the repository root "
+        "cannot find workflow/Snakefile. run rhapsodist from the repository root "
         "or install the package with 'pip install -e .'"
     )
 

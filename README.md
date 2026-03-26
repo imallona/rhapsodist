@@ -2,7 +2,7 @@
 
 Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA (enhanced beads) single-cell RNA-seq data. It pre-processes raw FASTQ reads through barcode standardisation, then runs alignment and UMI counting in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
 
-## analysis paths
+## Workflow layout
 
 ```mermaid
 flowchart TD
@@ -27,7 +27,7 @@ flowchart TD
 
 ## Quickstart
 
-Install the cli (optional but recommended):
+Install the CLI (optional):
 
 ```
 pip install -e .
@@ -61,14 +61,16 @@ snakemake --use-conda --cores 10 --configfile configs/config.yaml
 
 ```
 configs/          pipeline config yaml files (config.yaml, sim_config.yaml, real_config.yaml)
-data/             reference data: barcode whitelists, sampletag sequences
-envs/             conda environment yaml files used by snakemake
-src/
-  *.R             per-aligner SCE generation and report scripts
-  *.Rmd           rmarkdown reports rendered by the pipeline
-  *.py            python helpers and simulation scripts
-  simulate.snmk   snakemake rules for synthetic data generation
-  reports/        standalone benchmark and overview documents
+workflow/
+  Snakefile       main snakemake workflow
+  data/           reference data: barcode whitelists, sampletag sequences
+  envs/           conda environment yaml files used by snakemake
+  src/
+    *.R           per-aligner SCE generation and report scripts
+    *.Rmd         rmarkdown reports rendered by the pipeline
+    *.py          python helpers and simulation scripts
+    simulate.snmk snakemake rules for synthetic data generation
+    reports/      standalone benchmark and overview documents
 rhapsodist/       installable cli package
 tests/            pytest unit tests
 ```

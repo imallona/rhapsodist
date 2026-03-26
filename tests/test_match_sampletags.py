@@ -6,8 +6,8 @@ import pytest
 
 from src.match_sampletags import best_match, load_tag_variable_regions
 
-HUMAN_FA = os.path.join("data", "sampletags", "human_sampletags.fa")
-MOUSE_FA = os.path.join("data", "sampletags", "mouse_sampletags.fa")
+HUMAN_FA = os.path.join("workflow", "data", "sampletags", "human_sampletags.fa")
+MOUSE_FA = os.path.join("workflow", "data", "sampletags", "mouse_sampletags.fa")
 
 COMMON_PREFIX = "GTTGTCAAGATGCTACCGTTCAGAG"
 
