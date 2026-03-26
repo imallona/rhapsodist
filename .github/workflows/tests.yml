@@ -82,12 +82,13 @@ jobs:
             --nolock \
             --rerun-incomplete
 
-      - name: upload logs
+      - name: upload logs and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: logs
+          name: logs-and-reports
           path: |
             output/simul/logs/
             .snakemake/log/
+            output/simul/**/*.html
           if-no-files-found: ignore

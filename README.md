@@ -11,7 +11,7 @@ flowchart TD
     cutadapt --> starsolo[STARsolo\nalignment + UMI count]
     cutadapt --> kallisto[kallisto bus\nalignment]
     cutadapt --> alevin[salmon alevin\nalignment + UMI count]
-    cutadapt --> sbg[BD Rhapsody CWL\nvia cwl-runner]
+    reads --> sbg[BD Rhapsody CWL\nvia cwl-runner]
 
     starsolo --> sce_star[SingleCellExperiment\nSTARsolo]
     kallisto --> bustools[bustools sort + count]
