@@ -823,7 +823,7 @@ for sample in get_sample_names():
         conda:
             op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
         input:
-            fa = op.join('data', 'sampletags', species + '_sampletags.fa')
+            fa = op.join(workflow.basedir, 'data', 'sampletags', species + '_sampletags.fa')
         output:
             op.join(config['working_dir'], 'data', species + '_index', 'sampletags', 'SAindex')
         threads:
