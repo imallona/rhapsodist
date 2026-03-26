@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
 
       - name: install test dependencies
-        run: pip install -r requirements-test.txt
+        run: pip install pytest pytest-cov
 
       - name: run unit tests with coverage
         run: pytest
@@ -41,7 +41,7 @@ jobs:
       - name: dry-run simulation workflow
         run: |
           snakemake \
-            --configfile sim_config.yaml \
+            --configfile configs/sim_config.yaml \
             --config "aligner=['starsolo','kallisto','alevin']" \
             --dry-run \
             --nolock \
@@ -73,7 +73,7 @@ jobs:
       - name: run simulation workflow
         run: |
           snakemake \
-            --configfile sim_config.yaml \
+            --configfile configs/sim_config.yaml \
             --config "aligner=['starsolo','kallisto','alevin']" \
             --cores 2 \
             --use-conda \

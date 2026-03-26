@@ -1,5 +1,5 @@
 ---
-title: "Sampletag Demultiplexing Report"
+title: "sampletag demultiplexing report"
 author: "rhapsodist"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -16,109 +16,197 @@ params:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = TRUE, warning = TRUE, error = TRUE)
 suppressPackageStartupMessages({
+    library(data.table)
     library(Matrix)
     library(ggplot2)
 })
 ```
 
-# Load sampletag alignment counts
+# load sampletag alignment counts
 
-Each row of the input TSV is one aligned read: `cb`, `umi`, `sampletag`, `cigar`.
+each row of the input tsv is one aligned read: cb, umi, sampletag, cigar.
 
 ```{r load}
-counts_raw <- read.table(gzfile(params$counts_path),
-                         sep = "\t", header = FALSE,
-                         col.names = c("cb", "umi", "sampletag", "cigar"),
-                         stringsAsFactors = FALSE)
-cat(sprintf("Total aligned sampletag reads: %d\n", nrow(counts_raw)))
-cat(sprintf("Unique CBs seen: %d\n", length(unique(counts_raw$cb))))
-cat(sprintf("Sampletags detected: %s\n", paste(unique(counts_raw$sampletag), collapse = ", ")))
+# fread + zcat is much faster than read.table(gzfile()) for large files
+counts_raw <- fread(
+    cmd = paste("zcat", shQuote(params$counts_path)),
+    sep = "\t", header = FALSE,
+    col.names = c("cb", "umi", "sampletag", "cigar")
+)
+cat(sprintf("total aligned sampletag reads: %d\n", nrow(counts_raw)))
+cat(sprintf("unique cbs seen: %d\n", uniqueN(counts_raw$cb)))
+cat(sprintf("sampletags detected: %s\n", paste(unique(counts_raw$sampletag), collapse = ", ")))
 ```
 
-# Aggregate per cell × sampletag
+# aggregate per cell x sampletag
 
 ```{r aggregate}
-agg <- as.data.frame(table(cb = counts_raw$cb, sampletag = counts_raw$sampletag),
-                     stringsAsFactors = FALSE)
-agg <- agg[agg$Freq > 0, ]
+# data.table group-by is hash-based and handles 100M+ rows fast.
+# sparseMatrix avoids building a full dense table at this stage.
+agg <- counts_raw[, .N, by = .(cb, sampletag)]
+cb_f  <- factor(agg$cb)
+tag_f <- factor(agg$sampletag)
+mat <- as.matrix(sparseMatrix(
+    i = as.integer(cb_f),
+    j = as.integer(tag_f),
+    x = agg$N,
+    dims = c(nlevels(cb_f), nlevels(tag_f)),
+    dimnames = list(levels(cb_f), levels(tag_f))
+))
 
-## pivot to wide: rows = cells, cols = sampletags
-tags <- unique(counts_raw$sampletag)
-cells <- unique(counts_raw$cb)
-mat <- matrix(0L, nrow = length(cells), ncol = length(tags),
-              dimnames = list(cells, tags))
-for (i in seq_len(nrow(agg))) mat[agg$cb[i], agg$sampletag[i]] <- agg$Freq[i]
-
-cat(sprintf("Count matrix: %d cells × %d sampletags\n", nrow(mat), ncol(mat)))
+cat(sprintf("count matrix: %d cells x %d sampletags\n", nrow(mat), ncol(mat)))
 ```
 
-# Demultiplexing (≥75% dominant tag = singlet)
+# demultiplexing (bd rhapsody algorithm)
+
+the bd algorithm: identify high-quality singlets (>75%), estimate per-tag
+noise via a linear trend, subtract expected noise, call remaining cells
+against per-tag minimum-count thresholds.
 
 ```{r demux}
-total <- rowSums(mat)
-props <- mat / pmax(total, 1L)
+# step 1: high-quality singlets
+total = rowSums(mat)
+props = mat / pmax(total, 1L)
+dominant_idx = max.col(props, ties.method = "first")
+dominant_frac = props[cbind(seq_len(nrow(props)), dominant_idx)]
+dominant_tag = colnames(mat)[dominant_idx]
+is_highqual = dominant_frac >= 0.75 & total > 0
 
-dominant_frac <- apply(props, 1, max)
-dominant_tag  <- colnames(mat)[apply(props, 1, which.max)]
+# step 2: per-tag thresholds (min count among high-quality singlets for each tag)
+tag_thresholds = vapply(seq_along(colnames(mat)), function(j) {
+    hq = is_highqual & dominant_idx == j
+    if (!any(hq)) return(NA_real_)
+    min(mat[hq, j])
+}, numeric(1))
+names(tag_thresholds) = colnames(mat)
 
-status <- ifelse(dominant_frac >= 0.75, "singlet", "undetermined")
-called <- ifelse(status == "singlet", dominant_tag, NA_character_)
+# step 3: noise model using high-quality singlets only
+hq_counts = mat[cbind(seq_len(nrow(mat)), dominant_idx)]
+noise_hq = ifelse(is_highqual, total - hq_counts, NA_real_)
 
-demux <- data.frame(
-    cb            = rownames(mat),
-    called_tag    = called,
+# per-tag noise fraction: fraction of background attributable to each tag
+noise_mat = mat
+noise_mat[cbind(which(is_highqual), dominant_idx[is_highqual])] = 0L
+noise_mat[!is_highqual, ] = NA_real_
+tag_noise_frac = colSums(noise_mat, na.rm = TRUE)
+total_noise = sum(tag_noise_frac)
+if (total_noise > 0) {
+    tag_noise_frac = tag_noise_frac / total_noise
+} else {
+    tag_noise_frac[] = 1 / ncol(mat)
+}
+
+# analytic ols slope (no intercept): noise ~ 0 + total
+hq_total = total[is_highqual]
+hq_noise = noise_hq[is_highqual]
+slope = if (length(hq_total) >= 2 && var(hq_total) > 0) {
+    max(sum(hq_total * hq_noise) / sum(hq_total^2), 0)
+} else {
+    0
+}
+
+# step 4: noise-corrected counts
+# corrected[i, j] = mat[i, j] - slope * total[i] * tag_noise_frac[j]
+predicted_noise = slope * total
+corrected = mat - outer(predicted_noise, tag_noise_frac)
+
+# step 5: call non-highqual cells against per-tag thresholds
+valid = !is.na(tag_thresholds)
+called_mat = matrix(FALSE, nrow(mat), ncol(mat), dimnames = dimnames(mat))
+if (any(valid)) {
+    called_mat[, valid] = sweep(
+        corrected[, valid, drop = FALSE], 2, tag_thresholds[valid], ">"
+    )
+}
+n_called = rowSums(called_mat)
+
+# final classification
+status = rep("undetermined", nrow(mat))
+called_tag = rep(NA_character_, nrow(mat))
+
+status[is_highqual] = "highqual"
+called_tag[is_highqual] = dominant_tag[is_highqual]
+
+is_called = !is_highqual & n_called == 1
+status[is_called] = "called"
+if (any(is_called)) {
+    called_tag[is_called] = colnames(called_mat)[
+        max.col(called_mat[is_called, , drop = FALSE], ties.method = "first")
+    ]
+}
+status[!is_highqual & n_called > 1] = "multiplet"
+
+demux = data.frame(
+    cb = rownames(mat),
+    called_tag = called_tag,
     dominant_frac = round(dominant_frac, 3),
-    total_reads   = total,
-    status        = status,
+    total_reads = total,
+    predicted_noise = round(predicted_noise, 1),
+    status = status,
+    row.names = NULL,
     stringsAsFactors = FALSE
 )
 
+cat(sprintf("noise model slope: %.4f\n", slope))
 print(table(demux$status))
 print(table(demux$called_tag, useNA = "ifany"))
 ```
 
-# Distributions
+# distributions
 
 ```{r plots, fig.width=7, fig.height=4}
 ggplot(demux, aes(x = total_reads, fill = status)) +
     geom_histogram(bins = 30, colour = "white") +
-    labs(title = "Total sampletag reads per cell", x = "Reads", y = "Cells") +
+    labs(title = "total sampletag reads per cell", x = "reads", y = "cells") +
     theme_bw()
 
-ggplot(demux[demux$status == "singlet", ], aes(x = called_tag, fill = called_tag)) +
+ggplot(demux[demux$status %in% c("highqual", "called"), ],
+       aes(x = called_tag, fill = called_tag)) +
     geom_bar() +
-    labs(title = "Singlet cell counts per sampletag", x = "Sampletag", y = "Cells") +
+    labs(title = "called cell counts per sampletag", x = "sampletag", y = "cells") +
     theme_bw() + theme(legend.position = "none")
 
 ggplot(demux, aes(x = dominant_frac, fill = status)) +
     geom_histogram(bins = 30, colour = "white") +
     geom_vline(xintercept = 0.75, linetype = "dashed", colour = "red") +
-    labs(title = "Dominant sampletag fraction per cell",
-         x = "Fraction of reads from top tag", y = "Cells") +
+    labs(title = "dominant sampletag fraction per cell",
+         x = "fraction of reads from top tag", y = "cells") +
+    theme_bw()
+
+noise_plot_df = data.frame(
+    total = total[is_highqual],
+    noise = noise_hq[is_highqual]
+)
+ggplot(noise_plot_df, aes(x = total, y = noise)) +
+    geom_point(size = 0.4, alpha = 0.4) +
+    geom_abline(intercept = 0, slope = slope, colour = "red", linewidth = 0.8) +
+    labs(title = "noise trend (high-quality singlets)",
+         subtitle = sprintf("slope = %.4f", slope),
+         x = "total sampletag reads", y = "noise reads") +
     theme_bw()
 ```
 
-# Concordance with ground truth (simulated data only)
+# concordance with ground truth (simulated data only)
 
 ```{r concordance}
 if (!is.null(params$assignments_path) && nzchar(params$assignments_path) &&
         file.exists(params$assignments_path)) {
-    truth <- read.table(params$assignments_path, header = TRUE,
-                        sep = "\t", stringsAsFactors = FALSE)
-    ## expected cols: barcode, sampletag
-    colnames(truth) <- c("cb", "true_tag")
-    merged <- merge(demux, truth, by = "cb", all.x = TRUE)
-    n_concordant <- sum(merged$called_tag == merged$true_tag, na.rm = TRUE)
-    n_singlet    <- sum(merged$status == "singlet")
-    cat(sprintf("Concordance: %d / %d singlets match ground truth (%.1f%%)\n",
-                n_concordant, n_singlet, 100 * n_concordant / max(n_singlet, 1)))
+    truth = read.table(params$assignments_path, header = TRUE,
+                       sep = "\t", stringsAsFactors = FALSE)
+    colnames(truth) = c("cb", "true_tag")
+    merged = merge(demux, truth, by = "cb", all.x = TRUE)
+    n_concordant = sum(merged$called_tag == merged$true_tag, na.rm = TRUE)
+    n_called_any = sum(merged$status %in% c("highqual", "called"))
+    cat(sprintf("concordance: %d / %d called cells match ground truth (%.1f%%)\n",
+                n_concordant, n_called_any,
+                100 * n_concordant / max(n_called_any, 1)))
     print(table(called = merged$called_tag, truth = merged$true_tag, useNA = "ifany"))
 } else {
-    cat("No ground-truth assignments file provided — skipping concordance check.\n")
+    cat("no ground-truth assignments file provided - skipping concordance check.\n")
 }
 ```
 
-# Session info
+# session info
 
 ```{r sessioninfo}
 sessionInfo()

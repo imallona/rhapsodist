@@ -10,7 +10,7 @@
 import os.path as op
 import os
 
-configfile: "config.yaml"
+configfile: "configs/config.yaml"
 
 ## whitelists symlinking requires an absolute path before any include uses it
 if not op.isabs(config['repo_path']):
@@ -34,6 +34,11 @@ if config.get('use_simulated', False):
 include: "src/workflow_functions.py"
 
 include: op.join('src', 'simulate.snmk')
+
+## kallisto and bustools from bioconda are not reliable, so we compile them
+kallisto = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src')
+bustools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src')
+shell.prefix('export PATH=' + kallisto + ':' + bustools + ":$PATH;")
 
 try:
     os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
@@ -99,6 +104,58 @@ rule all:
         #        sample = get_sample_names()),
         # expand(op.join(config['working_dir'], 'starsolo', '{sample}', '{sample}_starsolo_sce.rds'),
         #        sample = get_sample_names())
+
+rule compile_kallisto:
+    output:
+        op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto')
+    log:
+        op.join(config['working_dir'], 'logs', 'kallisto_install.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'kallisto_install.txt')
+    params:
+        soft = op.join(config['working_dir'], 'software')
+    threads:
+        1
+    shell:
+        """
+        mkdir -p {params.soft}
+        cd {params.soft}
+
+        rm -rf kallisto
+        git clone https://github.com/pachterlab/kallisto.git --depth 1
+        cd kallisto
+        git log | head &> {log}
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX:PATH=$HOME &>> {log}
+        make -j {threads} &>> {log}
+        """
+
+rule compile_bustools:
+    output:
+        op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+    log:
+        op.join(config['working_dir'], 'logs', 'bustools_install.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'bustools_install.txt')
+    params:
+        soft = op.join(config['working_dir'], 'software')
+    threads:
+        min(5, workflow.cores)
+    shell:
+        """
+        mkdir -p {params.soft}
+        cd {params.soft}
+        rm -rf bustools
+
+        git clone https://github.com/BUStools/bustools.git --depth 1
+        cd bustools
+        git log | head &> {log}
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX:PATH=$HOME &>> {log}
+        make -j {threads} &>> {log}
+        """
 
 rule star_index:
     conda:
@@ -517,10 +574,10 @@ rule standardize_cb_umis_cutadapt:
         """
 
 rule kallisto_index:
-    conda:
-        op.join('envs', 'kallisto.yaml')
     input:
         transcriptome = config['transcriptome'],
+        kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
+        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
     params:
         index_name = 'kallisto.index',
         output_dir= op.join(config['working_dir'], 'data', 'index', 'kallisto')        
@@ -541,8 +598,6 @@ rule kallisto_index:
         """
 
 rule kallisto_bus:
-    conda:
-        op.join('envs', 'kallisto.yaml')
     input:
         transcriptome = config['transcriptome'],
         # transcriptome = op.join(config['working_dir'], 'data', 'index', 'salmon', 'transcriptome.fa'),        
@@ -550,6 +605,8 @@ rule kallisto_bus:
         standardized_cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
         kallisto_index = op.join(config['working_dir'], 'data', 'index', 'kallisto', 'kallisto.index'),
+        kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
+        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
     output:
         matrix_ec = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
@@ -588,10 +645,9 @@ rule kallisto_bus:
 
         
 rule bustools_sort:
-    conda:
-        op.join('envs', 'kallisto.yaml')
     input:
-        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus')
+        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus'),
+        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
         sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')
     threads: workflow.cores
@@ -654,10 +710,9 @@ PY
         """
 
 rule bustools_correct:
-    conda:
-        op.join('envs', 'kallisto.yaml')
     input:
         bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
+        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
         whitelist = (
             op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
             if config.get('use_simulated', False)
@@ -676,13 +731,13 @@ rule bustools_correct:
         """
 
 rule bustools_count:
-    conda:
-        op.join('envs', 'kallisto.yaml')
     input:
         txp2gene   = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
         matrix_ec  = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
-        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
+        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus'),
+        kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
+        btools     = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
         op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx')
     params:
@@ -706,36 +761,6 @@ rule bustools_count:
         """
         
 
-        
-## from https://github.com/imallona/rock_roi_paper/blob/imallona/03_leukemia/02_sampletags_again.sh
-
-for sample in get_sample_names():
-    species = get_species_by_name(name = sample)
-    rule:
-        name:
-            f"{species}_star_index_sampletags"
-        conda:
-            op.join('envs', 'all_in_one.yaml')
-        input:
-            fa = op.join('data', 'sampletags', species + '_sampletags.fa')
-        output:
-            op.join(config['working_dir'] , 'data', species + '_index', 'sampletags', 'SAindex')
-        threads:
-            workflow.cores
-        params:
-            output_dir = op.join(config['working_dir'], 'data', species + '_index', 'sampletags')
-        log:
-            op.join(config['working_dir'], 'logs', species + '_sampletags_index.log')
-        benchmark:
-            op.join(config['working_dir'], 'benchmarks', species + '_sampletags__index.txt')
-        shell:
-            """
-            STAR --runThreadN {threads} \
-            --runMode genomeGenerate \
-            --genomeSAindexNbases 2 \
-            --genomeDir {params.output_dir} \
-            --genomeFastaFiles {input.fa} &> {log}
-            """
         
 rule extract_unmapped_startsolo_wta_tagged_fastqs:
     conda:
@@ -784,7 +809,35 @@ rule extract_sampletagslooking_fastqs:
           -j {threads} --action=retain --discard-untrimmed \
           -o {output.fq} &> {log}
         """
-        
+
+for sample in get_sample_names():
+    species = get_species_by_name(name = sample)
+    rule:
+        name:
+            f"{species}_star_index_sampletags"
+        conda:
+            op.join('envs', 'all_in_one.yaml')
+        input:
+            fa = op.join('data', 'sampletags', species + '_sampletags.fa')
+        output:
+            op.join(config['working_dir'], 'data', species + '_index', 'sampletags', 'SAindex')
+        threads:
+            workflow.cores
+        params:
+            output_dir = op.join(config['working_dir'], 'data', species + '_index', 'sampletags')
+        log:
+            op.join(config['working_dir'], 'logs', species + '_sampletags_index.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', species + '_sampletags__index.txt')
+        shell:
+            """
+            STAR --runThreadN {threads} \
+            --runMode genomeGenerate \
+            --genomeSAindexNbases 2 \
+            --genomeDir {params.output_dir} \
+            --genomeFastaFiles {input.fa} &> {log}
+            """
+
 rule align_star_sampletags:
     conda:
         op.join('envs', 'all_in_one.yaml')
@@ -808,8 +861,8 @@ rule align_star_sampletags:
     shell:
         """
         rm -rf {params.tmp} {params.output_dir}
-        mkdir -p {params.output_dir} 
-        
+        mkdir -p {params.output_dir}
+
         STAR --runThreadN {threads} \
           --genomeDir {params.sampletags_genome_dir} \
           --outTmpDir {params.tmp} \
@@ -840,10 +893,9 @@ rule count_sampletags:
         min(10, workflow.cores)
     shell:
         """
-        ## this only reports a table with as many rows as `cb,umi,sampletag,cigar` alignments. Not summarized
-        ##  at all 
         samtools view -@ {threads} {input.bam} | \
-          cut -f1,3,6 | sed 's/__/\t/g' | pigz -p {threads} -c > {output.counts}
+            awk -F '\\t' '{{split($1, a, "__"); print a[1]"\\t"a[2]"\\t"$3"\\t"$6}}' | \
+            pigz -p {threads} -c > {output.counts} 2> {log}
         """
 
 rule render_sampletag_report:
@@ -1304,7 +1356,7 @@ rule render_comparison_report:
             op.join(config['working_dir'], 'simulate', 'true_mex', 'matrix.mtx.gz')
             if config.get('use_simulated', False) else []
         ),
-        doc = op.join(config['repo_path'], 'docs', '02_comparison.Rmd'),
+        doc = op.join(config['repo_path'], 'src', 'reports', '02_comparison.Rmd'),
     output:
         html = op.join(config['working_dir'], '{sample}_comparison.html')
     params:
@@ -1353,7 +1405,7 @@ rule render_benchmarks_report:
             sample  = get_sample_names()
         ),
         sbg_sce = _sbg_sce_targets,
-        doc = op.join(config['repo_path'], 'docs', '03_benchmarks.Rmd'),
+        doc = op.join(config['repo_path'], 'src', 'reports', '03_benchmarks.Rmd'),
     output:
         html = op.join(config['working_dir'], 'benchmarks_report.html')
     params:
