@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from src.simulate_data import (
+from workflow.src.simulate_data import (
     append_empty_droplets,
     append_sampletag_fastqs,
     make_chromosomes,
@@ -21,7 +21,7 @@ from src.simulate_data import (
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WHITELIST_DIR = os.path.join(REPO_ROOT, 'data', 'whitelist_384x3')
+WHITELIST_DIR = os.path.join(REPO_ROOT, 'workflow', 'data', 'whitelist_384x3')
 
 
 @pytest.fixture

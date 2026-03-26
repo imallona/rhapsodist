@@ -4,7 +4,7 @@ import tempfile
 
 import pytest
 
-from src.match_sampletags import best_match, load_tag_variable_regions
+from workflow.src.match_sampletags import best_match, load_tag_variable_regions
 
 HUMAN_FA = os.path.join("workflow", "data", "sampletags", "human_sampletags.fa")
 MOUSE_FA = os.path.join("workflow", "data", "sampletags", "mouse_sampletags.fa")
@@ -70,7 +70,7 @@ def test_main_writes_output(tmp_path):
         fh.write(f"@ACGT__TTTT\n{seq}\n+\n{'I' * len(seq)}\n")
         fh.write(f"@GGGG__CCCC\nACGTACGT\n+\nIIIIIIII\n")
 
-    from src.match_sampletags import main
+    from workflow.src.match_sampletags import main
     import sys
 
     argv_backup = sys.argv

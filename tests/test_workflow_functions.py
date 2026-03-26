@@ -6,7 +6,7 @@ import pytest
 # workflow_functions.py is designed to be exec'd by Snakemake (include:), so it
 # has no imports of its own. Import it as a normal module and inject the globals
 # that Snakemake would normally provide.
-import src.workflow_functions as wf
+import workflow.src.workflow_functions as wf
 
 wf.os = os
 wf.op = op
