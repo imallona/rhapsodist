@@ -38,14 +38,16 @@ if _sra_samples:
         shell:
             """
             mkdir -p {params.outdir}
+            prefetch --max-size 0 --output-directory {params.outdir} {params.sra_run} 2>> {log}
             fasterq-dump --split-files --threads {threads} \
-                --outdir {params.outdir} {params.sra_run} 2> {log}
+                --outdir {params.outdir} {params.outdir}/{params.sra_run}/ 2>> {log}
             pigz -p {threads} -c {params.outdir}/{params.sra_run}_1.fastq \
                 > {output.r1} 2>> {log}
             pigz -p {threads} -c {params.outdir}/{params.sra_run}_2.fastq \
                 > {output.r2} 2>> {log}
-            rm {params.outdir}/{params.sra_run}_1.fastq \
-               {params.outdir}/{params.sra_run}_2.fastq
+            rm -rf {params.outdir}/{params.sra_run}/ \
+                   {params.outdir}/{params.sra_run}_1.fastq \
+                   {params.outdir}/{params.sra_run}_2.fastq
             """
 
     _sra_accessions = [s['uses']['sra_run'] for s in config['samples']
