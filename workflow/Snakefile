@@ -828,8 +828,7 @@ rule extract_sampletagslooking_fastqs:
           -o {output.fq} &> {log}
         """
 
-for sample in get_sample_names():
-    species = get_species_by_name(name = sample)
+for species in set(get_species_by_name(name=s) for s in get_sample_names()):
     rule:
         name:
             f"{species}_star_index_sampletags"
