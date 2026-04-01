@@ -18,6 +18,17 @@ _repo_root = op.normpath(op.join(workflow.basedir, '..'))
 if not op.isabs(config['working_dir']):
     config['working_dir'] = op.join(_repo_root, config['working_dir'])
 
+## when *_url keys are present, derive local reference paths from reference_dir
+if config.get('reference_dir'):
+    if not op.isabs(config['reference_dir']):
+        config['reference_dir'] = op.join(_repo_root, config['reference_dir'])
+    if config.get('genome_url'):
+        config['genome'] = op.join(config['reference_dir'], 'genome.fa')
+    if config.get('gtf_url'):
+        config['gtf'] = op.join(config['reference_dir'], 'annotation.gtf')
+    if config.get('transcriptome_url'):
+        config['transcriptome'] = op.join(config['reference_dir'], 'transcriptome.fa.gz')
+
 ## when use_simulated is true, point genome/gtf/transcriptome/fastqs at generated outputs
 if config.get('use_simulated', False):
     _sim_dir = op.join(config['working_dir'], 'simulate')
@@ -33,6 +44,8 @@ if config.get('use_simulated', False):
 include: "src/workflow_functions.py"
 
 include: op.join('src', 'simulate.snmk')
+
+include: op.join('src', 'fetch_data.snmk')
 
 ## kallisto and bustools from bioconda are not reliable, so we compile them
 kallisto = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src')

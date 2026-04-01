@@ -1,0 +1,50 @@
+## rhapsodist config for Sendoel et al. 2024 (PMC11306103)
+## P60 mouse epidermis WTA samples (normal, 3 biological replicates)
+## GEO: GSE235325  BioProject: PRJNA985698
+## Sequenced on Illumina NovaSeq 6000 / NovaSeq X
+## BD Rhapsody Enhanced V2 cartridge (384x3 whitelist) not confirmed yet
+
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+
+working_dir: output/sendoel2024
+
+## Gencode GRCm39 vM36 - verify release at https://www.gencodegenes.org/mouse/
+## reference_dir is relative to the repo root; shared across runs on this reference
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.pc_transcripts.fa.gz"
+
+## cDNA read length for WTA was 62 (right/cDNA); sjdbOverhang = readLength - 1
+## Verify with: zcat <R2.fastq.gz> | head -8 | awk 'NR==2{print length($0)}'
+sjdbOverhang: 61
+
+skip_sampletags: true
+
+aligner: ['starsolo', 'kallisto', 'alevin']
+
+samples:
+  - name: sample_16_wta_p60
+    uses:
+      sra_run: "SRR24978231"
+      whitelist: 384x3
+      species: 'mouse'
+  - name: sample_17_wta_p60
+    uses:
+      sra_run: "SRR24978243"
+      whitelist: 384x3
+      species: 'mouse'
+  - name: sample_18_wta_p60
+    uses:
+      sra_run: "SRR24978233"
+      whitelist: 384x3
+      species: 'mouse'

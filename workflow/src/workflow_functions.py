@@ -15,14 +15,20 @@ def get_aligners():
 
 ## name means sample name, everywhere
 def get_cbumi_by_name(name):
-    for i in range(len(config['samples'])):
-        if config['samples'][i]['name'] == name:
-             return(config['samples'][i]['uses']['cb_umi_fq'])
+    for s in config['samples']:
+        if s['name'] == name:
+            if 'cb_umi_fq' in s['uses']:
+                return s['uses']['cb_umi_fq']
+            elif 'sra_run' in s['uses']:
+                return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
 def get_cdna_by_name(name):
-    for i in range(len(config['samples'])):
-        if config['samples'][i]['name'] == name:
-             return(config['samples'][i]['uses']['cdna_fq'])
+    for s in config['samples']:
+        if s['name'] == name:
+            if 'cdna_fq' in s['uses']:
+                return s['uses']['cdna_fq']
+            elif 'sra_run' in s['uses']:
+                return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R2.fastq.gz')
 
 def get_expected_cells_by_name(name):
     for i in range(len(config['samples'])):
