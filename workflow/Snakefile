@@ -679,8 +679,6 @@ rule bustools_sort:
         """
 
 rule derive_kallisto_observed_whitelist:
-    conda:
-        op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
     input:
         sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
         cb_umi_fq = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
@@ -693,39 +691,37 @@ rule derive_kallisto_observed_whitelist:
         op.join(config['working_dir'], 'logs', '{sample}_derive_observed_whitelist.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_derive_observed_whitelist.txt')
-    shell:
-        """
-        set -euo pipefail
-        python - <<'PY' > {output.observed_whitelist}
-import gzip
+    run:
+        import gzip
 
-with open("{input.cb1}") as fh:
-    cb1 = {line.strip() for line in fh if line.strip()}
-with open("{input.cb2}") as fh:
-    cb2 = {line.strip() for line in fh if line.strip()}
-with open("{input.cb3}") as fh:
-    cb3 = {line.strip() for line in fh if line.strip()}
+        with open(input.cb1) as fh:
+            cb1 = {line.strip() for line in fh if line.strip()}
+        with open(input.cb2) as fh:
+            cb2 = {line.strip() for line in fh if line.strip()}
+        with open(input.cb3) as fh:
+            cb3 = {line.strip() for line in fh if line.strip()}
 
-observed_valid_barcodes = set()
-with gzip.open("{input.cb_umi_fq}", "rt") as fh:
-    for line_index, line in enumerate(fh):
-        if line_index % 4 != 1:
-            continue
-        sequence = line.strip()
-        if len(sequence) < 27:
-            continue
-        barcode = sequence[:27]
-        barcode_1 = barcode[:9]
-        barcode_2 = barcode[9:18]
-        barcode_3 = barcode[18:27]
-        if barcode_1 in cb1 and barcode_2 in cb2 and barcode_3 in cb3:
-            observed_valid_barcodes.add(barcode)
+        observed_valid_barcodes = set()
+        with gzip.open(input.cb_umi_fq, "rt") as fh:
+            for line_index, line in enumerate(fh):
+                if line_index % 4 != 1:
+                    continue
+                sequence = line.strip()
+                if len(sequence) < 27:
+                    continue
+                barcode = sequence[:27]
+                barcode_1 = barcode[:9]
+                barcode_2 = barcode[9:18]
+                barcode_3 = barcode[18:27]
+                if barcode_1 in cb1 and barcode_2 in cb2 and barcode_3 in cb3:
+                    observed_valid_barcodes.add(barcode)
 
-for barcode in sorted(observed_valid_barcodes):
-    print(barcode)
-PY
-        wc -l {output.observed_whitelist} > {log}
-        """
+        with open(output.observed_whitelist, "w") as out_fh:
+            for barcode in sorted(observed_valid_barcodes):
+                out_fh.write(barcode + "\n")
+
+        with open(log[0], "w") as log_fh:
+            log_fh.write(str(len(observed_valid_barcodes)) + "\n")
 
 rule bustools_correct:
     input:
