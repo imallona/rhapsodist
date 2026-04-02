@@ -563,46 +563,13 @@ rule validate_bead_version:
     log:
         op.join(config['working_dir'], 'logs', '{sample}_bead_version_validation.log')
     run:
-        import gzip, sys
+        import sys
 
-        n_reads = 0
-        v1_count = 0
-        enh_count = 0
-
-        opener = gzip.open if str(input.cb_umi).endswith('.gz') else open
-        with opener(input.cb_umi, 'rt') as fh:
-            for i, line in enumerate(fh):
-                if i % 4 != 1:
-                    continue
-                seq = line.strip()
-                n_reads += 1
-                if n_reads >= 10000:
-                    break
-                if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
-                    v1_count += 1
-                else:
-                    for offset in range(4):
-                        if len(seq) >= 13 + offset and seq[9 + offset:13 + offset] == 'GTGA':
-                            enh_count += 1
-                            break
-
-        v1_frac = v1_count / n_reads if n_reads else 0
-        enh_frac = enh_count / n_reads if n_reads else 0
-
-        if v1_frac >= enh_frac and v1_frac > 0.1:
-            detected = 'v1'
-        elif enh_frac > 0.1:
-            detected = 'enhanced'
-        else:
-            detected = 'unknown'
-
+        detected = detect_bead_version(input.cb_umi)
         reported = params.bead_version
         reported_class = 'v1' if reported == 'v1' else 'enhanced'
 
         lines = [
-            f"reads checked: {n_reads}",
-            f"v1 linker fraction (ACTGGCCTGCGA at pos 10-21): {v1_frac:.3f}",
-            f"enhanced linker fraction (GTGA at pos 10-16): {enh_frac:.3f}",
             f"detected bead class: {detected}",
             f"reported bead_version: {reported}",
         ]

@@ -1,3 +1,4 @@
+import gzip
 import os
 import os.path as op
 
@@ -17,7 +18,7 @@ SAMPLE_A = {
     'uses': {
         'cb_umi_fq': '/data/sampleA_R1.fq.gz',
         'cdna_fq': '/data/sampleA_R2.fq.gz',
-        'whitelist': '96x3',
+        'bead_version': 'enhanced',
         'species': 'human',
     },
 }
@@ -27,7 +28,7 @@ SAMPLE_B = {
     'uses': {
         'cb_umi_fq': '/data/sampleB_R1.fq.gz',
         'cdna_fq': '/data/sampleB_R2.fq.gz',
-        'whitelist': '384x3',
+        'bead_version': 'enhanced_v2',
         'species': 'mouse',
         'sbg_cwl': '/per_sample/pipeline.cwl',
     },
@@ -142,3 +143,62 @@ def test_get_sbg_reference_none_when_absent():
 def test_get_sbg_reference_from_global():
     wf.config['sbg_reference_archive'] = '/data/ref.tar.gz'
     assert wf.get_sbg_reference_by_name('sampleA') == '/data/ref.tar.gz'
+
+
+def _write_fastq(path, sequences):
+    with open(path, 'w') as fh:
+        for i, seq in enumerate(sequences):
+            fh.write(f'@read{i}\n{seq}\n+\n{"F" * len(seq)}\n')
+
+
+def _write_fastq_gz(path, sequences):
+    with gzip.open(path, 'wt') as fh:
+        for i, seq in enumerate(sequences):
+            fh.write(f'@read{i}\n{seq}\n+\n{"F" * len(seq)}\n')
+
+
+V1_READ = 'A' * 9 + 'ACTGGCCTGCGA' + 'C' * 9 + 'GGTAGCGGTGACA' + 'G' * 9 + 'T' * 8
+ENH_READ = 'A' * 9 + 'GTGA' + 'C' * 9 + 'GACA' + 'G' * 9 + 'T' * 8
+ENH_READ_VB1 = 'N' + 'A' * 9 + 'GTGA' + 'C' * 9 + 'GACA' + 'G' * 9 + 'T' * 8
+
+
+def test_detect_bead_version_v1(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 100)
+    assert wf.detect_bead_version(p) == 'v1'
+
+
+def test_detect_bead_version_v1_gz(tmp_path):
+    p = tmp_path / 'r1.fastq.gz'
+    _write_fastq_gz(p, [V1_READ] * 100)
+    assert wf.detect_bead_version(p) == 'v1'
+
+
+def test_detect_bead_version_enhanced(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [ENH_READ] * 100)
+    assert wf.detect_bead_version(p) == 'enhanced'
+
+
+def test_detect_bead_version_enhanced_vb_stagger(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [ENH_READ_VB1] * 100)
+    assert wf.detect_bead_version(p) == 'enhanced'
+
+
+def test_detect_bead_version_unknown(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, ['ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'] * 100)
+    assert wf.detect_bead_version(p) == 'unknown'
+
+
+def test_detect_bead_version_empty(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    p.write_text('')
+    assert wf.detect_bead_version(p) == 'unknown'
+
+
+def test_detect_bead_version_n_reads_limit(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 5 + ['ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'] * 1000)
+    assert wf.detect_bead_version(p, n_reads=5) == 'v1'

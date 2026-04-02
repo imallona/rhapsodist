@@ -35,6 +35,43 @@ def get_expected_cells_by_name(name):
         if config['samples'][i]['name'] == name:
              return(config['samples'][i]['uses']['expected_cells'])
 
+def detect_bead_version(cb_umi_path, n_reads=10000):
+    """Detect bead class from the first n_reads sequence reads of an R1 fastq.
+
+    Returns 'v1', 'enhanced', or 'unknown'.
+    v1 beads have linker ACTGGCCTGCGA at read positions 10-21.
+    Enhanced beads have linker GTGA at positions 10-16 (accounts for 0-3 bp stagger).
+    """
+    import gzip as _gzip
+    count = 0
+    v1_count = 0
+    enh_count = 0
+    opener = _gzip.open if str(cb_umi_path).endswith('.gz') else open
+    with opener(cb_umi_path, 'rt') as fh:
+        for i, line in enumerate(fh):
+            if i % 4 != 1:
+                continue
+            seq = line.strip()
+            count += 1
+            if count >= n_reads:
+                break
+            if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
+                v1_count += 1
+            else:
+                for offset in range(4):
+                    if len(seq) >= 13 + offset and seq[9 + offset:13 + offset] == 'GTGA':
+                        enh_count += 1
+                        break
+    if count == 0:
+        return 'unknown'
+    v1_frac = v1_count / count
+    enh_frac = enh_count / count
+    if v1_frac >= enh_frac and v1_frac > 0.1:
+        return 'v1'
+    if enh_frac > 0.1:
+        return 'enhanced'
+    return 'unknown'
+
 def get_bead_type_by_name(name):
     """Return bead_version for a sample: 'v1', 'enhanced', or 'enhanced_v2' (default)."""
     for s in config['samples']:
