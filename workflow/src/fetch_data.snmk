@@ -63,6 +63,7 @@ if _sra_samples:
             op.join(config['working_dir'], 'logs', 'fetch_sra_metadata.log')
         shell:
             """
+            mkdir -p $(dirname {output})
             curl -fsSL \
                 "{params.url_base}?save=efetch&db=sra&rettype=runinfo&term={params.accessions}" \
                 > {output} 2> {log}

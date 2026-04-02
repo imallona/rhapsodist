@@ -19,7 +19,7 @@ def get_cbumi_by_name(name):
         if s['name'] == name:
             if 'cb_umi_fq' in s['uses']:
                 return s['uses']['cb_umi_fq']
-            elif 'sra_run' in s['uses']:
+            elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
 def get_cdna_by_name(name):
@@ -27,7 +27,7 @@ def get_cdna_by_name(name):
         if s['name'] == name:
             if 'cdna_fq' in s['uses']:
                 return s['uses']['cdna_fq']
-            elif 'sra_run' in s['uses']:
+            elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R2.fastq.gz')
 
 def get_expected_cells_by_name(name):
@@ -53,7 +53,7 @@ def detect_bead_version(cb_umi_path, n_reads=10000):
                 continue
             seq = line.strip()
             count += 1
-            if count >= n_reads:
+            if count > n_reads:
                 break
             if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
                 v1_count += 1

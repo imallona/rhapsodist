@@ -93,6 +93,11 @@ _comparison_reports = expand(
 
 _benchmarks_report = [op.join(config['working_dir'], 'benchmarks_report.html')]
 
+_biology_reports = expand(
+    op.join(config['working_dir'], '{sample}_biology.html'),
+    sample = get_sample_names()
+)
+
 rule all:
     input:
         expand(op.join(config['working_dir'], '{aligner}',  '{sample}', 'descriptive_report.html'),
@@ -102,7 +107,8 @@ rule all:
         _extra_targets,
         _sbg_sce_targets,
         _comparison_reports,
-        _benchmarks_report
+        _benchmarks_report,
+        _biology_reports
         # op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin'),
         # expand(op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         #        sample = get_sample_names()),
@@ -1454,6 +1460,53 @@ rule render_comparison_report:
               n_umis_per_cell  = {params.n_umis_per_cell},
               barcodes_file    = "{params.barcodes_file}",
               true_mex_dir     = "{params.true_mex_dir}"))' &> {log}
+        """
+
+
+rule render_biology_report:
+    conda:
+        op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
+    input:
+        sces = lambda wildcards: (
+            expand(
+                op.join(config['working_dir'], '{aligner}', wildcards.sample,
+                        wildcards.sample + '_{aligner}_sce.rds'),
+                aligner = get_aligners()
+            ) + (
+                [op.join(config['working_dir'], 'sbg', wildcards.sample,
+                         wildcards.sample + '_sbg_sce.rds')]
+                if _has_sbg else []
+            )
+        ),
+        doc = op.join(workflow.basedir, 'src', 'reports', '04_biology.Rmd'),
+        ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
+        markers_file = config.get('biology_markers_file',
+                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+    output:
+        html = op.join(config['working_dir'], '{sample}_biology.html')
+    params:
+        working_dir = config['working_dir'],
+        sample = lambda wildcards: wildcards.sample,
+        aligners = ','.join(get_aligners()),
+        has_sbg = 'true' if _has_sbg else 'false',
+        markers_file = config.get('biology_markers_file',
+                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_biology_report.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_biology_report.txt')
+    shell:
+        """
+        R --vanilla -e '
+          rmarkdown::render(
+            "{input.doc}",
+            output_file = "{output.html}",
+            params = list(
+              working_dir = "{params.working_dir}",
+              sample = "{params.sample}",
+              aligners = "{params.aligners}",
+              has_sbg = "{params.has_sbg}",
+              markers_file = "{params.markers_file}"))' &> {log}
         """
 
 

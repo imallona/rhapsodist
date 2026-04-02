@@ -35,4 +35,5 @@ dependencies:
   - conda-forge::r-data.table
   - conda-forge::r-patchwork
   - conda-forge::r-ggrepel
+  - conda-forge::r-viridis
   - conda-forge::pandoc
