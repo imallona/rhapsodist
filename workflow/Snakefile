@@ -93,9 +93,12 @@ _comparison_reports = expand(
 
 _benchmarks_report = [op.join(config['working_dir'], 'benchmarks_report.html')]
 
-_biology_reports = expand(
-    op.join(config['working_dir'], '{sample}_biology.html'),
-    sample = get_sample_names()
+_biology_reports = (
+    expand(
+        op.join(config['working_dir'], '{sample}_biology.html'),
+        sample = get_sample_names()
+    )
+    if config.get('run_biology_report', False) else []
 )
 
 rule all:

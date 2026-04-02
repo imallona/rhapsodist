@@ -30,6 +30,8 @@ sjdbOverhang: 61
 
 skip_sampletags: true
 
+run_biology_report: true
+
 aligner: ['starsolo', 'kallisto', 'alevin']
 
 samples:
