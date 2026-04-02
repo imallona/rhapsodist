@@ -56,5 +56,5 @@ aligner:
 samples:
   - name: simulated
     uses:
-      whitelist: 384x3
+      bead_version: enhanced_v2
       species: 'mouse'

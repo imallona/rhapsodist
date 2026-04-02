@@ -553,21 +553,93 @@ rule rustody_run:
         touch {output.flag}
         """
 
+rule validate_bead_version:
+    input:
+        cb_umi = lambda wildcards: get_cbumi_by_name(wildcards.sample)
+    output:
+        flag = op.join(config['working_dir'], 'logs', '{sample}_bead_version_validated.flag')
+    params:
+        bead_version = lambda wildcards: get_bead_type_by_name(wildcards.sample)
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_bead_version_validation.log')
+    run:
+        import gzip, sys
+
+        n_reads = 0
+        v1_count = 0
+        enh_count = 0
+
+        opener = gzip.open if str(input.cb_umi).endswith('.gz') else open
+        with opener(input.cb_umi, 'rt') as fh:
+            for i, line in enumerate(fh):
+                if i % 4 != 1:
+                    continue
+                seq = line.strip()
+                n_reads += 1
+                if n_reads >= 10000:
+                    break
+                if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
+                    v1_count += 1
+                else:
+                    for offset in range(4):
+                        if len(seq) >= 13 + offset and seq[9 + offset:13 + offset] == 'GTGA':
+                            enh_count += 1
+                            break
+
+        v1_frac = v1_count / n_reads if n_reads else 0
+        enh_frac = enh_count / n_reads if n_reads else 0
+
+        if v1_frac >= enh_frac and v1_frac > 0.1:
+            detected = 'v1'
+        elif enh_frac > 0.1:
+            detected = 'enhanced'
+        else:
+            detected = 'unknown'
+
+        reported = params.bead_version
+        reported_class = 'v1' if reported == 'v1' else 'enhanced'
+
+        lines = [
+            f"reads checked: {n_reads}",
+            f"v1 linker fraction (ACTGGCCTGCGA at pos 10-21): {v1_frac:.3f}",
+            f"enhanced linker fraction (GTGA at pos 10-16): {enh_frac:.3f}",
+            f"detected bead class: {detected}",
+            f"reported bead_version: {reported}",
+        ]
+        if detected != 'unknown' and detected != reported_class:
+            lines.append(
+                f"WARNING: reported bead_version '{reported}' does not match "
+                f"detected '{detected}'. Consider using "
+                + ("'v1'" if detected == 'v1' else "'enhanced' or 'enhanced_v2'")
+                + " in the config."
+            )
+
+        with open(log[0], 'w') as fh:
+            fh.write('\n'.join(lines) + '\n')
+        for line in lines:
+            print(line, file=sys.stderr)
+
+        with open(output.flag, 'w') as fh:
+            fh.write(detected + '\n')
+
+
 rule standardize_cb_umis_cutadapt:
     conda:
         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
     input:
         cb_umi = lambda wildcards: get_cbumi_by_name(wildcards.sample),
-        cdna = lambda wildcards: get_cdna_by_name(wildcards.sample)
+        cdna = lambda wildcards: get_cdna_by_name(wildcards.sample),
+        validation_flag = op.join(config['working_dir'], 'logs', '{sample}_bead_version_validated.flag')
     output:
         cdna = op.join(config['working_dir'], 'data', 'fastq',
                        "{sample}_standardized_cdna.fq.gz"),
         temp_cb_umi = temp(op.join(config['working_dir'], 'data', 'fastq',
-                                      "{sample}_temp_cb_umi.fq.gz")),        
+                                      "{sample}_temp_cb_umi.fq.gz")),
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq',
                                       "{sample}_standardized_cb_umi.fq.gz")
     params:
-        path = op.join(config['working_dir'], 'data', 'fastq')
+        path = op.join(config['working_dir'], 'data', 'fastq'),
+        bead_type = lambda wildcards: get_bead_type_by_name(wildcards.sample)
     threads:
         workflow.cores
     log:
@@ -577,7 +649,16 @@ rule standardize_cb_umis_cutadapt:
     shell:
         """
         mkdir -p {params.path}
-        cutadapt -g "NNNNNNNNNGTGANNNNNNNNNGACANNNNNNNNNNNNNNNNN;min_overlap=43;noindels" \
+
+        if [ "{params.bead_type}" = "v1" ]; then
+            adapter="NNNNNNNNNACTGGCCTGCGANNNNNNNNNGGTAGCGGTGACANNNNNNNNNNNNNNNNN;min_overlap=60;noindels"
+            cut_cols="1-9,22-30,44-"
+        else
+            adapter="NNNNNNNNNGTGANNNNNNNNNGACANNNNNNNNNNNNNNNNN;min_overlap=43;noindels"
+            cut_cols="1-9,14-22,27-"
+        fi
+
+        cutadapt -g "$adapter" \
            --action=crop \
            --discard-untrimmed \
            --cores {threads} \
@@ -588,7 +669,7 @@ rule standardize_cb_umis_cutadapt:
            {input.cb_umi} {input.cdna} &> {log}
 
         pigz --decompress {output.temp_cb_umi} -p {threads} --stdout | \
-            cut -c1-9,14-22,27- | pigz -p {threads} > {output.standardized_cb_umi}
+            cut -c"$cut_cols" | pigz -p {threads} > {output.standardized_cb_umi}
         """
 
 rule kallisto_index:

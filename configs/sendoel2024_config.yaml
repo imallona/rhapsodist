@@ -2,7 +2,7 @@
 ## P60 mouse epidermis WTA samples (normal, 3 biological replicates)
 ## GEO: GSE235325  BioProject: PRJNA985698
 ## Sequenced on Illumina NovaSeq 6000 / NovaSeq X
-## BD Rhapsody Enhanced V2 cartridge (384x3 whitelist) not confirmed yet
+## BD Rhapsody v1 beads (linkers ACTGGCCTGCGA / GGTAGCGGTGACA, 96x3 whitelist)
 
 repo_path: '.'
 
@@ -36,15 +36,15 @@ samples:
   - name: sample_16_wta_p60
     uses:
       sra_run: "SRR24978231"
-      whitelist: 384x3
+      bead_version: v1
       species: 'mouse'
   - name: sample_17_wta_p60
     uses:
       sra_run: "SRR24978243"
-      whitelist: 384x3
+      bead_version: v1
       species: 'mouse'
   - name: sample_18_wta_p60
     uses:
       sra_run: "SRR24978233"
-      whitelist: 384x3
+      bead_version: v1
       species: 'mouse'

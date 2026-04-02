@@ -1,6 +1,6 @@
 # rhapsodist
 
-Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA (enhanced beads) single-cell RNA-seq data. It pre-processes raw FASTQ reads through barcode standardisation, then runs alignment and UMI counting in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
+Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-seq data. It supports v1 (original), Enhanced, and Enhanced V2 beads. It pre-processes raw FASTQ reads through barcode standardisation, then runs alignment and UMI counting in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
 
 ## Workflow layout
 
@@ -105,7 +105,7 @@ samples:
     uses:
       cb_umi_fq: /path/to/R1.fastq.gz   # barcode + UMI read
       cdna_fq: /path/to/R2.fastq.gz     # cDNA read
-      whitelist: 384x3                   # 384x3 for EnhV2 beads, 96x3 for Enh beads
+      bead_version: enhanced_v2           # v1, enhanced, or enhanced_v2
       species: human                     # human or mouse
 ```
 

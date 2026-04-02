@@ -40,5 +40,5 @@ samples:
     uses:
       cb_umi_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R1_001.fastq.gz"
       cdna_fq: "/home/gmoro/fastqs_eighth_scRNAseq/315641_1-Unmod_S4_R2_001.fastq.gz"
-      whitelist: 96x3
+      bead_version: enhanced
       species: 'human'
