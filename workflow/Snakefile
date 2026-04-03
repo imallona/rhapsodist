@@ -230,15 +230,15 @@ rule starsolo:
     conda:
         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
     input:
-        # cdna = lambda wildcards: get_cdna_by_name(wildcards.sample),
-        # cbumi = lambda wildcards: get_cbumi_by_name(wildcards.sample),
         standardized_cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
         index_flag = op.join(config['working_dir'] , 'data', 'index', 'star', 'SAindex'),
         gtf = config['gtf'],
-        # cb1 = op.join(config['working_dir'], 'starsolo', "{sample}",  'whitelists', 'BD_CLS1.txt'),
-        # cb2 = op.join(config['working_dir'], 'starsolo', "{sample}", 'whitelists', 'BD_CLS2.txt'),
-        # cb3 = op.join(config['working_dir'], 'starsolo', "{sample}", 'whitelists', 'BD_CLS3.txt')
+        observed_whitelist = lambda wildcards: (
+            op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+            if config.get('use_simulated', False)
+            else op.join(config['working_dir'], 'data', wildcards.sample + '_observed_whitelist.txt')
+        )
     output:
         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
         raw_count_table = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out', 'Gene',
@@ -268,7 +268,7 @@ rule starsolo:
     shell:
         """
    rm -rf {params.tmp} {params.path}/Solo.out
-   mkdir -p {params.path} 
+   mkdir -p {params.path}
 
    STAR --runThreadN {params.threads} \
         --genomeDir {params.index_path} \
@@ -281,7 +281,7 @@ rule starsolo:
         --soloUMIdedup {params.soloUMIdedup} \
         --soloBarcodeReadLength 1 \
         --soloCellReadStats Standard \
-        --soloCBwhitelist None \
+        --soloCBwhitelist {input.observed_whitelist} \
         --soloCellFilter {params.soloCellFilter} \
         --outSAMattributes NH HI AS nM NM MD jM jI MC ch CB UB gx gn sS CR CY UR UY\
         --outSAMunmapped Within \
@@ -735,21 +735,22 @@ rule bustools_sort:
         bustools sort -t {threads} -o {output.sorted_bus} {input.bus} &> {log}
         """
 
-rule derive_kallisto_observed_whitelist:
+rule derive_observed_whitelist:
     input:
-        sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
         cb_umi_fq = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
         cb1 = lambda wildcards: op.join(workflow.basedir, 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS1.txt'),
         cb2 = lambda wildcards: op.join(workflow.basedir, 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS2.txt'),
         cb3 = lambda wildcards: op.join(workflow.basedir, 'data', 'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample), 'BD_CLS3.txt')
     output:
-        observed_whitelist = op.join(config['working_dir'], 'kallisto', '{sample}', 'observed_whitelist.txt')
+        observed_whitelist = op.join(config['working_dir'], 'data', '{sample}_observed_whitelist.txt')
+    threads:
+        workflow.cores
     log:
         op.join(config['working_dir'], 'logs', '{sample}_derive_observed_whitelist.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_derive_observed_whitelist.txt')
     run:
-        import gzip
+        import subprocess
 
         with open(input.cb1) as fh:
             cb1 = {line.strip() for line in fh if line.strip()}
@@ -759,26 +760,27 @@ rule derive_kallisto_observed_whitelist:
             cb3 = {line.strip() for line in fh if line.strip()}
 
         observed_valid_barcodes = set()
-        with gzip.open(input.cb_umi_fq, "rt") as fh:
-            for line_index, line in enumerate(fh):
-                if line_index % 4 != 1:
-                    continue
-                sequence = line.strip()
-                if len(sequence) < 27:
-                    continue
-                barcode = sequence[:27]
-                barcode_1 = barcode[:9]
-                barcode_2 = barcode[9:18]
-                barcode_3 = barcode[18:27]
-                if barcode_1 in cb1 and barcode_2 in cb2 and barcode_3 in cb3:
-                    observed_valid_barcodes.add(barcode)
+        proc = subprocess.Popen(
+            ['pigz', '-d', '-c', '-p', str(threads), input.cb_umi_fq],
+            stdout=subprocess.PIPE
+        )
+        for line_index, raw_line in enumerate(proc.stdout):
+            if line_index % 4 != 1:
+                continue
+            seq = raw_line.rstrip(b'\n').decode()
+            if len(seq) < 27:
+                continue
+            bc = seq[:27]
+            if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
+                observed_valid_barcodes.add(bc)
+        proc.wait()
 
-        with open(output.observed_whitelist, "w") as out_fh:
+        with open(output.observed_whitelist, 'w') as out_fh:
             for barcode in sorted(observed_valid_barcodes):
-                out_fh.write(barcode + "\n")
+                out_fh.write(barcode + '\n')
 
-        with open(log[0], "w") as log_fh:
-            log_fh.write(str(len(observed_valid_barcodes)) + "\n")
+        with open(log[0], 'w') as log_fh:
+            log_fh.write(str(len(observed_valid_barcodes)) + '\n')
 
 rule bustools_correct:
     input:
@@ -787,7 +789,7 @@ rule bustools_correct:
         whitelist = (
             op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
             if config.get('use_simulated', False)
-            else op.join(config['working_dir'], 'kallisto', '{sample}', 'observed_whitelist.txt')
+            else op.join(config['working_dir'], 'data', '{sample}_observed_whitelist.txt')
         )
     output:
         corrected_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
@@ -1092,16 +1094,20 @@ rule alevin_align:
         index_flag = op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin'),
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq',
                                       "{sample}_standardized_cb_umi.fq.gz"),
-        # cdna = lambda wildcards: get_cdna_by_name(wildcards.sample),
         standardized_cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
-        t2g = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene')
+        t2g = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
+        observed_whitelist = lambda wildcards: (
+            op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+            if config.get('use_simulated', False)
+            else op.join(config['working_dir'], 'data', wildcards.sample + '_observed_whitelist.txt')
+        )
     params:
-        index_path =  op.join(config['working_dir'], 'data', 'index', 'salmon'),
+        index_path = op.join(config['working_dir'], 'data', 'index', 'salmon'),
         output_dir = op.join(config['working_dir'], 'alevin', '{sample}')
     output:
         flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz')
     threads:
-        workflow.cores      
+        workflow.cores
     log:
         op.join(config['working_dir'], 'logs', 'alevin_{sample}_align.log')
     benchmark:
@@ -1115,6 +1121,7 @@ rule alevin_align:
            --bc-geometry '1[1-27]' \
            --read-geometry '2[1-end]' \
            --umi-geometry '1[28-35]' \
+           --whitelist {input.observed_whitelist} \
            -o {params.output_dir} \
            -p {threads} \
            --tgMap {input.t2g} &> {log}

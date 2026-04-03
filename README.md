@@ -1,6 +1,6 @@
 # rhapsodist
 
-Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-seq data. It supports v1 (original), Enhanced, and Enhanced V2 beads. It pre-processes raw FASTQ reads through barcode standardisation, then runs alignment and UMI counting in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
+Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-seq data. It supports v1 (original), Enhanced, and Enhanced V2 beads. It pre-processes raw FASTQ reads through barcode standardisation, then derives a per-sample observed whitelist by scanning the standardized CB+UMI reads and validating against the tripartite bead barcode panels. This whitelist is used by all aligners for barcode correction and cell calling. Alignment and UMI counting then run in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
 
 ## Workflow layout
 
@@ -8,13 +8,18 @@ Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-se
 flowchart TD
     reads[raw FASTQ\nR1 + R2] --> cutadapt[cutadapt\nbarcode standardisation]
 
+    cutadapt --> wl[derive observed whitelist\nfrom CB panels]
     cutadapt --> starsolo[STARsolo\nalignment + UMI count]
     cutadapt --> kallisto[kallisto bus\nalignment]
     cutadapt --> alevin[salmon alevin\nalignment + UMI count]
     reads --> sbg[BD Rhapsody CWL\nvia cwl-runner]
 
+    wl --> starsolo
+    wl --> bustools[bustools correct + sort + count]
+    wl --> alevin
+
     starsolo --> sce_star[SingleCellExperiment\nSTARsolo]
-    kallisto --> bustools[bustools sort + count]
+    kallisto --> bustools
     bustools --> sce_kallisto[SingleCellExperiment\nkallisto]
     alevin --> sce_alevin[SingleCellExperiment\nalevin]
     sbg --> sce_sbg[SingleCellExperiment\nSBG]
