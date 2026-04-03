@@ -40,13 +40,19 @@ samples:
       sra_run: "SRR24978231"
       bead_version: v1
       species: 'mouse'
-  - name: sample_17_wta_p60
-    uses:
-      sra_run: "SRR24978243"
-      bead_version: v1
-      species: 'mouse'
-  - name: sample_18_wta_p60
-    uses:
-      sra_run: "SRR24978233"
-      bead_version: v1
-      species: 'mouse'
+      guide_gsm: "GSM7500353"
+      guide_wta: "WTA16"
+# - name: sample_17_wta_p60
+#   uses:
+#     sra_run: "SRR24978243"
+#     bead_version: v1
+#     species: 'mouse'
+#     guide_gsm: "GSM7500354"
+#     guide_wta: "WTA17"
+# - name: sample_18_wta_p60
+#   uses:
+#     sra_run: "SRR24978233"
+#     bead_version: v1
+#     species: 'mouse'
+#     guide_gsm: "GSM7500355"
+#     guide_wta: "WTA18"

@@ -86,6 +86,18 @@ def get_barcode_whitelist_by_name(name):
         return '384x3'
     return '96x3'
 
+def get_guide_url_by_name(name):
+    """Return NCBI FTP URL for the guide assignment CSV, or None if not configured."""
+    for s in config['samples']:
+        if s['name'] == name:
+            gsm = s['uses'].get('guide_gsm')
+            wta = s['uses'].get('guide_wta')
+            if gsm and wta:
+                prefix = gsm[:-3] + 'nnn'
+                fn = f"{gsm}_guides_dialout_{wta}_umi_counts_anno.csv.gz"
+                return f"https://ftp.ncbi.nlm.nih.gov/geo/samples/{prefix}/{gsm}/suppl/{fn}"
+    return None
+
 def get_species_by_name(name):
     for i in range(len(config['samples'])):
         if config['samples'][i]['name'] == name:

@@ -14,6 +14,7 @@ params:
   aligners: "starsolo,kallisto,alevin"
   has_sbg: false
   markers_file: ""
+  guide_csv: ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -261,6 +262,102 @@ for (pipe in names(seurat_objects)) {
         } else {
             cat(marker, "not detected in the", pipe, "feature set.\n")
         }
+        cat("\n\n")
+    }
+}
+```
+
+## Guide RNA assignments
+
+This dataset is from a pooled CRISPR screen. The authors provide per-cell guide
+assignments derived from their own processing of a separate amplicon library.
+We do not quantify guides here; we use the author-provided table only as cell
+metadata. Barcodes in that table use CB1_CB2_CB3 format (underscores separating
+the three 9-bp segments); we strip underscores to match the 27-bp concatenated
+format produced by this pipeline. For cells with more than one detected guide we
+take the guide with the highest UMI count. The join rate -- the fraction of
+cells called by each aligner that can be matched to a guide assignment -- reflects
+how well each aligner's barcode calls agree with the original study's processing.
+
+```{r guide-assignments, fig.width=ng_fig_size(length(seurat_objects), 1)$w, fig.height=ng_fig_size(length(seurat_objects), 1)$h}
+guide_csv = params$guide_csv
+
+if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
+    guides = fread(guide_csv)
+    guides[, barcode_clean := gsub("_", "", barcode)]
+    setorder(guides, barcode_clean, -counts)
+    guides_top = guides[, .SD[1L], by = barcode_clean]
+    guides_top[, guide_gene := sub("_sgRNA.*", "", sgRNA)]
+
+    join_stats = rbindlist(lapply(names(seurat_objects), function(pipe) {
+        cells = colnames(seurat_objects[[pipe]])
+        n_matched = sum(cells %in% guides_top$barcode_clean)
+        data.table(
+            pipeline = pipe,
+            n_cells = length(cells),
+            n_matched = n_matched,
+            join_rate_pct = round(100 * n_matched / length(cells), 1)
+        )
+    }))
+
+    saveRDS(join_stats, file.path(wd, paste0(samp, "_biology_guide_join.rds")))
+    print(knitr::kable(join_stats,
+        caption = paste("Fraction of pipeline cells matched to an author-assigned guide.",
+                        "A higher join rate indicates better barcode concordance",
+                        "with the original study's processing.")))
+
+    print(
+        ggplot(join_stats, aes(x = pipeline, y = join_rate_pct, fill = pipeline)) +
+            geom_col() +
+            geom_text(aes(label = paste0(join_rate_pct, "%")), vjust = -0.4, size = 3) +
+            scale_fill_manual(values = cbbPalette) +
+            scale_y_continuous(limits = c(0, 105)) +
+            theme_ng() +
+            theme(aspect.ratio = NULL, legend.position = "none") +
+            labs(x = NULL, y = "cells with guide assignment (%)",
+                 title = "Guide barcode join rate per pipeline")
+    )
+
+    top_guides = guides_top[, .N, by = guide_gene][order(-N)][seq_len(min(20L, .N))]
+
+    print(
+        ggplot(top_guides, aes(x = reorder(guide_gene, N), y = N)) +
+            geom_col(fill = cbbPalette[1]) +
+            coord_flip() +
+            theme_ng() +
+            theme(aspect.ratio = NULL) +
+            labs(x = NULL, y = "cells assigned",
+                 title = "Top 20 guide targets (all barcodes)")
+    )
+
+    for (pipe in names(seurat_objects)) {
+        cells = colnames(seurat_objects[[pipe]])
+        seurat_objects[[pipe]]$guide_assigned = ifelse(
+            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
+    }
+} else {
+    cat("No guide assignment file provided for this sample.\n")
+}
+```
+
+```{r guide-umap, results='asis', fig.width=ng_fig_size(1, 1)$w, fig.height=ng_fig_size(1, 1)$h}
+if (nchar(guide_csv) > 0 && file.exists(guide_csv) &&
+    "guide_assigned" %in% colnames(seurat_objects[[1]]@meta.data)) {
+
+    cat("### Guide assignment on UMAP {.tabset}\n\n")
+    cat("Each cell is coloured by whether its barcode matched an author-assigned",
+        "guide. Unassigned cells may reflect barcode disagreements between",
+        "pipelines or cells that received no detectable guide.\n\n")
+
+    for (pipe in names(seurat_objects)) {
+        cat("####", pipe, "\n\n")
+        print(
+            DimPlot(seurat_objects[[pipe]], reduction = "umap",
+                    group.by = "guide_assigned", pt.size = 0.3,
+                    cols = c(assigned = cbbPalette[2], unassigned = "grey85")) +
+                theme_ng() +
+                labs(title = pipe, colour = NULL)
+        )
         cat("\n\n")
     }
 }

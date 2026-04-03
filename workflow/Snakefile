@@ -1492,6 +1492,11 @@ rule render_biology_report:
         ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        guide_csv = lambda wildcards: (
+            [op.join(config['working_dir'], 'data', 'guides',
+                     wildcards.sample + '_guides.csv.gz')]
+            if get_guide_url_by_name(wildcards.sample) else []
+        ),
     output:
         html = op.join(config['working_dir'], '{sample}_biology.html')
     params:
@@ -1501,6 +1506,11 @@ rule render_biology_report:
         has_sbg = 'true' if _has_sbg else 'false',
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        guide_csv = lambda wildcards: (
+            op.join(config['working_dir'], 'data', 'guides',
+                    wildcards.sample + '_guides.csv.gz')
+            if get_guide_url_by_name(wildcards.sample) else ''
+        ),
     log:
         op.join(config['working_dir'], 'logs', '{sample}_biology_report.log')
     benchmark:
@@ -1516,7 +1526,8 @@ rule render_biology_report:
               sample = "{params.sample}",
               aligners = "{params.aligners}",
               has_sbg = "{params.has_sbg}",
-              markers_file = "{params.markers_file}"))' &> {log}
+              markers_file = "{params.markers_file}",
+              guide_csv = "{params.guide_csv}"))' &> {log}
         """
 
 

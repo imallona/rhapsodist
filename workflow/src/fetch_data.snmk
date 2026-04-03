@@ -69,6 +69,26 @@ if _sra_samples:
                 > {output} 2> {log}
             """
 
+_guide_samples = [s['name'] for s in config['samples'] if s['uses'].get('guide_gsm')]
+
+if _guide_samples:
+    rule fetch_guide_csv:
+        conda:
+            op.join(workflow.basedir, 'envs', 'fetch.yaml')
+        output:
+            guide_csv = op.join(config['working_dir'], 'data', 'guides', '{sample}_guides.csv.gz')
+        params:
+            url = lambda wildcards: get_guide_url_by_name(wildcards.sample)
+        log:
+            op.join(config['working_dir'], 'logs', 'fetch_guide_{sample}.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'fetch_guide_{sample}.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output.guide_csv})
+            curl -fsSL -o {output.guide_csv} {params.url} 2> {log}
+            """
+
 if config.get('genome_url'):
     rule download_genome:
         output:
