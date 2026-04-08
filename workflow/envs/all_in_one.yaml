@@ -30,6 +30,7 @@ dependencies:
   - bioconda::bioconductor-scuttle
   - bioconda::bioconductor-scater
   - bioconda::bioconductor-dropletutils
+  - bioconda::bioconductor-hdf5array
   - bioconda::bioconductor-tximeta
   - conda-forge::r-upsetr
   - conda-forge::r-data.table

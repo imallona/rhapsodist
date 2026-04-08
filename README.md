@@ -1,32 +1,33 @@
 # rhapsodist
 
-Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-seq data. It supports v1 (original), Enhanced, and Enhanced V2 beads. It pre-processes raw FASTQ reads through barcode standardisation, then derives a per-sample observed whitelist by scanning the standardized CB+UMI reads and validating against the tripartite bead barcode panels. This whitelist is used by all aligners for barcode correction and cell calling. Alignment and UMI counting then run in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). Each path produces a SingleCellExperiment object. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
+Rhapsodist is a Snakemake workflow to process BD Rhapsody WTA single-cell RNA-seq data. It supports v1 (original), Enhanced, and Enhanced V2 beads. It pre-processes raw FASTQ reads through barcode standardisation, then derives a per-sample observed whitelist by scanning the standardized CB+UMI reads and validating against the tripartite bead barcode panels. This whitelist is passed to all aligners for barcode correction. Alignment and UMI counting then run in parallel with STARsolo, kallisto/bustools, salmon/alevin, and/or the official BD Rhapsody CWL pipeline (locally). For alevin, a knee-point filter is applied to the barcode rank plot (from featureDump.txt) before importing into R, avoiding loading the full unfiltered matrix. All aligners produce HDF5-backed SingleCellExperiment objects. Cell filtering can use each tool's native approach or DropletUtils emptyDrops. The workflow also handles sample tag demultiplexing and renders comparison reports across methods.
 
 ## Workflow layout
 
 ```mermaid
 flowchart TD
-    reads[raw FASTQ\nR1 + R2] --> cutadapt[cutadapt\nbarcode standardisation]
+    reads[raw FASTQ R1 + R2] --> cutadapt[cutadapt barcode standardisation]
 
-    cutadapt --> wl[derive observed whitelist\nfrom CB panels]
-    cutadapt --> starsolo[STARsolo\nalignment + UMI count]
-    cutadapt --> kallisto[kallisto bus\nalignment]
-    cutadapt --> alevin[salmon alevin\nalignment + UMI count]
-    reads --> sbg[BD Rhapsody CWL\nvia cwl-runner]
+    cutadapt --> wl[derive observed whitelist from CB panels]
+    cutadapt --> starsolo[STARsolo alignment + UMI count]
+    cutadapt --> kallisto[kallisto bus alignment]
+    cutadapt --> alevin[salmon alevin alignment + UMI count]
+    reads --> sbg[BD Rhapsody CWL via cwl-runner]
 
     wl --> starsolo
     wl --> bustools[bustools correct + sort + count]
     wl --> alevin
 
-    starsolo --> sce_star[SingleCellExperiment\nSTARsolo]
+    starsolo --> sce_star[HDF5-backed SCE STARsolo]
     kallisto --> bustools
-    bustools --> sce_kallisto[SingleCellExperiment\nkallisto]
-    alevin --> sce_alevin[SingleCellExperiment\nalevin]
-    sbg --> sce_sbg[SingleCellExperiment\nSBG]
+    bustools --> sce_kallisto[HDF5-backed SCE kallisto]
+    alevin --> knee[alevin knee-point filter on featureDump.txt]
+    knee --> sce_alevin[HDF5-backed SCE alevin]
+    sbg --> sce_sbg[HDF5-backed SCE SBG]
 
     sce_star & sce_kallisto & sce_alevin & sce_sbg --> report[comparison report]
 
-    starsolo --> sampletags[sampletag\ndemultiplexing]
+    starsolo --> sampletags[sampletag demultiplexing]
     sampletags --> st_report[sampletag report]
 ```
 
@@ -116,8 +117,8 @@ samples:
 
 Cell filtering (`cell_filtering` key):
 
-- `native`: each aligner uses its own method
-- `emptydrops`: apply DropletUtils::emptyDrops uniformly across all aligners
+- `native`: STARsolo uses its soloCellFilter (default CellRanger2); alevin uses the knee-point barcode filter; kallisto keeps all bustools barcodes
+- `emptydrops`: apply DropletUtils::emptyDrops uniformly across all aligners (for alevin, emptyDrops is applied to the knee-filtered set)
 
 BD Rhapsody official pipeline (optional): add `sbg` to the `aligner` list and set `sbg_cwl`:
 
@@ -140,7 +141,7 @@ sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
 - Jiayi Wang
 - Giulia Moro
 
-Tools used: STAR, samtools, kallisto, bustools, salmon/alevin, cutadapt, pigz, R/Bioconductor.
+Tools used: STAR, samtools, kallisto, bustools, salmon/alevin, cutadapt, pigz, R/Bioconductor (SingleCellExperiment, DropletUtils, HDF5Array).
 
 ## Contact
 

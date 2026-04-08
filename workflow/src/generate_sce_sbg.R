@@ -17,6 +17,7 @@ suppressPackageStartupMessages({
     library(Matrix)
     library(argparse)
     library(DropletUtils)
+    library(HDF5Array)
 })
 
 parser <- ArgumentParser(
@@ -126,4 +127,6 @@ if (args$cell_filtering == 'emptydrops') {
 }
 
 dir.create(dirname(args$output_fn), recursive = TRUE, showWarnings = FALSE)
-saveRDS(sce, args$output_fn)
+hdf5_dir <- sub('\\.rds$', '_hdf5', args$output_fn)
+sce <- saveHDF5SummarizedExperiment(sce, dir = hdf5_dir, replace = TRUE)
+base::saveRDS(sce, args$output_fn)

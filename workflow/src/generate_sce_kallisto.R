@@ -1,10 +1,11 @@
 #!/usr/bin/env Rscript
 
-suppressPackageStartupMessages( {
-  library(SingleCellExperiment)
-  library(argparse)
-  library(Matrix)
-  library(DropletUtils)
+suppressPackageStartupMessages({
+    library(SingleCellExperiment)
+    library(argparse)
+    library(Matrix)
+    library(DropletUtils)
+    library(HDF5Array)
 })
 
 parser <- ArgumentParser(description='Builds a WTA SingleCellExperiment object for a given sample - from Kallisto.')
@@ -58,4 +59,6 @@ if (args$cell_filtering == 'emptydrops') {
     }
 }
 
-saveRDS(object = sce, file = args$output_fn)
+hdf5_dir <- sub('\\.rds$', '_hdf5', args$output_fn)
+sce <- saveHDF5SummarizedExperiment(sce, dir = hdf5_dir, replace = TRUE)
+base::saveRDS(sce, args$output_fn)

@@ -415,11 +415,43 @@ rule generate_sce_kallisto:
              --output_fn {output.sce} &> {log}
         """
 
+rule alevin_knee_filter:
+    conda:
+        op.join(workflow.basedir, 'envs', 'simulate.yaml')
+    input:
+        feature_dump = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'featureDump.txt'),
+        script = op.join(workflow.basedir, 'src', 'alevin_knee_filter.py'),
+        sim_barcodes_file = lambda wildcards: (
+            [op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')]
+            if config.get('use_simulated', False) else []
+        ),
+    output:
+        knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
+    params:
+        sim_barcodes = lambda wildcards: (
+            op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
+            if config.get('use_simulated', False) else ''
+        ),
+    log:
+        op.join(config['working_dir'], 'logs', 'alevin_knee_filter_{sample}.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'alevin_knee_filter_{sample}.txt')
+    shell:
+        """
+        python {input.script} \
+            --feature_dump {input.feature_dump} \
+            --output {output.knee_barcodes} \
+            $([ -n "{params.sim_barcodes}" ] && echo "--sim_barcodes {params.sim_barcodes}") \
+            &> {log}
+        """
+
+
 rule generate_sce_alevin:
     conda:
         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
     input:
         flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
+        knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
         script = op.join(workflow.basedir, 'src', 'generate_sce_alevin.R'),
     output:
         sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
@@ -437,6 +469,7 @@ rule generate_sce_alevin:
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
              --cell_filtering {params.cell_filtering} \
+             --knee_barcodes {input.knee_barcodes} \
              --output_fn {output.sce} &> {log}
         """
 
