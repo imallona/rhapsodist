@@ -246,7 +246,8 @@ for (id in unique(colData(sce)$experiment)) {
          col = ac('black', 0.5))
 
     cat('\n\n')
-} 
+}
+rm(libsize.drop, feature.drop, mito.drop)
 ```
 
 ## Quick clustering (COUNTS) {.tabset .tabset-pills}
@@ -261,18 +262,19 @@ stopifnot(all(rownames(so@meta.data) == colnames(sce)))
 
 meta <- colData(sce)
 so@meta.data <- cbind(so@meta.data, meta)
+rm(sce, meta)
 ```
 
 ```{r}
 so <- NormalizeData(object = so, normalization.method = 'LogNormalize', scale.factor = 10000)
 so <- FindVariableFeatures(so, selection.method = "vst", nfeatures = 2000)
 
-so <-  ScaleData(so, features = rownames(so))
+so <- ScaleData(so, features = VariableFeatures(so))
 
 so <- RunPCA(object = so,
              features = VariableFeatures(so),
              verbose = FALSE,
-             npcs = 50)
+             npcs = 30)
 
 ```
 
@@ -286,7 +288,7 @@ VizDimLoadings(object = so, dims = 1:4)
 ### Elbow
 
 ```{r, fig.width =4, fig.height = 4}
-print(ElbowPlot(object = so, ndims = 50))
+print(ElbowPlot(object = so, ndims = 30))
 
 ```
 
