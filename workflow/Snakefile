@@ -296,63 +296,6 @@ rule starsolo:
         rm -rf {params.tmp}
         """
 
-# ruleorder: starsolo > symlink_filtered
-
-# rule symlink_filtered:
-#     conda:
-#         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
-#     input:
-#         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam'),
-#         raw_count_table = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out', 'Gene',
-#                                   'raw', 'matrix.mtx')
-#     output:
-#         filtered  = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out',
-#                             'Gene', 'filtered', 'matrix.mtx')
-#     params:
-#         gene_solo_path = op.join(config['working_dir'], 'starsolo', '{sample}', 'Solo.out',
-#                             'Gene')
-#     threads:
-#         1
-#     shell:
-#         """
-#         ## if no cell filtering occurs - happens when heavily downsampling, or when soloCellFilter equals None
-#      if [ ! -e {output.filtered} ]; then
-#         echo "Caution no cell filtering - symlinking instead"
-#         cd {params.gene_solo_path}
-#         ln -s {params.gene_solo_path}/raw/*  -t {params.gene_solo_path}/filtered
-#      fi
-#         """
-        
-# checkpoint retrieve_genome_sizes:
-#     conda:
-#         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
-#     input:
-#         fa = config['genome']
-#     params:
-#         faSize = config['faSize']
-#     output:
-#         op.join(config['working_dir'], 'data', 'chrom.sizes')
-#     shell:
-#         """
-#         {params.faSize} -detailed -tab {input.fa} > {output}
-#         """
-
-# ## TODO keep only if generating coverage tracks
-# rule index_bam:
-#     conda:
-#         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
-#     input:
-#         bam = op.join(config['working_dir'], 'starsolo', '{sample}', 'Aligned.sortedByCoord.out.bam')
-#     output:
-#         bai = op.join(config['working_dir'], 'starsolo', '{sample}',
-#                       'Aligned.sortedByCoord.out.bam.bai')
-#     threads: workflow.cores
-#     shell:
-#         """
-#         samtools index -@ {threads} {input.bam}     
-#         """
-
-
 rule generate_sce_starsolo:
     conda:
         op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
@@ -377,6 +320,8 @@ rule generate_sce_starsolo:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_star.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_star.txt')
+    threads:
+        workflow.cores # so it runs on isolation
     shell:
         """
         chmod -R ug+rwX $(dirname {input.bam})
@@ -405,6 +350,8 @@ rule generate_sce_kallisto:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_kallisto.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_kallisto.txt')
+    threads:
+        workflow.cores # so it runs on isolation
     shell:
         """
         R -q --no-save --no-restore --slave \
@@ -462,6 +409,8 @@ rule generate_sce_alevin:
         op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_alevin.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'r_sce_generation_{sample}_alevin.txt')
+    threads:
+        workflow.cores # so it runs on isolation
     shell:
         """
         R -q --no-save --no-restore --slave \
@@ -524,8 +473,8 @@ rule render_descriptive_report:
         """
         cd {params.working_dir}
         mkdir -p {params.path}
-        R --vanilla -e 'rmarkdown::render(\"{input.script}\", 
-          output_file = \"{output.html}\", 
+        R --vanilla -e 'rmarkdown::render(\"{input.script}\",
+          output_file = \"{output.html}\",
           params = list(path = \"{params.path}\"))' &> {log}
         """
 
@@ -1220,9 +1169,9 @@ if config.get('use_simulated') and any(get_sbg_cwl_by_name(s) for s in get_sampl
 
 
 ## Real-data reference: three modes (mutually exclusive, evaluated at parse time):
-##   1. sbg_reference_url set   → download_sbg_reference (curl from URL)
-##   2. sbg_reference_archive set → use pre-built archive, no Snakemake tracking
-##   3. neither set             → build_sbg_reference_real (package STAR index + GTF)
+##   1. sbg_reference_url set: download_sbg_reference (curl from URL)
+##   2. sbg_reference_archive set: use pre-built archive, no Snakemake tracking
+##   3. neither set: build_sbg_reference_real (package STAR index + GTF)
 _any_sbg_ref_url = (
     config.get('sbg_reference_url') or
     any(_sbg_uses(s, 'sbg_reference_url') for s in get_sample_names())
@@ -1488,6 +1437,8 @@ rule render_comparison_report:
         op.join(config['working_dir'], 'logs', '{sample}_comparison_report.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_comparison_report.txt')
+    threads:
+        workflow.cores
     shell:
         """
         R --vanilla -e '
@@ -1548,6 +1499,8 @@ rule render_biology_report:
         op.join(config['working_dir'], 'logs', '{sample}_biology_report.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_biology_report.txt')
+    threads:
+        workflow.cores
     shell:
         """
         R --vanilla -e '
