@@ -1087,7 +1087,8 @@ rule alevin_align:
         index_path = op.join(config['working_dir'], 'data', 'index', 'salmon'),
         output_dir = op.join(config['working_dir'], 'alevin', '{sample}')
     output:
-        flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz')
+        flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
+        feature_dump = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'featureDump.txt')
     threads:
         workflow.cores
     log:
