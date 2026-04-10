@@ -364,10 +364,10 @@ rule generate_sce_kallisto:
 
 rule alevin_knee_filter:
     conda:
-        op.join(workflow.basedir, 'envs', 'simulate.yaml')
+        op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
     input:
         feature_dump = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'featureDump.txt'),
-        script = op.join(workflow.basedir, 'src', 'alevin_knee_filter.py'),
+        script = op.join(workflow.basedir, 'src', 'alevin_knee_filter.R'),
         sim_barcodes_file = lambda wildcards: (
             [op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')]
             if config.get('use_simulated', False) else []
@@ -385,7 +385,7 @@ rule alevin_knee_filter:
         op.join(config['working_dir'], 'benchmarks', 'alevin_knee_filter_{sample}.txt')
     shell:
         """
-        python {input.script} \
+        Rscript {input.script} \
             --feature_dump {input.feature_dump} \
             --output {output.knee_barcodes} \
             $([ -n "{params.sim_barcodes}" ] && echo "--sim_barcodes {params.sim_barcodes}") \

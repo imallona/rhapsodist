@@ -4,7 +4,7 @@ Rhapsodist is a Snakemake workflow for processing BD Rhapsody WTA single-cell RN
 
 The pipeline takes raw FASTQ files, standardises barcodes, and builds a per-sample whitelist of observed cell barcodes from the BD bead barcode panels. That whitelist is passed to each aligner for barcode correction. Aligners run in parallel: STARsolo, kallisto/bustools, salmon/alevin, and optionally the official BD Rhapsody CWL pipeline. Each aligner produces an HDF5-backed SingleCellExperiment object. The pipeline also handles sample tag demultiplexing and renders comparison reports.
 
-For alevin, a knee-point filter on featureDump.txt selects cell barcodes before loading counts into R, keeping memory use low.
+For alevin, DropletUtils `barcodeRanks` is applied to the DeduplicatedReads column of featureDump.txt to select cell barcodes before loading counts into R, keeping memory use low. This uses the same algorithm as the kallisto step, making cell calling consistent across aligners.
 
 By default alevin uses graph-based EM deduplication. This distributes multi-mapping reads as fractional counts and raises per-cell UMI totals compared to unique-only aligners such as STARsolo with `soloMultiMappers: Unique`. Set `alevin_sketch: true` to use `--sketch` instead: sketch deduplication gives integer-like counts on the same scale as STARsolo Unique, making cross-aligner UMI comparison fair.
 
@@ -27,7 +27,7 @@ flowchart TD
     starsolo --> sce_star[HDF5-backed SCE STARsolo]
     kallisto --> bustools
     bustools --> sce_kallisto[HDF5-backed SCE kallisto]
-    alevin --> knee[alevin knee-point filter on featureDump.txt]
+    alevin --> knee[DropletUtils barcodeRanks filter on featureDump.txt]
     knee --> sce_alevin[HDF5-backed SCE alevin]
     sbg --> sce_sbg[HDF5-backed SCE SBG]
 
@@ -123,7 +123,7 @@ samples:
 
 Cell filtering (`cell_filtering` key):
 
-- `native`: STARsolo uses its soloCellFilter (default CellRanger2); alevin uses the knee-point barcode filter on featureDump.txt; kallisto uses DropletUtils barcodeRanks knee filtering
+- `native`: STARsolo uses its soloCellFilter (default CellRanger2); alevin applies DropletUtils `barcodeRanks` to the DeduplicatedReads column of featureDump.txt; kallisto applies DropletUtils `barcodeRanks` to the raw cell-by-gene count matrix
 - `emptydrops`: apply DropletUtils::emptyDrops across all aligners (for alevin, emptyDrops is applied after the knee filter)
 
 Alevin UMI counting (`alevin_sketch` key):

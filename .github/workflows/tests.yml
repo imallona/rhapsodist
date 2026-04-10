@@ -3,6 +3,8 @@ name: tests
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -49,6 +51,7 @@ jobs:
             --cores 2
 
   integration-run:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:

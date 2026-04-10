@@ -92,6 +92,50 @@ def test_get_species_invalid_raises():
         wf.get_species_by_name('sampleA')
 
 
+def test_get_cbumi_by_name_sra(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses'].pop('cb_umi_fq')
+    wf.config['samples'][0]['uses']['sra_run'] = 'SRR123'
+    result = wf.get_cbumi_by_name('sampleA')
+    assert result.endswith('sampleA_R1.fastq.gz')
+
+
+def test_get_cdna_by_name_sra(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses'].pop('cdna_fq')
+    wf.config['samples'][0]['uses']['sra_run'] = 'SRR123'
+    result = wf.get_cdna_by_name('sampleA')
+    assert result.endswith('sampleA_R2.fastq.gz')
+
+
+def test_get_expected_cells_by_name():
+    wf.config['samples'][0]['uses']['expected_cells'] = 5000
+    assert wf.get_expected_cells_by_name('sampleA') == 5000
+
+
+def test_get_bead_type_fallback():
+    wf.config['samples'] = []
+    assert wf.get_bead_type_by_name('nonexistent') == 'enhanced_v2'
+
+
+def test_get_guide_url_returns_none_when_no_gsm():
+    assert wf.get_guide_url_by_name('sampleA') is None
+
+
+def test_get_guide_url_constructs_url():
+    wf.config['samples'][0]['uses']['guide_gsm'] = 'GSM7500353'
+    wf.config['samples'][0]['uses']['guide_wta'] = 'WTA16'
+    url = wf.get_guide_url_by_name('sampleA')
+    assert 'GSM7500353' in url
+    assert 'WTA16' in url
+    assert url.startswith('https://')
+
+
+def test_get_sbg_cwl_by_name():
+    wf.config['samples'][0]['uses']['sbg_cwl'] = '/path/to/pipeline.cwl'
+    assert wf.get_sbg_cwl_by_name('sampleA') == '/path/to/pipeline.cwl'
+
+
 def test_sbg_uses_per_sample_key():
     assert wf._sbg_uses('sampleB', 'sbg_cwl') == '/per_sample/pipeline.cwl'
 

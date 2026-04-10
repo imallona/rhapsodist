@@ -429,6 +429,59 @@ gc()
 
 ## Cross-pipeline comparison
 
+### Pseudobulk count deviation
+
+For each pipeline, gene counts are summed across all cells to produce a
+pseudobulk vector. Pairwise mean absolute relative difference (MARD) between
+pipelines is shown as a heatmap. MARD = mean(|x - y| / ((x + y) / 2)) over
+genes where at least one pipeline has non-zero counts. Lower values mean closer
+agreement.
+
+```{r pseudobulk-mard, fig.width=ng_fig_size(n_pipelines, n_pipelines)$w, fig.height=ng_fig_size(n_pipelines, n_pipelines)$h}
+sces_pb = lapply(aligners, function(aligner) {
+    fn = file.path(wd, aligner, samp, paste0(samp, "_", aligner, "_sce.rds"))
+    if (!file.exists(fn)) return(NULL)
+    sce = readRDS(fn)
+    sce = sce[rowSums(counts(sce)) > 0, colSums(counts(sce)) > 0]
+    rd = rowData(sce)
+    sym = rownames(sce)
+    for (col in c("name", "SYMBOL", "gene_name")) {
+        if (col %in% colnames(rd)) { sym = as.character(rd[[col]]); break }
+    }
+    rownames(sce) = make.unique(sym)
+    rowSums(counts(sce))
+})
+names(sces_pb) = aligners
+sces_pb = Filter(Negate(is.null), sces_pb)
+
+shared_genes = Reduce(intersect, lapply(sces_pb, names))
+pb_mat = do.call(cbind, lapply(sces_pb, function(v) v[shared_genes]))
+
+mard_mat = outer(
+    colnames(pb_mat), colnames(pb_mat),
+    Vectorize(function(a, b) {
+        x = pb_mat[, a]
+        y = pb_mat[, b]
+        denom = (x + y) / 2
+        mean(abs(x - y)[denom > 0] / denom[denom > 0], na.rm = TRUE)
+    })
+)
+dimnames(mard_mat) = list(colnames(pb_mat), colnames(pb_mat))
+mard_long = as.data.frame(as.table(mard_mat))
+names(mard_long) = c("pipeline1", "pipeline2", "mard")
+
+ggplot(mard_long, aes(pipeline1, pipeline2, fill = mard * 100)) +
+    geom_tile(colour = "white") +
+    geom_text(aes(label = sprintf("%.2f%%", mard * 100)), size = 3.2) +
+    scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
+    theme_ng() +
+    theme(aspect.ratio = NULL,
+          axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(title = "Pairwise pseudobulk MARD",
+         subtitle = "Lower is better",
+         x = NULL, y = NULL, fill = "MARD (%)")
+```
+
 ### Barcode overlap
 
 How many cell barcodes are shared across pipelines. Bars unique to one aligner
