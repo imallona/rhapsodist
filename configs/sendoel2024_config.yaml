@@ -13,10 +13,10 @@ soloCellFilter: "EmptyDrops_CR"
 soloMultiMappers: "Unique"
 extraStarSoloArgs: ""
 cell_filtering: "native"
-# sketch disables EM multi-mapper redistribution, giving integer-like counts
-# closer to STARsolo soloMultiMappers: Unique above; without it alevin inflates
-# per-cell UMI ~1.75x via fractional EM counts, making cross-aligner comparison
-# unfair
+# alevin_sketch: true runs salmon alevin in RAD mapping mode (--sketch), then
+# quantifies with alevin-fry using cr-like resolution. This gives integer-like
+# counts comparable to STARsolo soloMultiMappers: Unique, avoiding the ~1.75x
+# UMI inflation from alevin's default graph-based EM multi-mapper redistribution.
 alevin_sketch: true
 
 working_dir: output/sendoel2024

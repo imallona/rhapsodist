@@ -28,6 +28,8 @@ flowchart TD
     kallisto --> bustools
     bustools --> sce_kallisto[HDF5-backed SCE kallisto]
     alevin --> knee[DropletUtils barcodeRanks filter on featureDump.txt]
+    alevin -. alevin_sketch: true .-> fry[alevin-fry quant cr-like]
+    fry --> knee
     knee --> sce_alevin[HDF5-backed SCE alevin]
     sbg --> sce_sbg[HDF5-backed SCE SBG]
 
@@ -129,7 +131,7 @@ Cell filtering (`cell_filtering` key):
 Alevin UMI counting (`alevin_sketch` key):
 
 - `alevin_sketch: false` (default): alevin uses graph-based EM deduplication. Multi-mapping reads are split as fractional counts, raising per-cell UMI totals above unique-only aligners. Not directly comparable to STARsolo with `soloMultiMappers: Unique`.
-- `alevin_sketch: true`: alevin uses `--sketch` deduplication, giving integer-like counts on the same scale as STARsolo Unique. Use this when comparing UMI counts across aligners.
+- `alevin_sketch: true`: salmon runs in RAD mapping mode (`--sketch`) and alevin-fry quantifies with `cr-like` resolution, giving integer-like counts comparable to STARsolo Unique. Multi-mapping reads are handled similarly to CellRanger rather than being redistributed proportionally by EM.
 
 BD Rhapsody official pipeline (optional): add `sbg` to the `aligner` list and set `sbg_cwl`:
 
