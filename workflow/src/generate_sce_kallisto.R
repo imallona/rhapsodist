@@ -49,7 +49,7 @@ if (args$cell_filtering == 'native') {
     br <- barcodeRanks(counts(sce))
     knee_threshold <- metadata(br)$knee
     keep <- colSums(counts(sce)) >= knee_threshold
-    cat(sprintf('barcodeRanks knee: kept %d / %d barcodes (knee UMI threshold: %d)\n',
+    cat(sprintf('barcodeRanks knee: kept %d / %d barcodes (knee UMI threshold: %g)\n',
                 sum(keep), ncol(sce), knee_threshold))
     sce <- sce[, keep]
 } else if (args$cell_filtering == 'emptydrops') {
