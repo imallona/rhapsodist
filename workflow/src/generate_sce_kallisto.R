@@ -24,7 +24,7 @@ parser$add_argument('--output_fn',
 
 parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
-                    help = 'native: no filtering applied (raw bustools output); emptydrops: apply DropletUtils emptyDrops')
+                    help = 'native: barcodeRanks knee filter; emptydrops: apply DropletUtils emptyDrops')
 
 args <- parser$parse_args()
 
@@ -43,7 +43,16 @@ sce <- SingleCellExperiment(list(counts = t(counts)),
 rownames(sce) <- gene_ids
 colnames(sce) <- barcodes
 
-if (args$cell_filtering == 'emptydrops') {
+saveRDS(sce, file.path(dirname(args$output_fn), paste0(id, '_kallisto_sce_pre_filter.rds')))
+
+if (args$cell_filtering == 'native') {
+    br <- barcodeRanks(counts(sce))
+    knee_threshold <- metadata(br)$knee
+    keep <- colSums(counts(sce)) >= knee_threshold
+    cat(sprintf('barcodeRanks knee: kept %d / %d barcodes (knee UMI threshold: %d)\n',
+                sum(keep), ncol(sce), knee_threshold))
+    sce <- sce[, keep]
+} else if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
     ed <- tryCatch(
         emptyDrops(counts(sce)),
