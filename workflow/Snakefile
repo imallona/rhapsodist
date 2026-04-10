@@ -1133,12 +1133,12 @@ rule get_txp2gene:
          then
             echo "Ensembl GTF"
             grep transcript {input.genes_gtf} | \
-                 awk '{{print $14,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
+                 awk '{{OFS="\t"; print $14,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
          elif [[ {params.gtf_style} == 'gencode' ]]
          then
             echo "Gencode GTF"
             grep transcript {input.genes_gtf} | \
-                 awk '{{print $12,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
+                 awk '{{OFS="\t"; print $12,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
          else
            echo "gtf_origin is misspecified within the config file"
          fi         
@@ -1216,22 +1216,22 @@ if config.get('alevin_sketch', False):
             """
             alevin-fry generate-permit-list \
                 --input {params.alevin_dir} \
-                --output {params.fry_dir} \
+                --output-dir {params.fry_dir} \
                 --valid-bc {input.observed_whitelist} \
                 --expected-ori fw \
-                &>> {log}
+                &>> {log} &&
             alevin-fry collate \
                 --rad-dir {params.alevin_dir} \
-                --input {params.fry_dir} \
-                --num-threads {threads} \
-                &>> {log}
+                --input-dir {params.fry_dir} \
+                --threads {threads} \
+                &>> {log} &&
             alevin-fry quant \
-                --input {params.fry_dir} \
+                --input-dir {params.fry_dir} \
                 --tg-map {input.t2g} \
                 --resolution cr-like \
-                --num-threads {threads} \
+                --threads {threads} \
                 --use-mtx \
-                --output {params.quant_dir} \
+                --output-dir {params.quant_dir} \
                 &>> {log}
             """
 
