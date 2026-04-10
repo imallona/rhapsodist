@@ -37,6 +37,7 @@ suppressPackageStartupMessages({
     library(data.table)
     library(Matrix)
     library(viridis)
+    library(UpSetR)
 })
 
 source(file.path(dirname(knitr::current_input()), "..", "ggtheme.R"))
@@ -56,10 +57,10 @@ if (has_sbg) aligners = c(aligners, "sbg")
 ## Data loading
 
 Each pipeline produces a SingleCellExperiment saved as an RDS file. Gene symbols
-are stored in rowData under different column names depending on the aligner
-(starsolo: `name`, kallisto: `SYMBOL`, alevin/tximeta: Ensembl IDs as rownames
-with no symbol column). We rename SCE rownames to symbols before building Seurat
-objects so that marker lookups work uniformly across pipelines.
+sit in rowData under different column names depending on the aligner (starsolo:
+`name`, kallisto: `SYMBOL`, alevin: Ensembl IDs as rownames with no symbol
+column). SCE rownames are renamed to gene symbols before building Seurat objects
+so that marker lookups work the same way across pipelines.
 
 ```{r load-sces}
 load_sce = function(aligner, wd, samp) {
@@ -101,9 +102,9 @@ sapply(sces, dim) |> `rownames<-`(c("n_genes", "n_cells"))
 
 ## QC summary
 
-Cell and library quality metrics for each pipeline. Differences in cell count
-reflect differences in barcode calling strategies. Median UMI and genes detected
-reflect the sensitivity of each aligner.
+Cell and library quality metrics per pipeline. Differences in cell count come
+from each aligner's barcode calling approach. Median UMI and genes detected show
+how many counts each aligner assigns per cell.
 
 ```{r qc-table}
 qc_df = rbindlist(lapply(names(sces), function(m) {
@@ -142,9 +143,9 @@ ggplot(qc_long, aes(x = pipeline, y = value, fill = pipeline)) +
     labs(x = NULL, y = NULL)
 ```
 
-Per-cell UMI and gene count distributions across pipelines. Rightward shifts
-indicate higher library complexity. Multimodal distributions can reflect doublets
-or heterogeneous cell populations captured at different efficiencies.
+Per-cell UMI and gene count distributions across pipelines. A shift to the right
+means more counts per cell. Multimodal distributions may come from doublets or
+cell populations of very different sizes.
 
 ```{r umi-gene-density, fig.width=ng_fig_size(2, 1)$w, fig.height=ng_fig_size(2, 1)$h}
 umi_df = rbindlist(lapply(names(sces), function(m) {
@@ -174,10 +175,9 @@ p_umi + p_gene + plot_layout(guides = "collect")
 
 ## Per-pipeline clustering and marker expression {.tabset}
 
-For each pipeline: 2000 highly variable genes selected by VST, 30 PCs, Louvain
-clustering at resolution 0.5, and UMAP embedding using the top 20 PCs. Feature
-plots show log-normalised expression; cells with zero counts for that gene are
-shown in grey.
+For each pipeline: 2000 highly variable genes by VST, 30 PCs, Louvain clustering
+at resolution 0.5, UMAP on the top 20 PCs. Feature plots show log-normalised
+expression; cells with zero counts are shown in grey.
 
 ```{r build-seurat-objects}
 make_seurat = function(sce) {
@@ -213,7 +213,7 @@ rm(sces)
 gc()
 ```
 
-```{r per-pipeline-tabs, results='asis', fig.width=ng_fig_size(1, 1)$w, fig.height=ng_fig_size(1, 1)$h}
+```{r per-pipeline-tabs, results='asis', fig.width=ng_fig_size(4, 4)$w, fig.height=ng_fig_size(4, 4)$h}
 for (pipe in names(seurat_objects)) {
     so = seurat_objects[[pipe]]
     n_clusters = length(unique(Idents(so)))
@@ -222,9 +222,9 @@ for (pipe in names(seurat_objects)) {
     cat("### ", pipe, " {.tabset}\n\n")
 
     cat("#### UMAP\n\n")
-    cat("Each dot is a cell; colour encodes Louvain cluster. Proximity reflects",
-        "transcriptomic similarity. The number and separation of clusters reflects",
-        "the cell-type diversity recovered by this pipeline.\n\n")
+    cat("Each dot is a cell; colour encodes Louvain cluster. Nearby cells are",
+        "transcriptionally similar. The number and separation of clusters shows",
+        "how many cell types this pipeline detects.\n\n")
     print(
         DimPlot(so, reduction = "umap", label = TRUE, label.size = 2.5,
                 cols = cluster_colours[seq_len(n_clusters)]) +
@@ -235,8 +235,7 @@ for (pipe in names(seurat_objects)) {
 
     cat("#### PCA\n\n")
     cat("PC1 vs PC2 coloured by cluster. Compare with the UMAP to check whether",
-        "the top principal components capture the dominant sources of variation",
-        "in this pipeline's gene set.\n\n")
+        "the top PCs separate the same groups.\n\n")
     print(
         DimPlot(so, reduction = "pca", label = TRUE, label.size = 2.5,
                 cols = cluster_colours[seq_len(n_clusters)]) +
@@ -276,16 +275,16 @@ for (pipe in names(seurat_objects)) {
 ## Guide RNA assignments
 
 This dataset is from a pooled CRISPR screen. The authors provide per-cell guide
-assignments derived from their own processing of a separate amplicon library.
-We do not quantify guides here; we use the author-provided table only as cell
-metadata. Barcodes in that table use CB1_CB2_CB3 format (underscores separating
-the three 9-bp segments); we strip underscores to match the 27-bp concatenated
-format produced by this pipeline. For cells with more than one detected guide we
-take the guide with the highest UMI count. The join rate -- the fraction of
-cells called by each aligner that can be matched to a guide assignment -- reflects
-how well each aligner's barcode calls agree with the original study's processing.
+assignments from their own processing of a separate amplicon library. We do not
+quantify guides here; we use that table only as cell metadata. Barcodes in the
+table use CB1_CB2_CB3 format (three 9-bp segments separated by underscores); we
+remove underscores to match the 27-bp concatenated format this pipeline produces.
+For cells with more than one detected guide we take the one with the highest UMI
+count. The join rate is the fraction of cells from each aligner that match a
+guide assignment; it shows how well each aligner's barcodes agree with the
+original study.
 
-```{r guide-assignments, fig.width=ng_fig_size(length(seurat_objects), 1)$w, fig.height=ng_fig_size(length(seurat_objects), 1)$h}
+```{r guide-assignments, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1)$w, fig.height=ng_fig_size(length(seurat_objects), 1)$h}
 guide_csv = params$guide_csv
 
 if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
@@ -346,14 +345,14 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
 }
 ```
 
-```{r guide-umap, results='asis', fig.width=ng_fig_size(1, 1)$w, fig.height=ng_fig_size(1, 1)$h}
+```{r guide-umap, results='asis', fig.width=ng_fig_size(3, 3)$w, fig.height=ng_fig_size(3, 3)$h}
 if (nchar(guide_csv) > 0 && file.exists(guide_csv) &&
     "guide_assigned" %in% colnames(seurat_objects[[1]]@meta.data)) {
 
     cat("### Guide assignment on UMAP {.tabset}\n\n")
-    cat("Each cell is coloured by whether its barcode matched an author-assigned",
-        "guide. Unassigned cells may reflect barcode disagreements between",
-        "pipelines or cells that received no detectable guide.\n\n")
+    cat("Each cell is coloured by whether its barcode matched a guide assignment.",
+        "Unassigned cells either had no guide detected or their barcode did not",
+        "match the author-provided table.\n\n")
 
     for (pipe in names(seurat_objects)) {
         cat("####", pipe, "\n\n")
@@ -416,6 +415,13 @@ knitr::kable(
     )
 )
 
+cb_umi_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
+    data.table(pipeline = pipe,
+               barcode = colnames(seurat_objects[[pipe]]),
+               total_umi = seurat_objects[[pipe]]$nCount_RNA)
+}))
+saveRDS(cb_umi_dt, file.path(wd, paste0(samp, "_biology_cb_umi.rds")))
+
 n_pipelines = length(seurat_objects)
 rm(seurat_objects)
 gc()
@@ -423,11 +429,57 @@ gc()
 
 ## Cross-pipeline comparison
 
+### Barcode overlap
+
+How many cell barcodes are shared across pipelines. Bars unique to one aligner
+show barcodes that only that aligner called. Intersections show barcodes called
+by more than one aligner.
+
+```{r barcode-overlap, fig.width=8, fig.height=5}
+bc_lists = split(cb_umi_dt$barcode, cb_umi_dt$pipeline)
+upset(fromList(bc_lists), order.by = "freq", text.scale = 1.4,
+      point.size = 3, line.size = 0.8, mb.ratio = c(0.6, 0.4))
+```
+
+### Per-barcode UMI concordance
+
+For each pair of pipelines, only barcodes detected by both are compared.
+Mean UMI (x-axis) and difference in UMI (y-axis) follow the Bland-Altman
+convention. Dashed lines show mean bias and 1.96 SD limits of agreement.
+
+```{r bland-altman-umi, fig.width=ng_fig_size(3, 3)$w, fig.height=ng_fig_size(3, 3)$h}
+pipes = unique(cb_umi_dt$pipeline)
+pairs = combn(pipes, 2, simplify = FALSE)
+
+ba_plots = lapply(pairs, function(pair) {
+    d1 = cb_umi_dt[pipeline == pair[1], .(barcode, umi1 = total_umi)]
+    d2 = cb_umi_dt[pipeline == pair[2], .(barcode, umi2 = total_umi)]
+    shared = merge(d1, d2, by = "barcode")
+    shared[, mean_umi := (log10(umi1 + 1) + log10(umi2 + 1)) / 2]
+    shared[, diff_umi := log10(umi1 + 1) - log10(umi2 + 1)]
+    bias = mean(shared$diff_umi)
+    loa  = sd(shared$diff_umi) * 1.96
+    ggplot(shared, aes(x = mean_umi, y = diff_umi)) +
+        geom_point(alpha = 0.1, size = 0.3) +
+        geom_hline(yintercept = bias, colour = cbbPalette[2], linewidth = 0.6) +
+        geom_hline(yintercept = c(bias - loa, bias + loa),
+                   colour = cbbPalette[2], linewidth = 0.4, linetype = "dashed") +
+        theme_ng() +
+        theme(aspect.ratio = NULL) +
+        labs(x = "mean log10(UMI + 1)",
+             y = "diff log10(UMI + 1)",
+             title = paste(pair[1], "vs", pair[2]),
+             subtitle = sprintf("n = %d shared barcodes, bias = %.3f", nrow(shared), bias))
+})
+
+wrap_plots(ba_plots)
+```
+
 ### Cell recovery
 
-Total cells recovered by each pipeline. Differences reflect barcode calling and
-filtering strategies, not biology; they set the denominator for all downstream
-percentage calculations.
+Total cells called by each pipeline. Differences come from each aligner's
+barcode calling and filtering, not from biology; these numbers are the denominator
+for the percentage calculations below.
 
 ```{r cell-recovery, fig.width=ng_fig_size(n_pipelines, 1)$w, fig.height=ng_fig_size(n_pipelines, 1)$h}
 ncell_df = unique(marker_expr[, .(pipeline, n_total_cells)])
@@ -444,8 +496,8 @@ ggplot(ncell_df, aes(x = pipeline, y = n_total_cells, fill = pipeline)) +
 ### Marker counts
 
 Number of cells with at least one UMI for each marker, split by pipeline. A
-higher count does not necessarily mean better detection; it can also reflect
-barcode inflation or spurious alignment in that pipeline.
+higher count does not always mean better detection; it can also come from more
+cells being called or spurious alignment.
 
 ```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1)$w, fig.height=ng_fig_size(length(markers), 1)$h}
 expr_ok = marker_expr[!is.na(n_expressing)]
@@ -458,9 +510,9 @@ ggplot(expr_ok, aes(x = marker, y = n_expressing, fill = pipeline)) +
     labs(x = NULL, y = "cells expressing (count > 0)", fill = NULL)
 ```
 
-Fraction of recovered cells that are positive for each marker. Dividing by total
-cell count removes the effect of different pipeline yields, so pipelines can be
-compared on the proportion of their captured population that is marker-positive.
+Fraction of cells that are positive for each marker. Dividing by cell count
+removes the effect of each pipeline calling different numbers of cells, so the
+pipelines can be compared on the same scale.
 
 ```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1)$w, fig.height=ng_fig_size(length(markers), 1)$h}
 ggplot(expr_ok, aes(x = marker, y = pct_expressing, fill = pipeline)) +
@@ -473,10 +525,10 @@ ggplot(expr_ok, aes(x = marker, y = pct_expressing, fill = pipeline)) +
 
 ### Dotplot summary
 
-Dot size encodes the fraction of cells expressing each marker; colour encodes
-mean log-normalised expression in those cells. Together they distinguish markers
-that are rare but strongly expressed from those that are broadly detected at low
-levels. Rows are pipelines; columns are markers.
+Dot size: fraction of cells with at least one count for the marker. Colour: mean
+log-normalised expression in those cells. A small bright dot means the marker is
+rare but highly expressed; a large pale dot means it is widespread but lowly
+expressed. Rows are pipelines; columns are markers.
 
 ```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines)$w, fig.height=ng_fig_size(length(markers), n_pipelines)$h}
 expr_ok[, marker_label := paste0(marker, "\n", cell_type)]

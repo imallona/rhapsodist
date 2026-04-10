@@ -15,6 +15,13 @@ cell_filtering: "native"
 ## multimappers
 soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 
+# alevin_sketch: use salmon alevin --sketch (faster, integer-like counts, no EM
+# multi-mapper redistribution). Set true to match STARsolo Unique counting and
+# keep UMI scales comparable across aligners. Set false to use the default
+# graph-based EM deduplication, which produces fractional counts and inflates
+# per-cell UMI totals relative to unique-only aligners.
+alevin_sketch: false
+
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
 

@@ -13,6 +13,11 @@ soloCellFilter: "EmptyDrops_CR"
 soloMultiMappers: "Unique"
 extraStarSoloArgs: ""
 cell_filtering: "native"
+# sketch disables EM multi-mapper redistribution, giving integer-like counts
+# closer to STARsolo soloMultiMappers: Unique above; without it alevin inflates
+# per-cell UMI ~1.75x via fractional EM counts, making cross-aligner comparison
+# unfair
+alevin_sketch: true
 
 working_dir: output/sendoel2024
 

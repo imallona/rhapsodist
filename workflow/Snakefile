@@ -1085,7 +1085,8 @@ rule alevin_align:
         )
     params:
         index_path = op.join(config['working_dir'], 'data', 'index', 'salmon'),
-        output_dir = op.join(config['working_dir'], 'alevin', '{sample}')
+        output_dir = op.join(config['working_dir'], 'alevin', '{sample}'),
+        sketch_flag = '--sketch' if config.get('alevin_sketch', False) else ''
     output:
         flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         feature_dump = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'featureDump.txt')
@@ -1107,7 +1108,8 @@ rule alevin_align:
            --whitelist {input.observed_whitelist} \
            -o {params.output_dir} \
            -p {threads} \
-           --tgMap {input.t2g} &> {log}
+           --tgMap {input.t2g} \
+           {params.sketch_flag} &> {log}
         """
 
 
