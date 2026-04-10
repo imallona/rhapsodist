@@ -181,7 +181,8 @@ shown in grey.
 
 ```{r build-seurat-objects}
 make_seurat = function(sce) {
-    so = CreateSeuratObject(counts = counts(sce), project = mainExpName(sce),
+    mat = as(counts(sce), "CsparseMatrix")
+    so = CreateSeuratObject(counts = mat, project = mainExpName(sce),
                             min.cells = 0, min.features = 0)
     so = NormalizeData(so, normalization.method = "LogNormalize",
                        scale.factor = 1e4, verbose = FALSE)
@@ -195,12 +196,17 @@ make_seurat = function(sce) {
     so
 }
 
-seurat_objects = lapply(sces, make_seurat)
-
-# save each pipeline separately so individual objects can be loaded for debugging
-for (pipe in names(seurat_objects)) {
-    saveRDS(seurat_objects[[pipe]],
-            file.path(wd, paste0(samp, "_biology_", pipe, "_seurat.rds")))
+seurat_objects = list()
+for (pipe in names(sces)) {
+    cache_fn = file.path(wd, paste0(samp, "_biology_", pipe, "_seurat.rds"))
+    if (file.exists(cache_fn)) {
+        cat(pipe, ": loading cached Seurat object\n")
+        seurat_objects[[pipe]] = readRDS(cache_fn)
+    } else {
+        cat(pipe, ": building Seurat object\n")
+        seurat_objects[[pipe]] = make_seurat(sces[[pipe]])
+        saveRDS(seurat_objects[[pipe]], cache_fn)
+    }
 }
 
 rm(sces)
