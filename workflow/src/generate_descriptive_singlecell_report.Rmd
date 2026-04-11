@@ -253,10 +253,12 @@ rm(libsize.drop, feature.drop, mito.drop)
 ## Quick clustering (COUNTS) {.tabset .tabset-pills}
 
 ```{r}
-so <- CreateSeuratObject(counts = assay(sce, 'counts'),
+counts_mat <- as(assay(sce, 'counts'), "CsparseMatrix")
+so <- CreateSeuratObject(counts = counts_mat,
                          project = "wta",
                          min.cells = 0, min.features = 0,
                          assay = 'RNA')
+rm(counts_mat)
 
 stopifnot(all(rownames(so@meta.data) == colnames(sce)))
 
