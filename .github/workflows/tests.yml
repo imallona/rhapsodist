@@ -23,6 +23,28 @@ jobs:
       - name: run unit tests with coverage
         run: pytest
 
+  r-unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: r-tests
+          create-args: >-
+            r-base
+            bioconductor-s4vectors
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: run gtf_utils R tests
+        run: Rscript workflow/tests/test_gtf_utils.R
+
   integration-dry-run:
     runs-on: ubuntu-latest
     defaults:

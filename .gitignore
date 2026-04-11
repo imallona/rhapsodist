@@ -40,8 +40,15 @@ results/
 ._TODO
 ._docs
 docker/*sif
+*.sif
 docker/testrefhuman46_Rhap_reference.tar.gz
 testrun/
+
+# Ignore pipeline outputs and local artifacts
+example/
+output/
+simulated_comparison.html
+.coverage
 docs/*html
 docs/*files
 docs/*zip

@@ -344,7 +344,9 @@ rule generate_sce_kallisto:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
         flag = op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx'),
+        gtf = config['gtf'],
         script = op.join(workflow.basedir, 'src', 'generate_sce_kallisto.R'),
+        gtf_utils = op.join(workflow.basedir, 'src', 'gtf_utils.R'),
     output:
         sce = op.join(config['working_dir'], 'kallisto', '{sample}', '{sample}_kallisto_sce.rds')
     params:
@@ -362,6 +364,7 @@ rule generate_sce_kallisto:
              -f {input.script} --args \
              --sample {wildcards.sample} \
              --working_dir {params.working_dir} \
+             --gtf {input.gtf} \
              --cell_filtering {params.cell_filtering} \
              --output_fn {output.sce} &> {log}
         """
@@ -404,7 +407,9 @@ if config.get('alevin_sketch', False):
         input:
             rows = op.join(config['working_dir'], 'alevin', '{sample}', 'fry_quant', 'alevin', 'quants_mat_rows.txt'),
             knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
+            gtf = config['gtf'],
             script = op.join(workflow.basedir, 'src', 'generate_sce_alevin.R'),
+            gtf_utils = op.join(workflow.basedir, 'src', 'gtf_utils.R'),
         output:
             sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
         params:
@@ -422,6 +427,7 @@ if config.get('alevin_sketch', False):
                  -f {input.script} --args \
                  --sample {wildcards.sample} \
                  --fry_quant_dir {params.fry_quant_dir} \
+                 --gtf {input.gtf} \
                  --cell_filtering {params.cell_filtering} \
                  --knee_barcodes {input.knee_barcodes} \
                  --output_fn {output.sce} &> {log}
@@ -464,7 +470,9 @@ else:
         input:
             flag = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
             knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
+            gtf = config['gtf'],
             script = op.join(workflow.basedir, 'src', 'generate_sce_alevin.R'),
+            gtf_utils = op.join(workflow.basedir, 'src', 'gtf_utils.R'),
         output:
             sce = op.join(config['working_dir'], 'alevin', '{sample}', '{sample}_alevin_sce.rds')
         params:
@@ -482,6 +490,7 @@ else:
                  -f {input.script} --args \
                  --sample {wildcards.sample} \
                  --working_dir {params.working_dir} \
+                 --gtf {input.gtf} \
                  --cell_filtering {params.cell_filtering} \
                  --knee_barcodes {input.knee_barcodes} \
                  --output_fn {output.sce} &> {log}

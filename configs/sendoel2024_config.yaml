@@ -27,7 +27,11 @@ reference_dir: data/reference/GRCm39_vM36
 gtf_origin: "gencode"
 genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
 gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
-transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.pc_transcripts.fa.gz"
+## all transcripts (all biotypes). pc_transcripts.fa.gz only has protein coding,
+## which leaves kallisto and salmon/alevin with ~22k genes vs ~78k in the full
+## GTF used by starsolo. Using transcripts.fa.gz keeps the three aligners on the
+## same gene universe.
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
 
 ## cDNA read length for WTA was 62 (right/cDNA); sjdbOverhang = readLength - 1
 ## Verify with: zcat <R2.fastq.gz> | head -8 | awk 'NR==2{print length($0)}'

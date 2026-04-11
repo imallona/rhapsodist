@@ -8,6 +8,20 @@ suppressPackageStartupMessages({
     library(HDF5Array)
 })
 
+script_dir <- local({
+    ca <- commandArgs(trailingOnly = FALSE)
+    f_flag <- which(ca == "-f")
+    file_arg <- grep("^--file=", ca, value = TRUE)
+    if (length(file_arg) > 0) {
+        dirname(normalizePath(sub("^--file=", "", file_arg[1])))
+    } else if (length(f_flag) > 0 && length(ca) > f_flag[1]) {
+        dirname(normalizePath(ca[f_flag[1] + 1L]))
+    } else {
+        "."
+    }
+})
+source(file.path(script_dir, "gtf_utils.R"))
+
 parser <- ArgumentParser(
     description = 'Build a WTA SingleCellExperiment from alevin output.')
 
@@ -16,6 +30,8 @@ parser$add_argument('--working_dir', type = 'character', default = '',
                     help = 'Working directory (non-sketch mode)')
 parser$add_argument('--fry_quant_dir', type = 'character', default = '',
                     help = 'alevin-fry quant output directory (sketch mode)')
+parser$add_argument('--gtf', type = 'character',
+                    help = 'GTF annotation used to map gene_id to gene_name')
 parser$add_argument('--output_fn', type = 'character', help = 'Output SCE RDS path')
 parser$add_argument('--knee_barcodes', type = 'character',
                     help = 'Path to knee-filtered barcode list')
@@ -99,7 +115,22 @@ if (nchar(args$fry_quant_dir) > 0) {
     mat <- read_alevin_filtered(matrix_file, gene_names, all_barcodes, knee_barcodes)
 }
 
-sce <- SingleCellExperiment(list(counts = mat), mainExpName = id)
+alevin_gene_ids <- rownames(mat)
+gtf_genes <- parse_gtf_genes(args$gtf)
+stopifnot(nrow(gtf_genes) > 0)
+row_data <- build_rowdata_from_gtf(alevin_gene_ids, gtf_genes)
+stopifnot(identical(rownames(row_data), alevin_gene_ids),
+          all(c("name", "type", "value") %in% colnames(row_data)))
+matched <- sum(row_data$name != alevin_gene_ids)
+cat(sprintf('alevin gene symbol mapping: %d / %d gene_ids matched a GTF gene_name\n',
+            matched, length(alevin_gene_ids)))
+if (matched == 0L) {
+    warning('no alevin gene_ids matched any GTF gene_name; check --gtf and ID version suffixes')
+}
+
+sce <- SingleCellExperiment(list(counts = mat),
+                            rowData = row_data,
+                            mainExpName = id)
 
 saveRDS(sce, file.path(dirname(args$output_fn), paste0(id, '_alevin_sce_pre_filter.rds')))
 
