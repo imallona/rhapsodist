@@ -1,5 +1,5 @@
 ## rhapsodist config for Sendoel et al. 2024 (PMC11306103)
-## P60 mouse epidermis WTA samples (normal, 3 biological replicates)
+## P60 mouse epidermis WTA samples (normal, 3 biological replicates available; 1 enabled below)
 ## GEO: GSE235325  BioProject: PRJNA985698
 ## Sequenced on Illumina NovaSeq 6000 / NovaSeq X
 ## BD Rhapsody v1 beads (linkers ACTGGCCTGCGA / GGTAGCGGTGACA, 96x3 whitelist)

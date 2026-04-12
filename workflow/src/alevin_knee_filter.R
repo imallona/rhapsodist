@@ -53,10 +53,22 @@ if (nchar(opts$fry_quant_dir) > 0) {
 br = barcodeRanks(matrix(umi_totals, nrow = 1, dimnames = list(NULL, barcodes)))
 knee_threshold = metadata(br)$knee
 
-keep = umi_totals >= knee_threshold
+if (is.na(knee_threshold)) {
+    knee_threshold = metadata(br)$inflection
+    warning(sprintf("barcodeRanks knee is NA; falling back to inflection point: %g",
+                    knee_threshold))
+}
+
+if (is.na(knee_threshold)) {
+    warning("both knee and inflection are NA; keeping all barcodes")
+    keep = rep(TRUE, length(barcodes))
+} else {
+    keep = umi_totals >= knee_threshold
+}
+
 writeLines(barcodes[keep], opts$output)
 
 message(sprintf(
-    "barcodeRanks knee: kept %d / %d barcodes (knee UMI threshold: %g)",
+    "barcodeRanks knee: kept %d / %d barcodes (threshold: %g)",
     sum(keep), length(barcodes), knee_threshold
 ))

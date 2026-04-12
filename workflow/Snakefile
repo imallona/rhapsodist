@@ -835,7 +835,10 @@ rule derive_observed_whitelist:
             bc = seq[:27]
             if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
                 observed_valid_barcodes.add(bc)
+        proc.stdout.close()
         proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"pigz decompression failed with exit code {proc.returncode}")
 
         with open(output.observed_whitelist, 'w') as out_fh:
             for barcode in sorted(observed_valid_barcodes):

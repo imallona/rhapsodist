@@ -79,8 +79,18 @@ saveRDS(sce, file.path(dirname(args$output_fn), paste0(id, '_kallisto_sce_pre_fi
 if (args$cell_filtering == 'native') {
     br <- barcodeRanks(counts(sce))
     knee_threshold <- metadata(br)$knee
-    keep <- colSums(counts(sce)) >= knee_threshold
-    cat(sprintf('barcodeRanks knee: kept %d / %d barcodes (knee UMI threshold: %g)\n',
+    if (is.na(knee_threshold)) {
+        knee_threshold <- metadata(br)$inflection
+        warning(sprintf('barcodeRanks knee is NA; falling back to inflection point: %g',
+                        knee_threshold))
+    }
+    if (is.na(knee_threshold)) {
+        warning('both knee and inflection are NA; keeping all barcodes')
+        keep <- rep(TRUE, ncol(sce))
+    } else {
+        keep <- colSums(counts(sce)) >= knee_threshold
+    }
+    cat(sprintf('barcodeRanks knee: kept %d / %d barcodes (threshold: %g)\n',
                 sum(keep), ncol(sce), knee_threshold))
     sce <- sce[, keep]
 } else if (args$cell_filtering == 'emptydrops') {

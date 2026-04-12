@@ -39,8 +39,9 @@ def detect_bead_version(cb_umi_path, n_reads=10000):
     """Detect bead class from the first n_reads sequence reads of an R1 fastq.
 
     Returns 'v1', 'enhanced', or 'unknown'.
-    v1 beads have linker ACTGGCCTGCGA at read positions 10-21.
-    Enhanced beads have linker GTGA at positions 10-16 (accounts for 0-3 bp stagger).
+    v1 beads have linker ACTGGCCTGCGA at read positions 10-21 (0-indexed 9:21).
+    Enhanced beads have 4bp linker GTGA at positions 10-13, shifted by 0-3 bp
+    stagger (so the motif can sit anywhere in positions 10-16).
     """
     import gzip as _gzip
     count = 0

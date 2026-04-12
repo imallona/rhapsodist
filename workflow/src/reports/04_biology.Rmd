@@ -49,6 +49,10 @@ samp = params$sample
 aligners = strsplit(params$aligners, ",")[[1]]
 has_sbg = isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
 
+if (!nzchar(params$markers_file) || !file.exists(params$markers_file)) {
+    stop("markers_file not set or not found: '", params$markers_file,
+         "'. Set biology_markers_file in the config.")
+}
 marker_meta = read.table(params$markers_file, header = TRUE, sep = "\t",
                          stringsAsFactors = FALSE)
 markers = marker_meta$marker
