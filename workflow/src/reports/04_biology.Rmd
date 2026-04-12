@@ -231,7 +231,7 @@ rm(sces)
 gc()
 ```
 
-```{r per-pipeline-tabs, results='asis', fig.width=ng_fig_size(4, 4)$w, fig.height=ng_fig_size(4, 4)$h}
+```{r per-pipeline-tabs, results='asis', fig.width=ng_fig_size(4, 4, panel_mm = 20)$w, fig.height=ng_fig_size(4, 4, panel_mm = 20)$h}
 for (pipe in names(seurat_objects)) {
     so = seurat_objects[[pipe]]
     n_clusters = length(unique(Idents(so)))
@@ -288,6 +288,47 @@ for (pipe in names(seurat_objects)) {
         cat("\n\n")
     }
 }
+```
+
+## Cell type assignment across pipelines
+
+For each cell, the marker with the highest log-normalised expression is found
+and the cell is labelled with that marker's cell type. Cells with zero counts
+for all markers are labelled "none". The three UMAPs are shown side by side
+so cluster structure and cell type composition can be compared across pipelines.
+
+```{r celltype-umap, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+for (pipe in names(seurat_objects)) {
+    so = seurat_objects[[pipe]]
+    present = intersect(markers, rownames(so))
+    if (length(present) == 0) {
+        so$marker_celltype = "none"
+    } else {
+        expr_mat = GetAssayData(so, layer = "data")[present, , drop = FALSE]
+        top_idx = apply(expr_mat, 2, which.max)
+        top_val = apply(expr_mat, 2, max)
+        ct_map = setNames(marker_meta$cell_type, marker_meta$marker)
+        assigned = ct_map[present[top_idx]]
+        assigned[top_val == 0] = "none"
+        so$marker_celltype = assigned
+    }
+    seurat_objects[[pipe]] = so
+}
+
+ct_levels = c(sort(unique(marker_meta$cell_type)), "none")
+ct_colours = setNames(
+    c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
+    ct_levels)
+
+ct_plots = lapply(names(seurat_objects), function(pipe) {
+    so = seurat_objects[[pipe]]
+    so$marker_celltype = factor(so$marker_celltype, levels = ct_levels)
+    DimPlot(so, reduction = "umap", group.by = "marker_celltype",
+            pt.size = 0.3, cols = ct_colours) +
+        theme_ng() +
+        labs(title = pipe, colour = "cell type")
+})
+print(wrap_plots(ct_plots, nrow = 1) + plot_layout(guides = "collect"))
 ```
 
 ## Guide RNA assignments
@@ -367,21 +408,26 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
 }
 ```
 
-```{r guide-umap, results='asis', fig.width=ng_fig_size(3, 3)$w, fig.height=ng_fig_size(3, 3)$h}
+```{r guide-umap, results='asis', fig.width=ng_fig_size(3, 3, panel_mm = 28)$w, fig.height=ng_fig_size(3, 3, panel_mm = 28)$h}
 if (nchar(guide_csv) > 0 && file.exists(guide_csv) &&
     "guide_assigned" %in% colnames(seurat_objects[[1]]@meta.data)) {
 
     cat("### Guide assignment on UMAP {.tabset}\n\n")
     cat("Each cell is coloured by whether its barcode matched a guide assignment.",
-        "Unassigned cells either had no guide detected or their barcode did not",
+        "Unassigned cells (red) are plotted on top.",
+        "They either had no guide detected or their barcode did not",
         "match the author-provided table.\n\n")
 
     for (pipe in names(seurat_objects)) {
         cat("####", pipe, "\n\n")
+        so = seurat_objects[[pipe]]
+        so$guide_assigned = factor(so$guide_assigned,
+                                   levels = c("assigned", "unassigned"))
         print(
-            DimPlot(seurat_objects[[pipe]], reduction = "umap",
+            DimPlot(so, reduction = "umap",
                     group.by = "guide_assigned", pt.size = 0.3,
-                    cols = c(assigned = cbbPalette[2], unassigned = "grey85")) +
+                    order = "unassigned",
+                    cols = c(assigned = "#4477AA", unassigned = "#CC3311")) +
                 theme_ng() +
                 labs(title = pipe, colour = NULL)
         )
@@ -438,7 +484,7 @@ knitr::kable(
 )
 ```
 
-```{r marker-expression-barplots, fig.width=ng_fig_size(length(markers), 2)$w, fig.height=ng_fig_size(length(markers), 2)$h}
+```{r marker-expression-barplots, fig.width=ng_fig_size(length(markers), 2)$w, fig.height=ng_fig_size(length(markers), 4)$h}
 expr_bar = marker_expr[!is.na(n_expressing)]
 expr_bar[, marker_label := paste0(marker, " (", cell_type, ")")]
 
@@ -675,7 +721,7 @@ Number of cells with at least one UMI for each marker, split by pipeline. A
 higher count does not always mean better detection; it can also come from more
 cells being called or spurious alignment.
 
-```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 1, panel_mm = 25)$h}
+```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 3, panel_mm = 25)$h}
 expr_ok = marker_expr[!is.na(n_expressing)]
 expr_ok[, marker_ct := paste0(marker, "\n", cell_type)]
 
@@ -691,7 +737,7 @@ Fraction of cells that are positive for each marker. Dividing by cell count
 removes the effect of each pipeline calling different numbers of cells, so the
 pipelines can be compared on the same scale.
 
-```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 1, panel_mm = 25)$h}
+```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 3, panel_mm = 25)$h}
 ggplot(expr_ok, aes(x = marker_ct, y = pct_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
     scale_fill_manual(values = cbbPalette) +
@@ -707,7 +753,7 @@ log-normalised expression in those cells. A small bright dot means the marker is
 rare but highly expressed; a large pale dot means it is widespread but lowly
 expressed. Rows are pipelines; columns are markers.
 
-```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines, panel_mm = 28)$w, fig.height=ng_fig_size(length(markers), n_pipelines, panel_mm = 28)$h}
+```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines, panel_mm = 20)$w, fig.height=ng_fig_size(length(markers), n_pipelines, panel_mm = 20)$h}
 expr_ok[, marker_label := paste0(marker, "\n", cell_type)]
 
 ggplot(expr_ok,
