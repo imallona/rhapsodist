@@ -216,7 +216,7 @@ samples:
 ```yaml
 skip_sampletags: true          # skip sampletag demultiplexing
 run_biology_report: true       # generate biology report with marker expression, clustering, cross-pipeline concordance
-biology_markers_file: workflow/data/markers/hela_markers.tsv   # TSV with marker and cell_type columns
+biology_markers_file: data/markers/hela_markers.tsv   # TSV with marker and cell_type columns, relative to workflow dir
 ```
 
 The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. Two marker files are included: `skin_markers.tsv` (mouse epidermis, for Sendoel) and `hela_markers.tsv` (human HeLa).

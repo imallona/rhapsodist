@@ -30,7 +30,7 @@ sjdbOverhang: 70
 skip_sampletags: true
 
 run_biology_report: true
-biology_markers_file: workflow/data/markers/hela_markers.tsv
+biology_markers_file: data/markers/hela_markers.tsv
 
 aligner: ['starsolo', 'kallisto', 'alevin']
 
