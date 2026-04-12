@@ -1,0 +1,9 @@
+name: noname
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - conda-forge::cmake
+  - conda-forge::git
+  - conda-forge::make
+  - conda-forge::cxx-compiler

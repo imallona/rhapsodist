@@ -4,14 +4,6 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - bioconda::htslib
-  - bioconda::samtools
-  #- bioconda::star=2.7.11b
-  - bioconda::star=2.7.10a # for sherborne, no avx2 instructions
-  - bioconda::cutadapt=4.9
-  - conda-forge::pigz
-  - bioconda::salmon=1.10.3
-  - bioconda::alevin-fry
   - conda-forge::r-base
   - conda-forge::r-biocmanager
   - conda-forge::r-cairo
@@ -38,4 +30,6 @@ dependencies:
   - conda-forge::r-patchwork
   - conda-forge::r-ggrepel
   - conda-forge::r-viridis
+  - conda-forge::r-clue
+  - conda-forge::r-mclust
   - conda-forge::pandoc

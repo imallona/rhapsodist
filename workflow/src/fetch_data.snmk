@@ -1,0 +1,144 @@
+## Rules to download FASTQs from SRA and reference files from URLs.
+##
+## Activated selectively:
+##   - fetch_sra: only for samples that have sra_run in their uses block
+##   - download_genome / download_gtf / download_transcriptome: only when the
+##     corresponding *_url key is present in the config
+##
+## For BD Rhapsody paired-end SRA deposits, _1.fastq is R1 (CB+UMI) and
+## _2.fastq is R2 (cDNA), following the standard SRA spot orientation.
+##
+## fetch_sra_metadata writes the NCBI SRA run-info CSV for all SRR accessions
+## listed in the config to {working_dir}/data/sra_metadata.csv.
+
+_sra_samples = [s['name'] for s in config['samples'] if s['uses'].get('sra_run')]
+
+def _sra_run_by_name(name):
+    for s in config['samples']:
+        if s['name'] == name:
+            return s['uses'].get('sra_run')
+    return None
+
+if _sra_samples:
+    rule fetch_sra:
+        conda:
+            op.join(workflow.basedir, 'envs', 'fetch.yaml')
+        output:
+            r1 = op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R1.fastq.gz'),
+            r2 = op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R2.fastq.gz')
+        params:
+            sra_run = lambda wildcards: _sra_run_by_name(wildcards.sample),
+            outdir = lambda wildcards: op.join(config['working_dir'], 'data', 'fastq', 'sra', wildcards.sample)
+        threads:
+            config['nthreads']
+        log:
+            op.join(config['working_dir'], 'logs', 'fetch_sra_{sample}.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'fetch_sra_{sample}.txt')
+        shell:
+            """
+            mkdir -p {params.outdir}
+            prefetch --max-size 0 --output-directory {params.outdir} {params.sra_run} 2>> {log}
+            fasterq-dump --split-files --threads {threads} \
+                --outdir {params.outdir} {params.outdir}/{params.sra_run}/ 2>> {log}
+            pigz -p {threads} -c {params.outdir}/{params.sra_run}_1.fastq \
+                > {output.r1} 2>> {log}
+            pigz -p {threads} -c {params.outdir}/{params.sra_run}_2.fastq \
+                > {output.r2} 2>> {log}
+            rm -rf {params.outdir}/{params.sra_run}/ \
+                   {params.outdir}/{params.sra_run}_1.fastq \
+                   {params.outdir}/{params.sra_run}_2.fastq
+            """
+
+    _sra_accessions = [s['uses']['sra_run'] for s in config['samples']
+                       if s['uses'].get('sra_run')]
+
+    rule fetch_sra_metadata:
+        output:
+            op.join(config['working_dir'], 'data', 'sra_metadata.csv')
+        params:
+            accessions = ','.join(_sra_accessions),
+            url_base = 'https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi'
+        log:
+            op.join(config['working_dir'], 'logs', 'fetch_sra_metadata.log')
+        shell:
+            """
+            mkdir -p $(dirname {output})
+            curl -fsSL \
+                "{params.url_base}?save=efetch&db=sra&rettype=runinfo&term={params.accessions}" \
+                > {output} 2> {log}
+            """
+
+_guide_samples = [s['name'] for s in config['samples'] if s['uses'].get('guide_gsm')]
+
+if _guide_samples:
+    rule fetch_guide_csv:
+        conda:
+            op.join(workflow.basedir, 'envs', 'fetch.yaml')
+        output:
+            guide_csv = op.join(config['working_dir'], 'data', 'guides', '{sample}_guides.csv.gz')
+        params:
+            url = lambda wildcards: get_guide_url_by_name(wildcards.sample)
+        log:
+            op.join(config['working_dir'], 'logs', 'fetch_guide_{sample}.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'fetch_guide_{sample}.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output.guide_csv})
+            curl -fsSL -o {output.guide_csv} {params.url} 2> {log}
+            """
+
+if config.get('genome_url'):
+    rule download_genome:
+        output:
+            config['genome']
+        params:
+            url = config['genome_url'],
+            gz = config['genome'] + '.gz'
+        log:
+            op.join(config['working_dir'], 'logs', 'download_genome.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'download_genome.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output})
+            curl -fsSL -o {params.gz} {params.url} 2> {log}
+            gunzip -c {params.gz} > {output} 2>> {log}
+            rm {params.gz}
+            """
+
+if config.get('gtf_url'):
+    rule download_gtf:
+        output:
+            config['gtf']
+        params:
+            url = config['gtf_url'],
+            gz = config['gtf'] + '.gz'
+        log:
+            op.join(config['working_dir'], 'logs', 'download_gtf.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'download_gtf.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output})
+            curl -fsSL -o {params.gz} {params.url} 2> {log}
+            gunzip -c {params.gz} > {output} 2>> {log}
+            rm {params.gz}
+            """
+
+if config.get('transcriptome_url'):
+    rule download_transcriptome:
+        output:
+            config['transcriptome']
+        params:
+            url = config['transcriptome_url']
+        log:
+            op.join(config['working_dir'], 'logs', 'download_transcriptome.log')
+        benchmark:
+            op.join(config['working_dir'], 'benchmarks', 'download_transcriptome.txt')
+        shell:
+            """
+            mkdir -p $(dirname {output})
+            curl -fsSL -o {output} {params.url} 2> {log}
+            """

@@ -69,7 +69,7 @@ if config.get('use_simulated', False):
 
     rule validate_simulation:
         conda:
-            op.join(workflow.basedir, 'envs', 'all_in_one.yaml')
+            op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
         input:
             sce      = op.join(config['working_dir'], 'starsolo', _sim_sample,
                                f'{_sim_sample}_starsolo_sce.rds'),

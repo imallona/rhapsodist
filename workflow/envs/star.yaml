@@ -1,0 +1,12 @@
+name: noname
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - bioconda::htslib
+  - bioconda::samtools
+  #- bioconda::star=2.7.11b
+  - bioconda::star=2.7.10a # for sherborne, no avx2 instructions
+  - bioconda::cutadapt=4.9
+  - conda-forge::pigz

@@ -1,3 +1,4 @@
+import gzip
 import os
 import os.path as op
 
@@ -17,7 +18,7 @@ SAMPLE_A = {
     'uses': {
         'cb_umi_fq': '/data/sampleA_R1.fq.gz',
         'cdna_fq': '/data/sampleA_R2.fq.gz',
-        'whitelist': '96x3',
+        'bead_version': 'enhanced',
         'species': 'human',
     },
 }
@@ -27,7 +28,7 @@ SAMPLE_B = {
     'uses': {
         'cb_umi_fq': '/data/sampleB_R1.fq.gz',
         'cdna_fq': '/data/sampleB_R2.fq.gz',
-        'whitelist': '384x3',
+        'bead_version': 'enhanced_v2',
         'species': 'mouse',
         'sbg_cwl': '/per_sample/pipeline.cwl',
     },
@@ -91,6 +92,50 @@ def test_get_species_invalid_raises():
         wf.get_species_by_name('sampleA')
 
 
+def test_get_cbumi_by_name_sra(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses'].pop('cb_umi_fq')
+    wf.config['samples'][0]['uses']['sra_run'] = 'SRR123'
+    result = wf.get_cbumi_by_name('sampleA')
+    assert result.endswith('sampleA_R1.fastq.gz')
+
+
+def test_get_cdna_by_name_sra(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses'].pop('cdna_fq')
+    wf.config['samples'][0]['uses']['sra_run'] = 'SRR123'
+    result = wf.get_cdna_by_name('sampleA')
+    assert result.endswith('sampleA_R2.fastq.gz')
+
+
+def test_get_expected_cells_by_name():
+    wf.config['samples'][0]['uses']['expected_cells'] = 5000
+    assert wf.get_expected_cells_by_name('sampleA') == 5000
+
+
+def test_get_bead_type_fallback():
+    wf.config['samples'] = []
+    assert wf.get_bead_type_by_name('nonexistent') == 'enhanced_v2'
+
+
+def test_get_guide_url_returns_none_when_no_gsm():
+    assert wf.get_guide_url_by_name('sampleA') is None
+
+
+def test_get_guide_url_constructs_url():
+    wf.config['samples'][0]['uses']['guide_gsm'] = 'GSM7500353'
+    wf.config['samples'][0]['uses']['guide_wta'] = 'WTA16'
+    url = wf.get_guide_url_by_name('sampleA')
+    assert 'GSM7500353' in url
+    assert 'WTA16' in url
+    assert url.startswith('https://')
+
+
+def test_get_sbg_cwl_by_name():
+    wf.config['samples'][0]['uses']['sbg_cwl'] = '/path/to/pipeline.cwl'
+    assert wf.get_sbg_cwl_by_name('sampleA') == '/path/to/pipeline.cwl'
+
+
 def test_sbg_uses_per_sample_key():
     assert wf._sbg_uses('sampleB', 'sbg_cwl') == '/per_sample/pipeline.cwl'
 
@@ -142,3 +187,62 @@ def test_get_sbg_reference_none_when_absent():
 def test_get_sbg_reference_from_global():
     wf.config['sbg_reference_archive'] = '/data/ref.tar.gz'
     assert wf.get_sbg_reference_by_name('sampleA') == '/data/ref.tar.gz'
+
+
+def _write_fastq(path, sequences):
+    with open(path, 'w') as fh:
+        for i, seq in enumerate(sequences):
+            fh.write(f'@read{i}\n{seq}\n+\n{"F" * len(seq)}\n')
+
+
+def _write_fastq_gz(path, sequences):
+    with gzip.open(path, 'wt') as fh:
+        for i, seq in enumerate(sequences):
+            fh.write(f'@read{i}\n{seq}\n+\n{"F" * len(seq)}\n')
+
+
+V1_READ = 'A' * 9 + 'ACTGGCCTGCGA' + 'C' * 9 + 'GGTAGCGGTGACA' + 'G' * 9 + 'T' * 8
+ENH_READ = 'A' * 9 + 'GTGA' + 'C' * 9 + 'GACA' + 'G' * 9 + 'T' * 8
+ENH_READ_VB1 = 'N' + 'A' * 9 + 'GTGA' + 'C' * 9 + 'GACA' + 'G' * 9 + 'T' * 8
+
+
+def test_detect_bead_version_v1(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 100)
+    assert wf.detect_bead_version(p) == 'v1'
+
+
+def test_detect_bead_version_v1_gz(tmp_path):
+    p = tmp_path / 'r1.fastq.gz'
+    _write_fastq_gz(p, [V1_READ] * 100)
+    assert wf.detect_bead_version(p) == 'v1'
+
+
+def test_detect_bead_version_enhanced(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [ENH_READ] * 100)
+    assert wf.detect_bead_version(p) == 'enhanced'
+
+
+def test_detect_bead_version_enhanced_vb_stagger(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [ENH_READ_VB1] * 100)
+    assert wf.detect_bead_version(p) == 'enhanced'
+
+
+def test_detect_bead_version_unknown(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, ['ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'] * 100)
+    assert wf.detect_bead_version(p) == 'unknown'
+
+
+def test_detect_bead_version_empty(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    p.write_text('')
+    assert wf.detect_bead_version(p) == 'unknown'
+
+
+def test_detect_bead_version_n_reads_limit(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 5 + ['ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'] * 1000)
+    assert wf.detect_bead_version(p, n_reads=5) == 'v1'

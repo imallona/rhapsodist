@@ -15,6 +15,13 @@ cell_filtering: "native"
 ## multimappers
 soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 
+# alevin_sketch: use salmon alevin --sketch (faster, integer-like counts, no EM
+# multi-mapper redistribution). Set true to match STARsolo Unique counting and
+# keep UMI scales comparable across aligners. Set false to use the default
+# graph-based EM deduplication, which produces fractional counts and inflates
+# per-cell UMI totals relative to unique-only aligners.
+alevin_sketch: false
+
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
 
@@ -47,5 +54,5 @@ samples:
     uses:
       cb_umi_fq: /path/to/R1.fastq.gz
       cdna_fq: /path/to/R2.fastq.gz
-      whitelist: 96x3  # 96x3 for Enh beads (96 seqs/component), 384x3 for EnhV2 beads (384 seqs/component)
+      bead_version: enhanced  # v1, enhanced, or enhanced_v2
       species: 'human'  # human or mouse

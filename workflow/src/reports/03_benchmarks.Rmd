@@ -45,6 +45,7 @@ PIPELINE_MAP <- list(
     r_sce_generation_kallisto  = "kallisto",
     kallisto_descriptive       = "kallisto",
     alevin                     = "alevin",
+    alevin_knee_filter         = "alevin",
     r_sce_generation_alevin    = "alevin",
     alevin_descriptive         = "alevin",
     sbg_cwl                    = "sbg",

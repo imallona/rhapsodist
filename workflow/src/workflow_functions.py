@@ -15,24 +15,89 @@ def get_aligners():
 
 ## name means sample name, everywhere
 def get_cbumi_by_name(name):
-    for i in range(len(config['samples'])):
-        if config['samples'][i]['name'] == name:
-             return(config['samples'][i]['uses']['cb_umi_fq'])
+    for s in config['samples']:
+        if s['name'] == name:
+            if 'cb_umi_fq' in s['uses']:
+                return s['uses']['cb_umi_fq']
+            elif s['uses'].get('sra_run'):
+                return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
 def get_cdna_by_name(name):
-    for i in range(len(config['samples'])):
-        if config['samples'][i]['name'] == name:
-             return(config['samples'][i]['uses']['cdna_fq'])
+    for s in config['samples']:
+        if s['name'] == name:
+            if 'cdna_fq' in s['uses']:
+                return s['uses']['cdna_fq']
+            elif s['uses'].get('sra_run'):
+                return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R2.fastq.gz')
 
 def get_expected_cells_by_name(name):
     for i in range(len(config['samples'])):
         if config['samples'][i]['name'] == name:
              return(config['samples'][i]['uses']['expected_cells'])
 
+def detect_bead_version(cb_umi_path, n_reads=10000):
+    """Detect bead class from the first n_reads sequence reads of an R1 fastq.
+
+    Returns 'v1', 'enhanced', or 'unknown'.
+    v1 beads have linker ACTGGCCTGCGA at read positions 10-21 (0-indexed 9:21).
+    Enhanced beads have 4bp linker GTGA at positions 10-13, shifted by 0-3 bp
+    stagger (so the motif can sit anywhere in positions 10-16).
+    """
+    import gzip as _gzip
+    count = 0
+    v1_count = 0
+    enh_count = 0
+    opener = _gzip.open if str(cb_umi_path).endswith('.gz') else open
+    with opener(cb_umi_path, 'rt') as fh:
+        for i, line in enumerate(fh):
+            if i % 4 != 1:
+                continue
+            seq = line.strip()
+            count += 1
+            if count > n_reads:
+                break
+            if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
+                v1_count += 1
+            else:
+                for offset in range(4):
+                    if len(seq) >= 13 + offset and seq[9 + offset:13 + offset] == 'GTGA':
+                        enh_count += 1
+                        break
+    if count == 0:
+        return 'unknown'
+    v1_frac = v1_count / count
+    enh_frac = enh_count / count
+    if v1_frac >= enh_frac and v1_frac > 0.1:
+        return 'v1'
+    if enh_frac > 0.1:
+        return 'enhanced'
+    return 'unknown'
+
+def get_bead_type_by_name(name):
+    """Return bead_version for a sample: 'v1', 'enhanced', or 'enhanced_v2' (default)."""
+    for s in config['samples']:
+        if s['name'] == name:
+            return s['uses'].get('bead_version', 'enhanced_v2')
+    return 'enhanced_v2'
+
 def get_barcode_whitelist_by_name(name):
-    for i in range(len(config['samples'])):
-        if config['samples'][i]['name'] == name:
-             return(config['samples'][i]['uses']['whitelist'])
+    """Derive whitelist directory name from bead_version."""
+    bv = get_bead_type_by_name(name)
+    if bv == 'enhanced_v2':
+        return '384x3'
+    return '96x3'
+
+def get_guide_url_by_name(name):
+    """Return NCBI FTP URL for the guide assignment CSV, or None if not configured."""
+    for s in config['samples']:
+        if s['name'] == name:
+            gsm = s['uses'].get('guide_gsm')
+            wta = s['uses'].get('guide_wta')
+            if gsm and wta:
+                prefix = gsm[:-3] + 'nnn'
+                fn = f"{gsm}_guides_dialout_{wta}_umi_counts_anno.csv.gz"
+                return f"https://ftp.ncbi.nlm.nih.gov/geo/samples/{prefix}/{gsm}/suppl/{fn}"
+    return None
 
 def get_species_by_name(name):
     for i in range(len(config['samples'])):
@@ -90,12 +155,9 @@ def get_sbg_bead_version_by_name(name):
     explicit = _sbg_uses(name, 'sbg_bead_version') or config.get('sbg_bead_version')
     if explicit:
         return explicit
-    ## infer from whitelist: 384x3 = EnhV2 (384 unique seqs per component),
-    ##                        96x3  = Enh   (96  unique seqs per component)
-    wl = get_barcode_whitelist_by_name(name)
-    if wl == '384x3':
-        return 'EnhV2'
-    return 'Enh'
+    bv = get_bead_type_by_name(name)
+    mapping = {'v1': 'Multiplex', 'enhanced': 'Enh', 'enhanced_v2': 'EnhV2'}
+    return mapping.get(bv, 'Enh')
 
 def get_sbg_reference_url_by_name(name):
     return _sbg_uses(name, 'sbg_reference_url') or config.get('sbg_reference_url')

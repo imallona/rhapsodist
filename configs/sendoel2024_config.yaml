@@ -1,0 +1,67 @@
+## rhapsodist config for Sendoel et al. 2024 (PMC11306103)
+## P60 mouse epidermis WTA samples (normal, 3 biological replicates available; 1 enabled below)
+## GEO: GSE235325  BioProject: PRJNA985698
+## Sequenced on Illumina NovaSeq 6000 / NovaSeq X
+## BD Rhapsody v1 beads (linkers ACTGGCCTGCGA / GGTAGCGGTGACA, 96x3 whitelist)
+
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+# alevin_sketch: true runs salmon alevin in RAD mapping mode (--sketch), then
+# quantifies with alevin-fry using cr-like resolution. This gives integer-like
+# counts comparable to STARsolo soloMultiMappers: Unique, avoiding the ~1.75x
+# UMI inflation from alevin's default graph-based EM multi-mapper redistribution.
+alevin_sketch: true
+
+working_dir: output/sendoel2024
+
+## Gencode GRCm39 vM36 - verify release at https://www.gencodegenes.org/mouse/
+## reference_dir is relative to the repo root; shared across runs on this reference
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+## all transcripts (all biotypes). pc_transcripts.fa.gz only has protein coding,
+## which leaves kallisto and salmon/alevin with ~22k genes vs ~78k in the full
+## GTF used by starsolo. Using transcripts.fa.gz keeps the three aligners on the
+## same gene universe.
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
+
+## cDNA read length for WTA was 62 (right/cDNA); sjdbOverhang = readLength - 1
+## Verify with: zcat <R2.fastq.gz> | head -8 | awk 'NR==2{print length($0)}'
+sjdbOverhang: 61
+
+skip_sampletags: true
+
+run_biology_report: true
+
+aligner: ['starsolo', 'kallisto', 'alevin']
+
+samples:
+  - name: sample_16_wta_p60
+    uses:
+      sra_run: "SRR24978231"
+      bead_version: v1
+      species: 'mouse'
+      guide_gsm: "GSM7500353"
+      guide_wta: "WTA16"
+# - name: sample_17_wta_p60
+#   uses:
+#     sra_run: "SRR24978243"
+#     bead_version: v1
+#     species: 'mouse'
+#     guide_gsm: "GSM7500354"
+#     guide_wta: "WTA17"
+# - name: sample_18_wta_p60
+#   uses:
+#     sra_run: "SRR24978233"
+#     bead_version: v1
+#     species: 'mouse'
+#     guide_gsm: "GSM7500355"
+#     guide_wta: "WTA18"
