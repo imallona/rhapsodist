@@ -38,6 +38,8 @@ suppressPackageStartupMessages({
     library(Matrix)
     library(viridis)
     library(UpSetR)
+    library(clue)
+    library(mclust)
 })
 
 source(file.path(dirname(knitr::current_input()), "..", "ggtheme.R"))
@@ -313,7 +315,7 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
             pipeline = pipe,
             n_cells = length(cells),
             n_matched = n_matched,
-            join_rate_pct = round(100 * n_matched / length(cells), 1)
+            join_rate_pct = round(100 * n_matched / length(cells), 3)
         )
     }))
 
@@ -335,6 +337,18 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
                  title = "Guide barcode join rate per pipeline")
     )
 
+    for (pipe in names(seurat_objects)) {
+        cells = colnames(seurat_objects[[pipe]])
+        seurat_objects[[pipe]]$guide_assigned = ifelse(
+            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
+    }
+} else {
+    cat("No guide assignment file provided for this sample.\n")
+}
+```
+
+```{r guide-top20, results='asis', fig.width=ng_fig_size(2, 1, panel_mm = 60)$w, fig.height=ng_fig_size(1, 1, panel_mm = 120)$h}
+if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
     top_guides = guides_top[, .N, by = guide_gene][order(-N)][seq_len(min(20L, .N))]
 
     print(
@@ -346,14 +360,6 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
             labs(x = NULL, y = "cells assigned",
                  title = "Top 20 guide targets (all barcodes)")
     )
-
-    for (pipe in names(seurat_objects)) {
-        cells = colnames(seurat_objects[[pipe]])
-        seurat_objects[[pipe]]$guide_assigned = ifelse(
-            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
-    }
-} else {
-    cat("No guide assignment file provided for this sample.\n")
 }
 ```
 
@@ -426,13 +432,47 @@ knitr::kable(
         "Mean log-normalised expression is computed over expressing cells only."
     )
 )
+```
 
+```{r marker-expression-barplots, fig.width=ng_fig_size(length(markers), 2)$w, fig.height=ng_fig_size(length(markers), 2)$h}
+expr_bar = marker_expr[!is.na(n_expressing)]
+expr_bar[, marker_label := paste0(marker, " (", cell_type, ")")]
+
+p_pct = ggplot(expr_bar, aes(x = marker_label, y = pct_expressing, fill = pipeline)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = cbbPalette) +
+    theme_ng() +
+    theme(aspect.ratio = NULL,
+          axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(x = NULL, y = "cells expressing (%)", fill = NULL,
+         title = "Fraction of cells positive per marker")
+
+p_mean = ggplot(expr_bar, aes(x = marker_label, y = mean_lognorm_expr, fill = pipeline)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = cbbPalette) +
+    theme_ng() +
+    theme(aspect.ratio = NULL,
+          axis.text.x = element_text(angle = 30, hjust = 1)) +
+    labs(x = NULL, y = "mean log-norm expression", fill = NULL,
+         title = "Mean expression in positive cells")
+
+p_pct / p_mean + plot_layout(guides = "collect")
+```
+
+```{r marker-expression-save}
 cb_umi_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
     data.table(pipeline = pipe,
                barcode = colnames(seurat_objects[[pipe]]),
                total_umi = seurat_objects[[pipe]]$nCount_RNA)
 }))
 saveRDS(cb_umi_dt, file.path(wd, paste0(samp, "_biology_cb_umi.rds")))
+
+cluster_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
+    data.table(pipeline = pipe,
+               barcode = colnames(seurat_objects[[pipe]]),
+               cluster = as.character(Idents(seurat_objects[[pipe]])))
+}))
+saveRDS(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.rds")))
 
 n_pipelines = length(seurat_objects)
 rm(seurat_objects)
@@ -514,6 +554,44 @@ if (length(available_aligners) < 2) {
 }
 ```
 
+### Pseudobulk correlation
+
+Pairwise scatter plots of gene-level pseudobulk counts (log10 scale) for shared
+genes. Each point is one gene; marker genes from the panel are highlighted.
+Pearson correlation is computed on log10-transformed counts. A correlation near 1
+means the two pipelines assign nearly identical total counts to each gene.
+
+```{r pseudobulk-correlation, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h}
+if (exists("pb_mat") && ncol(pb_mat) >= 2) {
+    pb_log = log10(pb_mat + 1)
+    pb_dt = as.data.table(pb_log, keep.rownames = "gene")
+    pb_dt[, is_marker := gene %in% markers]
+
+    pairs_pb = combn(colnames(pb_mat), 2, simplify = FALSE)
+    cor_plots = lapply(pairs_pb, function(pair) {
+        d = pb_dt[, .(gene, x = get(pair[1]), y = get(pair[2]), is_marker)]
+        r = cor(d$x, d$y)
+        ggplot(d, aes(x = x, y = y)) +
+            geom_point(data = d[is_marker == FALSE], alpha = 0.15, size = 0.3,
+                       colour = "grey50") +
+            geom_point(data = d[is_marker == TRUE], colour = cbbPalette[2],
+                       size = 1.5) +
+            geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+                        colour = "grey30") +
+            annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.3,
+                     label = sprintf("R = %.4f", r), size = 3) +
+            theme_ng() +
+            theme(aspect.ratio = 1) +
+            labs(x = paste0(pair[1], " log10(count + 1)"),
+                 y = paste0(pair[2], " log10(count + 1)"),
+                 title = paste(pair[1], "vs", pair[2]))
+    })
+    print(wrap_plots(cor_plots, nrow = 1))
+} else {
+    cat("Pseudobulk correlation skipped: need pb_mat with at least 2 pipelines.\n")
+}
+```
+
 ### Barcode overlap
 
 How many cell barcodes are shared across pipelines. Bars unique to one aligner
@@ -537,7 +615,7 @@ For each pair of pipelines, only barcodes detected by both are compared.
 Mean UMI (x-axis) and difference in UMI (y-axis) follow the Bland-Altman
 convention. Dashed lines show mean bias and 1.96 SD limits of agreement.
 
-```{r bland-altman-umi, fig.width=ng_fig_size(3, 3)$w, fig.height=ng_fig_size(3, 3)$h}
+```{r bland-altman-umi, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h}
 pipes = unique(cb_umi_dt$pipeline)
 
 if (length(pipes) < 2) {
@@ -558,14 +636,14 @@ if (length(pipes) < 2) {
             geom_hline(yintercept = c(bias - loa, bias + loa),
                        colour = cbbPalette[2], linewidth = 0.4, linetype = "dashed") +
             theme_ng() +
-            theme(aspect.ratio = NULL) +
+            theme(aspect.ratio = 1) +
             labs(x = "mean log10(UMI + 1)",
                  y = "diff log10(UMI + 1)",
                  title = paste(pair[1], "vs", pair[2]),
                  subtitle = sprintf("n = %d shared barcodes, bias = %.3f",
                                     nrow(shared), bias))
     })
-    print(wrap_plots(ba_plots))
+    print(wrap_plots(ba_plots, nrow = 1))
 }
 ```
 
@@ -593,10 +671,11 @@ Number of cells with at least one UMI for each marker, split by pipeline. A
 higher count does not always mean better detection; it can also come from more
 cells being called or spurious alignment.
 
-```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1)$w, fig.height=ng_fig_size(length(markers), 1)$h}
+```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 1, panel_mm = 25)$h}
 expr_ok = marker_expr[!is.na(n_expressing)]
+expr_ok[, marker_ct := paste0(marker, "\n", cell_type)]
 
-ggplot(expr_ok, aes(x = marker, y = n_expressing, fill = pipeline)) +
+ggplot(expr_ok, aes(x = marker_ct, y = n_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
     scale_fill_manual(values = cbbPalette) +
     theme_ng() +
@@ -608,8 +687,8 @@ Fraction of cells that are positive for each marker. Dividing by cell count
 removes the effect of each pipeline calling different numbers of cells, so the
 pipelines can be compared on the same scale.
 
-```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1)$w, fig.height=ng_fig_size(length(markers), 1)$h}
-ggplot(expr_ok, aes(x = marker, y = pct_expressing, fill = pipeline)) +
+```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 1, panel_mm = 25)$h}
+ggplot(expr_ok, aes(x = marker_ct, y = pct_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
     scale_fill_manual(values = cbbPalette) +
     theme_ng() +
@@ -624,7 +703,7 @@ log-normalised expression in those cells. A small bright dot means the marker is
 rare but highly expressed; a large pale dot means it is widespread but lowly
 expressed. Rows are pipelines; columns are markers.
 
-```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines)$w, fig.height=ng_fig_size(length(markers), n_pipelines)$h}
+```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines, panel_mm = 28)$w, fig.height=ng_fig_size(length(markers), n_pipelines, panel_mm = 28)$h}
 expr_ok[, marker_label := paste0(marker, "\n", cell_type)]
 
 ggplot(expr_ok,
@@ -639,6 +718,174 @@ ggplot(expr_ok,
     labs(x = NULL, y = NULL,
          size = "% expressing",
          colour = "mean log norm")
+```
+
+### Cluster agreement (adjusted Rand index)
+
+Each pipeline clusters cells independently (Louvain, resolution 0.5). For each
+pair of pipelines, only barcodes detected by both are kept. Because cluster
+labels are arbitrary (cluster 3 in starsolo may correspond to cluster 7 in
+kallisto), the Hungarian algorithm is used to find the optimal one-to-one mapping
+between cluster labels that maximises agreement. The adjusted Rand index (ARI) is
+then computed on the original (unmapped) labels; ARI = 1 means perfect agreement,
+ARI = 0 means no better than random. The confusion matrix after Hungarian
+relabelling is shown as a heatmap for each pair.
+
+```{r cluster-ari, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h}
+if (!requireNamespace("clue", quietly = TRUE)) {
+    cat("Package 'clue' not available; skipping cluster ARI.\n")
+} else if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
+    cat("Cluster ARI skipped: need at least 2 pipelines.\n")
+} else {
+    pipes_cl = unique(cluster_dt$pipeline)
+    pairs_cl = combn(pipes_cl, 2, simplify = FALSE)
+
+    ari_results = rbindlist(lapply(pairs_cl, function(pair) {
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster)]
+        shared = merge(d1, d2, by = "barcode")
+        if (nrow(shared) < 10) return(NULL)
+
+        ct = table(shared$cl1, shared$cl2)
+        mapping = clue::solve_LSAP(max(ct) - ct)
+        mapped_labels = colnames(ct)[mapping]
+        names(mapped_labels) = rownames(ct)
+
+        ari = mclust::adjustedRandIndex(shared$cl1, shared$cl2)
+
+        data.table(pipeline1 = pair[1], pipeline2 = pair[2],
+                   n_shared = nrow(shared), ari = round(ari, 4))
+    }))
+
+    saveRDS(ari_results, file.path(wd, paste0(samp, "_biology_cluster_ari.rds")))
+    print(knitr::kable(ari_results,
+        caption = "Adjusted Rand index for cluster labels on shared barcodes."))
+
+    ari_plots = lapply(pairs_cl, function(pair) {
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster)]
+        shared = merge(d1, d2, by = "barcode")
+        if (nrow(shared) < 10) return(NULL)
+
+        ct = table(shared$cl1, shared$cl2)
+        mapping = clue::solve_LSAP(max(ct) - ct)
+        new_order = colnames(ct)[mapping]
+
+        ct_dt = as.data.table(as.table(ct))
+        names(ct_dt) = c("cluster_a", "cluster_b", "n")
+        ct_dt[, cluster_b := factor(cluster_b, levels = new_order)]
+
+        ari_val = ari_results[pipeline1 == pair[1] & pipeline2 == pair[2], ari]
+        ggplot(ct_dt, aes(x = cluster_a, y = cluster_b, fill = n)) +
+            geom_tile(colour = "white") +
+            geom_text(aes(label = ifelse(n > 0, n, "")), size = 2.2) +
+            scale_fill_distiller(palette = "Blues", direction = 1) +
+            theme_ng() +
+            theme(aspect.ratio = 1) +
+            labs(x = pair[1], y = paste0(pair[2], " (reordered)"),
+                 title = paste(pair[1], "vs", pair[2]),
+                 subtitle = sprintf("ARI = %.4f, n = %d shared cells",
+                                    ari_val, nrow(shared)),
+                 fill = "cells")
+    })
+    ari_plots = Filter(Negate(is.null), ari_plots)
+    if (length(ari_plots) > 0) print(wrap_plots(ari_plots, nrow = 1))
+}
+```
+
+## Computational performance
+
+Wall-clock time, peak memory (max RSS), and mean CPU load for each pipeline step.
+Benchmark files are produced by Snakemake and stored in the working directory.
+Only aligner-specific steps are shown; shared preprocessing steps (indexing,
+barcode standardisation) are excluded because they run once regardless of aligner.
+
+```{r load-benchmarks-bio}
+bm_dir = file.path(wd, "benchmarks")
+bm_files = list.files(bm_dir, pattern = "\\.txt$", full.names = TRUE)
+
+if (length(bm_files) == 0) {
+    cat("No benchmark files found in", bm_dir, "\n")
+} else {
+    bm_raw = rbindlist(Filter(Negate(is.null), lapply(bm_files, function(fn) {
+        tryCatch({
+            dt = fread(fn, sep = "\t")
+            dt[, file := basename(fn)]
+            dt
+        }, error = function(e) NULL)
+    })), fill = TRUE)
+
+    bm_raw[, step := gsub("\\.txt$", "", file)]
+
+    classify_pipe = function(x) {
+        ifelse(grepl("starsolo|^star_", x), "starsolo",
+        ifelse(grepl("kallisto|bustools", x), "kallisto",
+        ifelse(grepl("alevin", x), "alevin",
+        ifelse(grepl("sbg", x), "sbg", "shared"))))
+    }
+    bm_raw[, pipeline := classify_pipe(step)]
+    bm_pipe = bm_raw[pipeline %in% aligners]
+    bm_pipe[, minutes := s / 60]
+    bm_pipe[, max_rss_gb := max_rss / 1024]
+}
+```
+
+```{r perf-time, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
+if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
+    pipe_time = bm_pipe[, .(total_min = sum(minutes)), by = pipeline]
+
+    print(
+        ggplot(pipe_time, aes(x = pipeline, y = total_min, fill = pipeline)) +
+            geom_col(show.legend = FALSE) +
+            geom_text(aes(label = sprintf("%.1f", total_min)), vjust = -0.4, size = 3) +
+            scale_fill_manual(values = cbbPalette) +
+            theme_ng() +
+            theme(aspect.ratio = NULL) +
+            labs(x = NULL, y = "wall-clock time (min)",
+                 title = "Total runtime per pipeline")
+    )
+}
+```
+
+```{r perf-memory, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
+if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
+    pipe_mem = bm_pipe[, .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
+
+    print(
+        ggplot(pipe_mem, aes(x = pipeline, y = peak_rss_gb, fill = pipeline)) +
+            geom_col(show.legend = FALSE) +
+            geom_text(aes(label = sprintf("%.1f", peak_rss_gb)), vjust = -0.4, size = 3) +
+            scale_fill_manual(values = cbbPalette) +
+            theme_ng() +
+            theme(aspect.ratio = NULL) +
+            labs(x = NULL, y = "peak RSS (GB)",
+                 title = "Peak memory per pipeline")
+    )
+}
+```
+
+```{r perf-step-detail, fig.width=10, fig.height=ng_fig_size(1, max(nrow(bm_pipe), 1), panel_mm = 12)$h}
+if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
+    print(
+        ggplot(bm_pipe, aes(x = reorder(step, minutes), y = minutes, fill = pipeline)) +
+            geom_col(width = 0.7) +
+            coord_flip() +
+            scale_fill_manual(values = cbbPalette) +
+            theme_ng() +
+            theme(aspect.ratio = NULL) +
+            labs(x = NULL, y = "wall-clock time (min)", fill = NULL,
+                 title = "Runtime per step")
+    )
+
+    print(knitr::kable(
+        bm_pipe[order(pipeline, -s),
+                .(step, pipeline,
+                  minutes = round(minutes, 2),
+                  peak_rss_gb = round(max_rss_gb, 2),
+                  mean_cpu_load = round(mean_load, 1))],
+        caption = "Per-step benchmark summary (aligner-specific steps only)."
+    ))
+}
 ```
 
 ## Session info
