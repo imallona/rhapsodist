@@ -40,6 +40,7 @@ suppressPackageStartupMessages({
     library(UpSetR)
     library(clue)
     library(mclust)
+    library(ggrepel)
 })
 
 source(file.path(dirname(knitr::current_input()), "..", "ggtheme.R"))
@@ -58,6 +59,20 @@ marker_meta = read.table(params$markers_file, header = TRUE, sep = "\t",
 markers = marker_meta$marker
 
 if (has_sbg) aligners = c(aligners, "sbg")
+
+stopifnot(!anyDuplicated(marker_meta$marker))
+
+pipeline_colours = setNames(
+    rep(cbbPalette, length.out = length(aligners)),
+    aligners)
+
+prefix_overrides = c(starsolo = "s", kallisto = "k", alevin = "a",
+                     sbg = "b", bd = "r")
+pipe_prefix = function(pipe) {
+    if (pipe %in% names(prefix_overrides)) unname(prefix_overrides[pipe])
+    else substr(pipe, 1, 1)
+}
+stopifnot(!anyDuplicated(vapply(aligners, pipe_prefix, character(1))))
 ```
 
 ## Data loading
@@ -143,7 +158,8 @@ ggplot(qc_long, aes(x = pipeline, y = value, fill = pipeline)) +
     geom_col() +
     geom_text(aes(label = value), vjust = -0.4, size = 2.5) +
     facet_wrap(~metric, scales = "free_y") +
-    scale_fill_manual(values = cbbPalette) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    scale_fill_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL, legend.position = "none") +
     labs(x = NULL, y = NULL)
@@ -164,14 +180,14 @@ gene_df = rbindlist(lapply(names(sces), function(m) {
 
 p_umi = ggplot(umi_df, aes(x = log10(umi + 1), colour = pipeline)) +
     geom_density(linewidth = 0.6) +
-    scale_colour_manual(values = cbbPalette) +
+    scale_colour_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL) +
     labs(x = "log10(UMI + 1)", y = "density", colour = NULL)
 
 p_gene = ggplot(gene_df, aes(x = log10(genes + 1), colour = pipeline)) +
     geom_density(linewidth = 0.6) +
-    scale_colour_manual(values = cbbPalette) +
+    scale_colour_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL) +
     labs(x = "log10(genes + 1)", y = "density", colour = NULL)
@@ -179,11 +195,15 @@ p_gene = ggplot(gene_df, aes(x = log10(genes + 1), colour = pipeline)) +
 p_umi + p_gene + plot_layout(guides = "collect")
 ```
 
-## Per-pipeline clustering and marker expression {.tabset}
+## UMAP {.tabset}
 
 For each pipeline: 2000 highly variable genes by VST, 30 PCs, Louvain clustering
 at resolution 0.5, UMAP on the top 20 PCs. Feature plots show log-normalised
-expression; cells with zero counts are shown in grey.
+expression; cells with zero counts are shown in grey. All panels below show the
+pipelines side by side on a common layout so cluster structure and composition
+can be compared directly. Cluster numbers are prefixed by pipeline
+(alevin: a_N, starsolo: s_N, kallisto: k_N) so labels stay unambiguous across
+panels and in the Hungarian confusion matrices below.
 
 ```{r build-seurat-objects}
 make_seurat = function(sce, fallback_project) {
@@ -231,73 +251,12 @@ rm(sces)
 gc()
 ```
 
-```{r per-pipeline-tabs, results='asis', fig.width=ng_fig_size(4, 4, panel_mm = 20)$w, fig.height=ng_fig_size(4, 4, panel_mm = 20)$h}
-for (pipe in names(seurat_objects)) {
-    so = seurat_objects[[pipe]]
-    n_clusters = length(unique(Idents(so)))
-    cluster_colours = rep(cbbPalette, ceiling(n_clusters / length(cbbPalette)))
+```{r umap-assign-celltype}
+ct_map = setNames(marker_meta$cell_type, marker_meta$marker)
+label_map = setNames(
+    paste0(marker_meta$marker, " (", marker_meta$cell_type, ")"),
+    marker_meta$marker)
 
-    cat("### ", pipe, " {.tabset}\n\n")
-
-    cat("#### UMAP\n\n")
-    cat("Each dot is a cell; colour encodes Louvain cluster. Nearby cells are",
-        "transcriptionally similar. The number and separation of clusters shows",
-        "how many cell types this pipeline detects.\n\n")
-    print(
-        DimPlot(so, reduction = "umap", label = TRUE, label.size = 2.5,
-                cols = cluster_colours[seq_len(n_clusters)]) +
-        theme_ng() +
-        labs(title = pipe, colour = "cluster")
-    )
-    cat("\n\n")
-
-    cat("#### PCA\n\n")
-    cat("PC1 vs PC2 coloured by cluster. Compare with the UMAP to check whether",
-        "the top PCs separate the same groups.\n\n")
-    print(
-        DimPlot(so, reduction = "pca", label = TRUE, label.size = 2.5,
-                cols = cluster_colours[seq_len(n_clusters)]) +
-        theme_ng() +
-        labs(title = pipe, colour = "cluster")
-    )
-    cat("\n\n")
-
-    for (i in seq_len(nrow(marker_meta))) {
-        marker = marker_meta$marker[i]
-        cell_type = marker_meta$cell_type[i]
-        cat("####", marker, "\n\n")
-        if (marker %in% rownames(so)) {
-            cat("Log-normalised expression of", marker,
-                paste0("(", cell_type, ")"),
-                "on the", pipe, "UMAP.",
-                "Brighter cells carry higher expression;",
-                "grey cells have zero counts for this gene.\n\n")
-            print(
-                FeaturePlot(so, reduction = "umap", features = marker,
-                            order = TRUE, pt.size = 0.4) +
-                scale_colour_viridis_c(option = "magma", direction = 1,
-                                       na.value = "grey90") +
-                theme_ng() +
-                labs(title = paste0(marker, " (", cell_type, ")"),
-                     subtitle = pipe,
-                     colour = "log norm")
-            )
-        } else {
-            cat(marker, "not detected in the", pipe, "feature set.\n")
-        }
-        cat("\n\n")
-    }
-}
-```
-
-## Cell type assignment across pipelines
-
-For each cell, the marker with the highest log-normalised expression is found
-and the cell is labelled with that marker's cell type. Cells with zero counts
-for all markers are labelled "none". The three UMAPs are shown side by side
-so cluster structure and cell type composition can be compared across pipelines.
-
-```{r celltype-umap, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
 for (pipe in names(seurat_objects)) {
     so = seurat_objects[[pipe]]
     present = intersect(markers, rownames(so))
@@ -307,28 +266,171 @@ for (pipe in names(seurat_objects)) {
         expr_mat = GetAssayData(so, layer = "data")[present, , drop = FALSE]
         top_idx = apply(expr_mat, 2, which.max)
         top_val = apply(expr_mat, 2, max)
-        ct_map = setNames(marker_meta$cell_type, marker_meta$marker)
-        assigned = ct_map[present[top_idx]]
+        top_marker = present[top_idx]
+        assigned = unname(label_map[top_marker])
         assigned[top_val == 0] = "none"
+        names(assigned) = colnames(expr_mat)
         so$marker_celltype = assigned
     }
+    so$cluster_prefixed = paste0(pipe_prefix(pipe), "_", as.character(Idents(so)))
     seurat_objects[[pipe]] = so
 }
 
-ct_levels = c(sort(unique(marker_meta$cell_type)), "none")
+ct_levels = unname(c(label_map[sort(names(label_map))], "none"))
 ct_colours = setNames(
     c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
     ct_levels)
 
+guide_csv = params$guide_csv
+has_guides = nchar(guide_csv) > 0 && file.exists(guide_csv)
+if (has_guides) {
+    guides = fread(guide_csv)
+    guides[, barcode_clean := gsub("_", "", barcode)]
+    setorder(guides, barcode_clean, -counts)
+    guides_top = guides[, .SD[1L], by = barcode_clean]
+    guides_top[, guide_gene := sub("_sgRNA.*", "", sgRNA)]
+
+    for (pipe in names(seurat_objects)) {
+        cells = colnames(seurat_objects[[pipe]])
+        seurat_objects[[pipe]]$guide_assigned = ifelse(
+            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
+    }
+}
+```
+
+```{r umap-clusters, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+cat("### Clusters\n\n")
+cat("Each dot is a cell; colour encodes Louvain cluster. Nearby cells are",
+    "transcriptionally similar. The number and separation of clusters shows",
+    "how many cell types each pipeline detects.\n\n")
+cluster_plots = lapply(names(seurat_objects), function(pipe) {
+    so = seurat_objects[[pipe]]
+    n_clusters = length(unique(so$cluster_prefixed))
+    cluster_colours = rep(cbbPalette, ceiling(n_clusters / length(cbbPalette)))
+    DimPlot(so, reduction = "umap", group.by = "cluster_prefixed",
+            label = TRUE, label.size = 2.5,
+            cols = cluster_colours[seq_len(n_clusters)]) +
+        theme_ng() +
+        labs(title = pipe, colour = "cluster")
+})
+print(wrap_plots(cluster_plots, nrow = 1))
+```
+
+```{r umap-pca, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+cat("### PCA\n\n")
+cat("PC1 vs PC2 coloured by cluster. Compare with the UMAP to check whether",
+    "the top PCs separate the same groups.\n\n")
+pca_plots = lapply(names(seurat_objects), function(pipe) {
+    so = seurat_objects[[pipe]]
+    n_clusters = length(unique(so$cluster_prefixed))
+    cluster_colours = rep(cbbPalette, ceiling(n_clusters / length(cbbPalette)))
+    DimPlot(so, reduction = "pca", group.by = "cluster_prefixed",
+            label = TRUE, label.size = 2.5,
+            cols = cluster_colours[seq_len(n_clusters)]) +
+        theme_ng() +
+        labs(title = pipe, colour = "cluster")
+})
+print(wrap_plots(pca_plots, nrow = 1))
+```
+
+```{r umap-celltype, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+cat("### Cell type (marker-based)\n\n")
+cat("For each cell, the marker with the highest log-normalised expression is",
+    "taken and the cell is labelled with that marker's cell type. Cells with",
+    "zero counts for all markers are labelled \"none\". Labels carry both the",
+    "marker and the cell type so colours are directly interpretable.\n\n")
 ct_plots = lapply(names(seurat_objects), function(pipe) {
     so = seurat_objects[[pipe]]
     so$marker_celltype = factor(so$marker_celltype, levels = ct_levels)
     DimPlot(so, reduction = "umap", group.by = "marker_celltype",
-            pt.size = 0.3, cols = ct_colours) +
+            pt.size = 0.3, cols = ct_colours,
+            shuffle = TRUE, seed = 1) +
         theme_ng() +
         labs(title = pipe, colour = "cell type")
 })
 print(wrap_plots(ct_plots, nrow = 1) + plot_layout(guides = "collect"))
+```
+
+```{r umap-guide, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+if (has_guides) {
+    cat("### Guide assignment\n\n")
+    cat("Each cell is coloured by whether its barcode matched a guide assignment.",
+        "Unassigned cells (red) are plotted on top. They either had no guide",
+        "detected or their barcode did not match the author-provided table.\n\n")
+    guide_plots = lapply(names(seurat_objects), function(pipe) {
+        so = seurat_objects[[pipe]]
+        so$guide_assigned = factor(so$guide_assigned,
+                                   levels = c("assigned", "unassigned"))
+        DimPlot(so, reduction = "umap", group.by = "guide_assigned",
+                pt.size = 0.3, order = "unassigned",
+                cols = c(assigned = "#4477AA", unassigned = "#CC3311")) +
+            theme_ng() +
+            labs(title = pipe, colour = NULL)
+    })
+    print(wrap_plots(guide_plots, nrow = 1) + plot_layout(guides = "collect"))
+}
+```
+
+### Marker dotplot {.tabset}
+
+Per-pipeline dotplot of marker expression across Louvain clusters. Dot size is
+the fraction of cells in the cluster with raw count above zero; colour is the
+scaled mean log-normalised expression (Seurat default). Clusters use the
+per-pipeline prefix (a_N, s_N, k_N).
+
+```{r umap-marker-dotplot, results='asis', fig.width=ng_fig_size(1, 1, panel_mm = 80)$w, fig.height=ng_fig_size(1, 1, panel_mm = 80)$h}
+for (pipe in names(seurat_objects)) {
+    cat("####", pipe, "\n\n")
+    so = seurat_objects[[pipe]]
+    present = intersect(markers, rownames(so))
+    if (length(present) == 0) {
+        cat("No panel markers detected.\n\n")
+        next
+    }
+    marker_labels = setNames(paste0(present, " (", ct_map[present], ")"), present)
+    Idents(so) = factor(so$cluster_prefixed,
+                        levels = sort(unique(so$cluster_prefixed)))
+    p = DotPlot(so, features = present) +
+        scale_x_discrete(labels = marker_labels) +
+        scale_colour_viridis_c(option = "magma", direction = 1) +
+        theme_ng() +
+        theme(aspect.ratio = NULL,
+              axis.text.x = element_text(angle = 30, hjust = 1)) +
+        labs(x = NULL, y = NULL, title = pipe)
+    print(p)
+    cat("\n\n")
+}
+```
+
+### Marker expression {.tabset}
+
+```{r umap-markers, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+for (i in seq_len(nrow(marker_meta))) {
+    marker = marker_meta$marker[i]
+    cell_type = marker_meta$cell_type[i]
+    cat("####", marker, "\n\n")
+    cat("Log-normalised expression of", marker, paste0("(", cell_type, ")"),
+        "on the UMAP of each pipeline. Brighter cells carry higher expression;",
+        "grey cells have zero counts.\n\n")
+    feat_plots = lapply(names(seurat_objects), function(pipe) {
+        so = seurat_objects[[pipe]]
+        if (marker %in% rownames(so)) {
+            FeaturePlot(so, reduction = "umap", features = marker,
+                        order = TRUE, pt.size = 0.4) +
+                scale_colour_viridis_c(option = "magma", direction = 1,
+                                       na.value = "grey90") +
+                theme_ng() +
+                labs(title = pipe, subtitle = paste0(marker, " (", cell_type, ")"),
+                     colour = "log norm")
+        } else {
+            ggplot() + theme_ng() +
+                labs(title = pipe,
+                     subtitle = paste(marker, "not detected"))
+        }
+    })
+    print(wrap_plots(feat_plots, nrow = 1))
+    cat("\n\n")
+}
 ```
 
 ## Guide RNA assignments
@@ -344,15 +446,7 @@ guide assignment; it shows how well each aligner's barcodes agree with the
 original study.
 
 ```{r guide-assignments, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1)$w, fig.height=ng_fig_size(length(seurat_objects), 1)$h}
-guide_csv = params$guide_csv
-
-if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
-    guides = fread(guide_csv)
-    guides[, barcode_clean := gsub("_", "", barcode)]
-    setorder(guides, barcode_clean, -counts)
-    guides_top = guides[, .SD[1L], by = barcode_clean]
-    guides_top[, guide_gene := sub("_sgRNA.*", "", sgRNA)]
-
+if (has_guides) {
     join_stats = rbindlist(lapply(names(seurat_objects), function(pipe) {
         cells = colnames(seurat_objects[[pipe]])
         n_matched = sum(cells %in% guides_top$barcode_clean)
@@ -374,26 +468,21 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
         ggplot(join_stats, aes(x = pipeline, y = join_rate_pct, fill = pipeline)) +
             geom_col() +
             geom_text(aes(label = paste0(join_rate_pct, "%")), vjust = -0.4, size = 3) +
-            scale_fill_manual(values = cbbPalette) +
-            scale_y_continuous(limits = c(0, 105)) +
+            scale_fill_manual(values = pipeline_colours) +
+            scale_y_continuous(limits = c(0, 110),
+                               expand = expansion(mult = c(0, 0))) +
             theme_ng() +
             theme(aspect.ratio = NULL, legend.position = "none") +
             labs(x = NULL, y = "cells with guide assignment (%)",
                  title = "Guide barcode join rate per pipeline")
     )
-
-    for (pipe in names(seurat_objects)) {
-        cells = colnames(seurat_objects[[pipe]])
-        seurat_objects[[pipe]]$guide_assigned = ifelse(
-            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
-    }
 } else {
     cat("No guide assignment file provided for this sample.\n")
 }
 ```
 
 ```{r guide-top20, results='asis', fig.width=ng_fig_size(2, 1, panel_mm = 60)$w, fig.height=ng_fig_size(1, 1, panel_mm = 120)$h}
-if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
+if (has_guides) {
     top_guides = guides_top[, .N, by = guide_gene][order(-N)][seq_len(min(20L, .N))]
 
     print(
@@ -405,34 +494,6 @@ if (nchar(guide_csv) > 0 && file.exists(guide_csv)) {
             labs(x = NULL, y = "cells assigned",
                  title = "Top 20 guide targets (all barcodes)")
     )
-}
-```
-
-```{r guide-umap, results='asis', fig.width=ng_fig_size(3, 3, panel_mm = 28)$w, fig.height=ng_fig_size(3, 3, panel_mm = 28)$h}
-if (nchar(guide_csv) > 0 && file.exists(guide_csv) &&
-    "guide_assigned" %in% colnames(seurat_objects[[1]]@meta.data)) {
-
-    cat("### Guide assignment on UMAP {.tabset}\n\n")
-    cat("Each cell is coloured by whether its barcode matched a guide assignment.",
-        "Unassigned cells (red) are plotted on top.",
-        "They either had no guide detected or their barcode did not",
-        "match the author-provided table.\n\n")
-
-    for (pipe in names(seurat_objects)) {
-        cat("####", pipe, "\n\n")
-        so = seurat_objects[[pipe]]
-        so$guide_assigned = factor(so$guide_assigned,
-                                   levels = c("assigned", "unassigned"))
-        print(
-            DimPlot(so, reduction = "umap",
-                    group.by = "guide_assigned", pt.size = 0.3,
-                    order = "unassigned",
-                    cols = c(assigned = "#4477AA", unassigned = "#CC3311")) +
-                theme_ng() +
-                labs(title = pipe, colour = NULL)
-        )
-        cat("\n\n")
-    }
 }
 ```
 
@@ -484,31 +545,6 @@ knitr::kable(
 )
 ```
 
-```{r marker-expression-barplots, fig.width=ng_fig_size(length(markers), 2)$w, fig.height=ng_fig_size(length(markers), 4)$h}
-expr_bar = marker_expr[!is.na(n_expressing)]
-expr_bar[, marker_label := paste0(marker, " (", cell_type, ")")]
-
-p_pct = ggplot(expr_bar, aes(x = marker_label, y = pct_expressing, fill = pipeline)) +
-    geom_col(position = "dodge") +
-    scale_fill_manual(values = cbbPalette) +
-    theme_ng() +
-    theme(aspect.ratio = NULL,
-          axis.text.x = element_text(angle = 30, hjust = 1)) +
-    labs(x = NULL, y = "cells expressing (%)", fill = NULL,
-         title = "Fraction of cells positive per marker")
-
-p_mean = ggplot(expr_bar, aes(x = marker_label, y = mean_lognorm_expr, fill = pipeline)) +
-    geom_col(position = "dodge") +
-    scale_fill_manual(values = cbbPalette) +
-    theme_ng() +
-    theme(aspect.ratio = NULL,
-          axis.text.x = element_text(angle = 30, hjust = 1)) +
-    labs(x = NULL, y = "mean log-norm expression", fill = NULL,
-         title = "Mean expression in positive cells")
-
-p_pct / p_mean + plot_layout(guides = "collect")
-```
-
 ```{r marker-expression-save}
 cb_umi_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
     data.table(pipeline = pipe,
@@ -518,11 +554,30 @@ cb_umi_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
 saveRDS(cb_umi_dt, file.path(wd, paste0(samp, "_biology_cb_umi.rds")))
 
 cluster_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
+    so = seurat_objects[[pipe]]
     data.table(pipeline = pipe,
-               barcode = colnames(seurat_objects[[pipe]]),
-               cluster = as.character(Idents(seurat_objects[[pipe]])))
+               barcode = colnames(so),
+               cluster = as.character(Idents(so)),
+               cluster_prefixed = so$cluster_prefixed,
+               celltype = as.character(so$marker_celltype))
 }))
 saveRDS(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.rds")))
+
+marker_sets = lapply(names(seurat_objects), function(pipe) {
+    so = seurat_objects[[pipe]]
+    present = intersect(markers, rownames(so))
+    if (length(present) == 0) return(list(pipeline = pipe, sets = list()))
+    counts_mat = GetAssayData(so, layer = "counts")[present, , drop = FALSE]
+    cell_ids = paste0(pipe, "|", colnames(counts_mat))
+    sets = lapply(seq_len(nrow(counts_mat)), function(i) {
+        cell_ids[counts_mat[i, ] > 0]
+    })
+    names(sets) = paste0(present, " (", ct_map[present], ")")
+    list(pipeline = pipe, sets = sets, cell_ids = cell_ids,
+         counts_mat = counts_mat, present = present)
+})
+names(marker_sets) = names(seurat_objects)
+saveRDS(marker_sets, file.path(wd, paste0(samp, "_biology_marker_sets.rds")))
 
 n_pipelines = length(seurat_objects)
 rm(seurat_objects)
@@ -626,6 +681,10 @@ if (exists("pb_mat") && ncol(pb_mat) >= 2) {
                        colour = "grey50") +
             geom_point(data = d[is_marker == TRUE], colour = cbbPalette[2],
                        size = 1.5) +
+            geom_text_repel(data = d[is_marker == TRUE], aes(label = gene),
+                            size = 2.6, colour = cbbPalette[2],
+                            max.overlaps = Inf, min.segment.length = 0,
+                            segment.size = 0.2, box.padding = 0.3) +
             geom_abline(slope = 1, intercept = 0, linetype = "dashed",
                         colour = "grey30") +
             annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.3,
@@ -709,13 +768,28 @@ ncell_df = unique(marker_expr[, .(pipeline, n_total_cells)])
 ggplot(ncell_df, aes(x = pipeline, y = n_total_cells, fill = pipeline)) +
     geom_col() +
     geom_text(aes(label = n_total_cells), vjust = -0.4, size = 3) +
-    scale_fill_manual(values = cbbPalette) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    scale_fill_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL, legend.position = "none") +
     labs(x = NULL, y = "cells recovered")
 ```
 
 ### Marker counts
+
+Per-pipeline table of cells positive for each marker (raw count above zero) and
+mean log-normalised expression over those positive cells. Table above, bars
+below.
+
+```{r marker-count-table, results='asis'}
+print(knitr::kable(
+    marker_expr[order(marker, pipeline)],
+    caption = paste(
+        "Cells positive for each marker (raw count > 0) per pipeline.",
+        "Mean log-normalised expression is computed over expressing cells only."
+    )
+))
+```
 
 Number of cells with at least one UMI for each marker, split by pipeline. A
 higher count does not always mean better detection; it can also come from more
@@ -727,7 +801,7 @@ expr_ok[, marker_ct := paste0(marker, "\n", cell_type)]
 
 ggplot(expr_ok, aes(x = marker_ct, y = n_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
-    scale_fill_manual(values = cbbPalette) +
+    scale_fill_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL) +
     labs(x = NULL, y = "cells expressing (count > 0)", fill = NULL)
@@ -740,10 +814,88 @@ pipelines can be compared on the same scale.
 ```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 3, panel_mm = 25)$h}
 ggplot(expr_ok, aes(x = marker_ct, y = pct_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
-    scale_fill_manual(values = cbbPalette) +
+    scale_fill_manual(values = pipeline_colours) +
     theme_ng() +
     theme(aspect.ratio = NULL) +
     labs(x = NULL, y = "percent expressing (%)", fill = NULL)
+```
+
+### Marker co-expression (UpSet) {.tabset}
+
+For each pipeline, cells are grouped by which panel markers they express (raw
+count above zero). Bars show the number of cells in each intersection.
+
+```{r marker-upset, results='asis', fig.width=7, fig.height=5}
+for (pipe in names(marker_sets)) {
+    cat("####", pipe, "\n\n")
+    ms = marker_sets[[pipe]]
+    if (length(ms$sets) == 0) {
+        cat("No panel markers detected.\n\n")
+        next
+    }
+    sets_named = ms$sets
+    names(sets_named) = ms$present
+    non_empty = sets_named[vapply(sets_named, length, integer(1)) > 0]
+    if (length(non_empty) < 2) {
+        cat("Fewer than two markers with positive cells; skipping.\n\n")
+        next
+    }
+    print(upset(fromList(non_empty), order.by = "freq",
+                nsets = length(non_empty), nintersects = 30,
+                text.scale = 1.2, point.size = 2.5, line.size = 0.6))
+    cat("\n\n")
+}
+```
+
+### Marker combinations per pipeline
+
+For each cell we record the set of markers it co-expresses. The top 15
+combinations (by overall cell count) are shown as grouped bars; all remaining
+combinations are pooled into "other". Bars show the percentage of each
+pipeline's cells in that combination, so pipelines with different totals are
+directly comparable. Cells with zero counts across all markers are labelled
+"none".
+
+```{r marker-combo-bar, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
+combo_dt = rbindlist(lapply(names(marker_sets), function(pipe) {
+    ms = marker_sets[[pipe]]
+    if (length(ms$present) == 0 || is.null(ms$counts_mat)) {
+        n_cells = if (is.null(ms$cell_ids)) 0L else length(ms$cell_ids)
+        if (n_cells == 0) return(NULL)
+        return(data.table(pipeline = pipe, combo = rep("none", n_cells)))
+    }
+    labels = paste0(ms$present, "(", ct_map[ms$present], ")")
+    membership = ms$counts_mat > 0
+    combo_per_cell = apply(membership, 2, function(col) {
+        hits = labels[col]
+        if (length(hits) == 0) "none" else paste(hits, collapse = "+")
+    })
+    data.table(pipeline = pipe, combo = combo_per_cell)
+}), fill = TRUE)
+
+pipe_totals = combo_dt[, .(n_total = .N), by = pipeline]
+combo_counts = combo_dt[, .(n = .N), by = .(pipeline, combo)]
+
+overall = combo_counts[, .(n_all = sum(n)), by = combo][order(-n_all)]
+top_combos = overall$combo[seq_len(min(15L, nrow(overall)))]
+combo_counts[, combo_capped := ifelse(combo %in% top_combos, combo, "other")]
+
+plot_dt = combo_counts[, .(n = sum(n)), by = .(pipeline, combo_capped)]
+plot_dt = merge(plot_dt, pipe_totals, by = "pipeline", all.x = TRUE)
+plot_dt[, pct := 100 * n / n_total]
+
+combo_order = c(top_combos[top_combos %in% unique(plot_dt$combo_capped)])
+if ("other" %in% plot_dt$combo_capped) combo_order = c(combo_order, "other")
+plot_dt[, combo_capped := factor(combo_capped, levels = combo_order)]
+
+ggplot(plot_dt, aes(x = combo_capped, y = pct, fill = pipeline)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = pipeline_colours) +
+    theme_ng() +
+    theme(aspect.ratio = NULL,
+          axis.text.x = element_text(angle = 35, hjust = 1)) +
+    labs(x = NULL, y = "cells in combination (% of pipeline total)",
+         fill = NULL, title = "Marker combinations per pipeline (top 15 + other)")
 ```
 
 ### Dotplot summary
@@ -782,6 +934,22 @@ ARI = 0 means no better than random. The confusion matrix after Hungarian
 relabelling is shown as a heatmap for each pair.
 
 ```{r cluster-ari, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h}
+square_pad = function(ct) {
+    nr = nrow(ct); nc = ncol(ct)
+    if (nr == nc) return(ct)
+    if (nr > nc) {
+        extra = matrix(0L, nrow = nr, ncol = nr - nc,
+                       dimnames = list(rownames(ct),
+                                       paste0("__pad", seq_len(nr - nc))))
+        cbind(ct, extra)
+    } else {
+        extra = matrix(0L, nrow = nc - nr, ncol = nc,
+                       dimnames = list(paste0("__pad", seq_len(nc - nr)),
+                                       colnames(ct)))
+        rbind(ct, extra)
+    }
+}
+
 if (!requireNamespace("clue", quietly = TRUE)) {
     cat("Package 'clue' not available; skipping cluster ARI.\n")
 } else if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
@@ -791,18 +959,11 @@ if (!requireNamespace("clue", quietly = TRUE)) {
     pairs_cl = combn(pipes_cl, 2, simplify = FALSE)
 
     ari_results = rbindlist(lapply(pairs_cl, function(pair) {
-        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster)]
-        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster)]
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster_prefixed)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster_prefixed)]
         shared = merge(d1, d2, by = "barcode")
         if (nrow(shared) < 10) return(NULL)
-
-        ct = table(shared$cl1, shared$cl2)
-        mapping = clue::solve_LSAP(max(ct) - ct)
-        mapped_labels = colnames(ct)[mapping]
-        names(mapped_labels) = rownames(ct)
-
         ari = mclust::adjustedRandIndex(shared$cl1, shared$cl2)
-
         data.table(pipeline1 = pair[1], pipeline2 = pair[2],
                    n_shared = nrow(shared), ari = round(ari, 4))
     }))
@@ -812,14 +973,16 @@ if (!requireNamespace("clue", quietly = TRUE)) {
         caption = "Adjusted Rand index for cluster labels on shared barcodes."))
 
     ari_plots = lapply(pairs_cl, function(pair) {
-        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster)]
-        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster)]
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, cl1 = cluster_prefixed)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, cl2 = cluster_prefixed)]
         shared = merge(d1, d2, by = "barcode")
         if (nrow(shared) < 10) return(NULL)
 
         ct = table(shared$cl1, shared$cl2)
-        mapping = clue::solve_LSAP(max(ct) - ct)
-        new_order = colnames(ct)[mapping]
+        ct_sq = square_pad(ct)
+        mapping = clue::solve_LSAP(max(ct_sq) - ct_sq)
+        new_order_full = colnames(ct_sq)[mapping]
+        new_order = new_order_full[new_order_full %in% colnames(ct)]
 
         ct_dt = as.data.table(as.table(ct))
         names(ct_dt) = c("cluster_a", "cluster_b", "n")
@@ -831,7 +994,8 @@ if (!requireNamespace("clue", quietly = TRUE)) {
             geom_text(aes(label = ifelse(n > 0, n, "")), size = 2.2) +
             scale_fill_distiller(palette = "Blues", direction = 1) +
             theme_ng() +
-            theme(aspect.ratio = 1) +
+            theme(aspect.ratio = 1,
+                  axis.text.x = element_text(angle = 30, hjust = 1)) +
             labs(x = pair[1], y = paste0(pair[2], " (reordered)"),
                  title = paste(pair[1], "vs", pair[2]),
                  subtitle = sprintf("ARI = %.4f, n = %d shared cells",
@@ -840,6 +1004,64 @@ if (!requireNamespace("clue", quietly = TRUE)) {
     })
     ari_plots = Filter(Negate(is.null), ari_plots)
     if (length(ari_plots) > 0) print(wrap_plots(ari_plots, nrow = 1))
+}
+```
+
+### Cell-type agreement (adjusted Rand index)
+
+Each cell is assigned to a marker-based cell type using the highest-expressing
+panel marker (same rule as the UMAP panel above). Because the label vocabulary
+is shared across pipelines (one label per marker, plus "none"), ARI is computed
+directly on these labels without Hungarian relabelling. The confusion matrix
+between the two pipelines is shown for each pair.
+
+```{r celltype-ari, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w * 2, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
+if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
+    cat("Cell-type ARI skipped: need at least 2 pipelines.\n")
+} else {
+    pipes_ct = unique(cluster_dt$pipeline)
+    pairs_ct = combn(pipes_ct, 2, simplify = FALSE)
+
+    ct_ari_results = rbindlist(lapply(pairs_ct, function(pair) {
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, ct1 = celltype)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, ct2 = celltype)]
+        shared = merge(d1, d2, by = "barcode")
+        if (nrow(shared) < 10) return(NULL)
+        ari = mclust::adjustedRandIndex(shared$ct1, shared$ct2)
+        data.table(pipeline1 = pair[1], pipeline2 = pair[2],
+                   n_shared = nrow(shared), ari = round(ari, 4))
+    }))
+
+    saveRDS(ct_ari_results, file.path(wd, paste0(samp, "_biology_celltype_ari.rds")))
+    print(knitr::kable(ct_ari_results,
+        caption = "Adjusted Rand index for marker-based cell type labels on shared barcodes."))
+
+    ct_ari_plots = lapply(pairs_ct, function(pair) {
+        d1 = cluster_dt[pipeline == pair[1], .(barcode, ct1 = celltype)]
+        d2 = cluster_dt[pipeline == pair[2], .(barcode, ct2 = celltype)]
+        shared = merge(d1, d2, by = "barcode")
+        if (nrow(shared) < 10) return(NULL)
+
+        ct = table(shared$ct1, shared$ct2)
+        ct_dt = as.data.table(as.table(ct))
+        names(ct_dt) = c("celltype_a", "celltype_b", "n")
+
+        ari_val = ct_ari_results[pipeline1 == pair[1] & pipeline2 == pair[2], ari]
+        ggplot(ct_dt, aes(x = celltype_a, y = celltype_b, fill = n)) +
+            geom_tile(colour = "white") +
+            geom_text(aes(label = ifelse(n > 0, n, "")), size = 2.2) +
+            scale_fill_distiller(palette = "Blues", direction = 1) +
+            theme_ng() +
+            theme(aspect.ratio = 1,
+                  axis.text.x = element_text(angle = 30, hjust = 1)) +
+            labs(x = pair[1], y = pair[2],
+                 title = paste(pair[1], "vs", pair[2]),
+                 subtitle = sprintf("ARI = %.4f, n = %d shared cells",
+                                    ari_val, nrow(shared)),
+                 fill = "cells")
+    })
+    ct_ari_plots = Filter(Negate(is.null), ct_ari_plots)
+    if (length(ct_ari_plots) > 0) print(wrap_plots(ct_ari_plots, nrow = 1))
 }
 ```
 
@@ -880,7 +1102,7 @@ if (length(bm_files) == 0) {
 }
 ```
 
-```{r perf-time, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
+```{r perf-time, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w * 0.7, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
 if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
     pipe_time = bm_pipe[, .(total_min = sum(minutes)), by = pipeline]
 
@@ -888,7 +1110,8 @@ if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
         ggplot(pipe_time, aes(x = pipeline, y = total_min, fill = pipeline)) +
             geom_col(show.legend = FALSE) +
             geom_text(aes(label = sprintf("%.1f", total_min)), vjust = -0.4, size = 3) +
-            scale_fill_manual(values = cbbPalette) +
+            scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+            scale_fill_manual(values = pipeline_colours) +
             theme_ng() +
             theme(aspect.ratio = NULL) +
             labs(x = NULL, y = "wall-clock time (min)",
@@ -897,7 +1120,7 @@ if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
 }
 ```
 
-```{r perf-memory, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
+```{r perf-memory, fig.width=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$w * 0.7, fig.height=ng_fig_size(max(length(aligners), 1), 1, panel_mm = 60)$h}
 if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
     pipe_mem = bm_pipe[, .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
 
@@ -905,7 +1128,8 @@ if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
         ggplot(pipe_mem, aes(x = pipeline, y = peak_rss_gb, fill = pipeline)) +
             geom_col(show.legend = FALSE) +
             geom_text(aes(label = sprintf("%.1f", peak_rss_gb)), vjust = -0.4, size = 3) +
-            scale_fill_manual(values = cbbPalette) +
+            scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+            scale_fill_manual(values = pipeline_colours) +
             theme_ng() +
             theme(aspect.ratio = NULL) +
             labs(x = NULL, y = "peak RSS (GB)",
@@ -914,13 +1138,13 @@ if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
 }
 ```
 
-```{r perf-step-detail, fig.width=10, fig.height=ng_fig_size(1, max(nrow(bm_pipe), 1), panel_mm = 12)$h}
+```{r perf-step-detail, results='asis', fig.width=7, fig.height=ng_fig_size(1, max(nrow(bm_pipe), 1), panel_mm = 12)$h * 0.5}
 if (exists("bm_pipe") && nrow(bm_pipe) > 0) {
     print(
         ggplot(bm_pipe, aes(x = reorder(step, minutes), y = minutes, fill = pipeline)) +
             geom_col(width = 0.7) +
             coord_flip() +
-            scale_fill_manual(values = cbbPalette) +
+            scale_fill_manual(values = pipeline_colours) +
             theme_ng() +
             theme(aspect.ratio = NULL) +
             labs(x = NULL, y = "wall-clock time (min)", fill = NULL,
