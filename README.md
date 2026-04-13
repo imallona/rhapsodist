@@ -85,11 +85,10 @@ snakemake --use-conda --cores 10 --configfile configs/config.yaml
 
 ## Example configs
 
-The repository includes four config files under `configs/`:
+The repository includes three config files under `configs/`:
 
 - `config.yaml`: base template with all available options and comments. Copy this as a starting point for new datasets.
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
-- `moro_mallona2025_config.yaml`: HeLa cells (Kyoto line, unmodified) from Moro, Mallona et al. 2025 (GEO GSE305879, PubMed 41372142). One cell type, v1 protocol on Enhanced beads, human GRCh38 v46. Fetches FASTQs from SRA.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
 
 ## Repository layout
@@ -204,11 +203,11 @@ SRA fetch:
 
 ```yaml
 samples:
-  - name: hela_unmod
+  - name: sample_16_wta_p60
     uses:
-      sra_run: "SRR35038871"
-      bead_version: enhanced
-      species: human
+      sra_run: "SRR24978231"
+      bead_version: v1
+      species: mouse
 ```
 
 ### Reports
@@ -216,10 +215,10 @@ samples:
 ```yaml
 skip_sampletags: true          # skip sampletag demultiplexing
 run_biology_report: true       # generate biology report with marker expression, clustering, cross-pipeline concordance
-biology_markers_file: data/markers/hela_markers.tsv   # TSV with marker and cell_type columns, relative to workflow dir
+biology_markers_file: data/markers/skin_markers.tsv   # TSV with marker and cell_type columns, relative to workflow dir
 ```
 
-The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. Two marker files are included: `skin_markers.tsv` (mouse epidermis, for Sendoel) and `hela_markers.tsv` (human HeLa).
+The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. A `skin_markers.tsv` file is included for mouse epidermis (used by Sendoel); add your own TSV for other tissues.
 
 When external per-cell metadata is available (e.g. CRISPR guide assignments from a separate amplicon library), the report joins it for visualization. The pipeline itself does not process or quantify guides.
 
