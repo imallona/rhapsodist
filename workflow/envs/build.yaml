@@ -7,3 +7,4 @@ dependencies:
   - conda-forge::git
   - conda-forge::make
   - conda-forge::cxx-compiler
+  - conda-forge::zlib
