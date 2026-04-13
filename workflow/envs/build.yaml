@@ -3,7 +3,8 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - conda-forge::cmake
+  - conda-forge::cmake<4
   - conda-forge::git
   - conda-forge::make
   - conda-forge::cxx-compiler
+  - conda-forge::zlib

@@ -1456,10 +1456,12 @@ for _sbg_sample in _sbg_samples:
             matrix_filtered = op.join(config['working_dir'], 'sbg', _sbg_sample,
                                       'filtered_MEX_output', 'matrix.mtx.gz')
         params:
-            cwl = get_sbg_cwl_by_name(_sbg_sample),
+            cwl = (get_sbg_cwl_by_name(_sbg_sample) if op.isabs(get_sbg_cwl_by_name(_sbg_sample))
+                   else op.join(_repo_root, get_sbg_cwl_by_name(_sbg_sample))),
             outdir = op.join(config['working_dir'], 'sbg', _sbg_sample),
             sample_tags_version = get_sbg_sample_tags_version_by_name(_sbg_sample),
-            ref_path = _ref_path
+            ref_path = _ref_path,
+            sif_cache = _repo_root
         log:
             op.join(config['working_dir'], 'logs', f'sbg_cwl_{_sbg_sample}.log')
         benchmark:
@@ -1494,8 +1496,9 @@ ENDOFYML
             sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
 
-            CWL_SINGULARITY_CACHE=$(realpath .) \
-            SINGULARITY_PULLFOLDER=$(realpath .) \
+            CWL_SINGULARITY_CACHE={params.sif_cache} \
+            SINGULARITY_PULLFOLDER={params.sif_cache} \
+            APPTAINER_PULLFOLDER={params.sif_cache} \
             cwl-runner --singularity \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
