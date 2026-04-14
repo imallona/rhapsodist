@@ -380,7 +380,7 @@ run_biology = function(opt) {
                     theme_bw() + theme(aspect.ratio = 1) +
                     labs(x = paste0(pair[1], " log10(count + 1)"),
                          y = paste0(pair[2], " log10(count + 1)"),
-                         title = paste(pair[1], "vs", pair[2]))
+                         title = paste(pair[2], "vs", pair[1]))
             })
             pp_save_csv(rbindlist(cor_rows), pdir, "bio_pseudobulk_correlation")
             pp_save_pdf(wrap_plots(scatter_plots, nrow = 1), pdir,
@@ -449,9 +449,11 @@ run_biology = function(opt) {
                     geom_hline(yintercept = c(bias - loa, bias + loa),
                                linetype = "dashed", colour = "#D55E00") +
                     theme_bw() +
-                    labs(x = "mean log10(UMI + 1)",
-                         y = "diff log10(UMI + 1)",
-                         title = paste(pair[1], "vs", pair[2]),
+                    labs(x = sprintf("mean log10(UMI+1): (%s + %s) / 2",
+                                     pair[1], pair[2]),
+                         y = sprintf("log10(UMI+1): %s - %s",
+                                     pair[1], pair[2]),
+                         title = paste(pair[1], "-", pair[2]),
                          subtitle = sprintf("n = %d, bias = %.3f",
                                             nrow(shared), bias))
             })
@@ -535,7 +537,7 @@ run_biology = function(opt) {
                           legend.position = "right",
                           plot.margin = margin(4, 4, 4, 4)) +
                     labs(x = pair[1], y = pair[2], fill = "cells",
-                         title = paste(pair[1], "vs", pair[2]))
+                         title = paste(pair[2], "vs", pair[1]))
             })
             panels = Filter(Negate(is.null), panels)
             if (length(panels) == 0) return(invisible(NULL))
