@@ -26,9 +26,10 @@ pp_save_pdf = function(plot, pdir, name, width = 5, height = 4) {
 }
 
 pp_save_base_pdf = function(expr, pdir, name, width = 7, height = 5) {
+    caller_env = parent.frame()
     fn = file.path(pdir, paste0(name, ".pdf"))
     grDevices::cairo_pdf(fn, width = width, height = height)
-    tryCatch(eval(expr), finally = grDevices::dev.off())
+    tryCatch(eval(expr, envir = caller_env), finally = grDevices::dev.off())
     invisible(fn)
 }
 

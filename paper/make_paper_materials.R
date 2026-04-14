@@ -368,24 +368,33 @@ run_biology = function(opt) {
     }
 
     ## UMAP coloured by marker cell type, one panel per pipeline. Requires
-    ## Seurat caches. Rasterise the point layer to keep PDF small.
+    ## Seurat caches. The Seurat caches are saved by 04_biology.Rmd before
+    ## marker_celltype is assigned, so we pull celltype from the clusters RDS
+    ## (pipeline, barcode, celltype) and join by barcode. Rasterise points.
     seu_fns = setNames(file.path(wd, sprintf("%s_biology_%s_seurat.rds", samp,
                                              aligners)), aligners)
-    if (all(file.exists(seu_fns)) &&
+    clusters_fn = biords("clusters")
+    if (all(file.exists(seu_fns)) && file.exists(clusters_fn) &&
         requireNamespace("Seurat", quietly = TRUE)) {
-        cbbPalette = c("#000000", "#E69F00", "#56B4E9", "#009E73",
+        cbbPalette = c("#E69F00", "#56B4E9", "#009E73",
                        "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+        clusters_dt = as.data.table(readRDS(clusters_fn))
+        ct_levels = c(sort(setdiff(unique(clusters_dt$celltype), "none")), "none")
+        ct_colours = setNames(
+            c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
+            ct_levels)
         panels = lapply(names(seu_fns), function(pipe) {
             so = readRDS(seu_fns[[pipe]])
-            ct = if ("marker_celltype" %in% colnames(so[[]])) so$marker_celltype else rep("none", ncol(so))
             emb = as.data.frame(Seurat::Embeddings(so, "umap"))
             colnames(emb) = c("UMAP_1", "UMAP_2")
-            emb$celltype = ct
+            emb$barcode = rownames(emb)
+            ct_map = clusters_dt[pipeline == pipe, setNames(celltype, barcode)]
+            emb$celltype = factor(
+                ifelse(emb$barcode %in% names(ct_map), ct_map[emb$barcode], "none"),
+                levels = ct_levels)
             ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
                 pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                scale_colour_manual(values = setNames(
-                    rep(cbbPalette, length.out = length(unique(emb$celltype))),
-                    unique(emb$celltype))) +
+                scale_colour_manual(values = ct_colours, drop = FALSE) +
                 theme_bw() + theme(aspect.ratio = 1) +
                 labs(title = pipe, colour = "cell type")
         })

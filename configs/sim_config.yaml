@@ -53,6 +53,9 @@ aligner:
   - alevin
   - sbg
 
+## Include BD CWL (sbg) outputs when building paper materials.
+has_sbg: true
+
 samples:
   - name: simulated
     uses:
