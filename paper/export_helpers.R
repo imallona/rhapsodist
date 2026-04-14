@@ -21,7 +21,7 @@ pp_save_pdf = function(plot, pdir, name, width = 5, height = 4) {
     if (is.null(plot)) return(invisible(NULL))
     fn = file.path(pdir, paste0(name, ".pdf"))
     ggplot2::ggsave(fn, plot = plot, width = width, height = height,
-                    device = grDevices::cairo_pdf, useDingbats = FALSE)
+                    device = grDevices::cairo_pdf)
     invisible(fn)
 }
 

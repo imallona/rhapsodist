@@ -377,7 +377,7 @@ run_biology = function(opt) {
                        "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
         panels = lapply(names(seu_fns), function(pipe) {
             so = readRDS(seu_fns[[pipe]])
-            ct = so$marker_celltype %||% rep("none", ncol(so))
+            ct = if ("marker_celltype" %in% colnames(so[[]])) so$marker_celltype else rep("none", ncol(so))
             emb = as.data.frame(Seurat::Embeddings(so, "umap"))
             colnames(emb) = c("UMAP_1", "UMAP_2")
             emb$celltype = ct
