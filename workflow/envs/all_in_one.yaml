@@ -22,6 +22,7 @@ dependencies:
   - conda-forge::r-matrixstats
   - conda-forge::r-seurat
   - conda-forge::r-seuratobject
+  - conda-forge::r-ggh4x
   - bioconda::bioconductor-biocgenerics
   - bioconda::bioconductor-biobase
   - bioconda::bioconductor-sparsematrixstats

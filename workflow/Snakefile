@@ -687,11 +687,11 @@ rule derive_kallisto_observed_whitelist:
 import gzip
 
 with open("{input.cb1}") as fh:
-    cb1 = {line.strip() for line in fh if line.strip()}
+    cb1 = {{line.strip() for line in fh if line.strip()}}
 with open("{input.cb2}") as fh:
-    cb2 = {line.strip() for line in fh if line.strip()}
+    cb2 = {{line.strip() for line in fh if line.strip()}}
 with open("{input.cb3}") as fh:
-    cb3 = {line.strip() for line in fh if line.strip()}
+    cb3 = {{line.strip() for line in fh if line.strip()}}
 
 observed_valid_barcodes = set()
 with gzip.open("{input.cb_umi_fq}", "rt") as fh:
@@ -1258,12 +1258,12 @@ ENDOFYML
             sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
 
-            CWL_SINGULARITY_CACHE=$(realpath .) \
-            SINGULARITY_PULLFOLDER=$(realpath .) \
+            mkdir -p .cwl_singularity_cache
+
+            CWL_SINGULARITY_CACHE="$(realpath .cwl_singularity_cache)" \
             cwl-runner --singularity \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
-
             ## cwl-runner places MEX outputs as zips in --outdir.
             ## Unzip both filtered and unfiltered into their respective subdirectories.
             UNFILTERED_ZIP=$(ls {params.outdir}/*_RSEC_MolsPerCell_Unfiltered_MEX.zip 2>/dev/null | head -1)

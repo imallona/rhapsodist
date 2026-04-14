@@ -27,6 +27,10 @@ suppressPackageStartupMessages({
     library(UpSetR)
     library(data.table)
     library(patchwork)
+    library(pheatmap)
+    library(scran)
+    library(scater)
+    library(ggh4x)
 })
 
 wd           <- params$working_dir
@@ -291,3 +295,112 @@ ggplot(umi_df, aes(x = log10(total_counts + 1),
          x = "log10(total counts + 1)", y = "Density",
          colour = NULL, linetype = NULL)
 ```
+
+## Cell-level and gene-level pseudo-bulk comparison
+
+
+```{r pb correlation, fig.width=12, fig.height=10}
+    
+## cell-level pseudo-bulk
+cb <- Reduce(intersect, lapply(sces, colnames))
+if (length(cb) == 0) stop("No shared cell barcodes across sces.")
+
+dt_cell <- data.table(feature = cb)
+dt_cell[, (names(sces)) := lapply(sces, function(sce) {
+    vals <- colSums(assay(sce, "counts"))
+    vals[cb]
+})]
+dt_cell[, type := "Cell level"]
+
+## gene-level pseudo-bulk
+genes <- Reduce(intersect, lapply(sces, rownames))
+if (length(genes) == 0) stop("No shared genes across sces.")
+
+dt_gene <- data.table(feature = genes)
+dt_gene[, (names(sces)) := lapply(sces, function(sce) {
+    vals <- rowSums(assay(sce, "counts"))
+    vals[genes]
+})]
+dt_gene[, type := "Gene level"]
+
+## combine
+dt_all <- rbindlist(list(dt_cell, dt_gene), fill = TRUE)
+
+## pairwise comparisons
+method_names <- names(sces)
+pairs <- as.data.table(t(combn(method_names, 2)))
+setnames(pairs, c("sample1", "sample2"))
+
+plot_dt <- rbindlist(lapply(seq_len(nrow(pairs)), function(i) {
+    s1 <- pairs$sample1[i]
+    s2 <- pairs$sample2[i]
+    
+    dt_all[, .(
+        feature,
+        type,
+        sample1 = s1,
+        sample2 = s2,
+        x = get(s1),
+        y = get(s2)
+    )]
+}), fill = TRUE)
+
+plot_dt <- plot_dt[!is.na(x) & !is.na(y)]
+plot_dt[, pair := paste(sample1, "vs", sample2)]
+
+## spearman labels
+cor_lab <- plot_dt[, .(
+    cor = suppressWarnings(cor(x, y, method = "spearman"))
+), by = .(type, sample1, sample2, pair)]
+cor_lab[, label := sprintf("\u03C1 = %.2f", cor)]
+
+## plot
+ggplot(plot_dt, aes(x = x + 1, y = y + 1)) +
+    geom_point(alpha = 0.12, size = 0.35) +
+    geom_density_2d(linewidth = 0.3) +
+    geom_text(
+        data = cor_lab,
+        aes(label = label),
+        x = Inf, y = -Inf,
+        hjust = 1.1, vjust = -0.4,
+        inherit.aes = FALSE,
+        size = 3
+    ) +
+    scale_x_log10() +
+    scale_y_log10() +
+    facet_grid2(type ~ pair, scales = "free", independent = "all") +
+    theme_classic() +
+    labs(
+        x = "Pseudo-bulk count + 1",
+        y = "Pseudo-bulk count + 1"
+    ) +
+    theme(
+        strip.background = element_blank(),
+        axis.ticks = element_line(),
+        panel.spacing = unit(0.8, "lines"),
+        aspect.ratio = 1,
+        panel.border = element_rect(color = "black", fill = NA),
+    ) 
+
+```
+
+## Low dimensional space: PCA
+```{r pca}
+sces <- lapply(sces, \(sce) {
+    sce <- logNormCounts(sce)
+    tbl <- modelGeneVar(sce)
+    idx <- tbl$bio > 0
+    rowData(sce)$hvg <- FALSE
+    rowData(sce)$hvg[idx] <- TRUE
+    rowData(sce)$bio <- tbl$bio 
+    sce <- runPCA(sce, subset_row = idx, ncomponents = 20)
+})
+lapply(names(sces), \(x) {
+    sce <- sces[[x]]
+    plotPCA(sce) + 
+        ggtitle(x) +
+        theme_classic() +
+        coord_equal()}) |> wrap_plots(guides = "collect", ncol=4)
+```
+
+

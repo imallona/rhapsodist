@@ -49,3 +49,8 @@ docs/*html
 docker/testrun
 scripts/._*
 docs/._*
+output/**
+.gitignore
+workflow/src/reports/._*
+workflow/src/._*
+.cwl_singularity_cache/
