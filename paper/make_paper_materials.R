@@ -82,6 +82,7 @@ run_simulation = function(opt) {
     pp_save_csv(counts_df, pdir, "sim_cell_counts")
     p_counts = ggplot(counts_df, aes(pipeline, n_cells, fill = pipeline)) +
         geom_col() + geom_text(aes(label = n_cells), vjust = -0.3, size = 3) +
+        scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
         scale_fill_manual(values = aligner_colours) +
         theme_bw() + theme(legend.position = "none") +
         labs(x = NULL, y = "cells recovered")
@@ -108,7 +109,8 @@ run_simulation = function(opt) {
                 quote(print(UpSetR::upset(UpSetR::fromList(bc_lists),
                                           order.by = "freq", nsets = length(bc_lists),
                                           text.scale = 1.2))),
-                pdir, "sim_bc_upset", width = 6, height = 4)
+                pdir, "sim_bc_upset", width = 6, height = 4,
+                keep_last_page = TRUE)
             set_sizes = data.table(set = names(bc_lists),
                                    size = vapply(bc_lists, length, integer(1)))
             pp_save_csv(set_sizes, pdir, "sim_bc_upset_sizes")
@@ -220,6 +222,62 @@ run_simulation = function(opt) {
         pp_save_pdf(p_acc, pdir, "sim_accuracy_vs_speed", width = 5, height = 4)
     }
 
+    ## Sample-tag demultiplexing: aggregate per-read assignments, then
+    ## compare the majority-vote call per cell against the simulator's
+    ## ground-truth assignment (simulate/sampletag_assignments.txt).
+    st_fn = file.path(wd, "sampletags", samp, "sampletag_counts.tsv.gz")
+    truth_st_fn = file.path(wd, "simulate", "sampletag_assignments.txt")
+    if (file.exists(st_fn)) {
+        st = fread(cmd = paste("zcat", shQuote(st_fn)), header = FALSE,
+                   col.names = c("barcode", "umi", "tag", "mismatches"))
+        tag_reads = st[, .(reads = .N,
+                           cells = uniqueN(barcode)), by = tag]
+        setorder(tag_reads, -reads)
+        pp_save_csv(tag_reads, pdir, "sim_sampletag_counts")
+        tag_long = melt(tag_reads, id.vars = "tag",
+                        variable.name = "metric", value.name = "n")
+        p_st = ggplot(tag_long, aes(tag, n, fill = tag)) +
+            geom_col() + geom_text(aes(label = n), vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            facet_wrap(~metric, scales = "free_y") +
+            theme_bw() +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  legend.position = "none") +
+            labs(x = NULL, y = NULL)
+        pp_save_pdf(p_st, pdir, "sim_sampletag_counts",
+                    width = 5.5, height = 3)
+
+        if (file.exists(truth_st_fn)) {
+            truth_st = fread(truth_st_fn)
+            setnames(truth_st, c("barcode", "truth_tag"))
+            calls = st[, .N, by = .(barcode, tag)]
+            setorder(calls, barcode, -N)
+            pred = calls[, .(pred_tag = tag[1], pred_reads = N[1],
+                             total_reads = sum(N)), by = barcode]
+            pred[, pred_purity := pred_reads / total_reads]
+            eval = merge(truth_st, pred, by = "barcode", all.x = TRUE)
+            eval[is.na(pred_tag), pred_tag := "unassigned"]
+            conf = eval[, .N, by = .(truth_tag, pred_tag)]
+            pp_save_csv(conf, pdir, "sim_sampletag_confusion")
+            acc = eval[, .(accuracy = mean(truth_tag == pred_tag,
+                                           na.rm = TRUE),
+                           n_cells = .N,
+                           mean_purity = mean(pred_purity, na.rm = TRUE))]
+            pp_save_csv(acc, pdir, "sim_sampletag_accuracy")
+            p_conf = ggplot(conf, aes(pred_tag, truth_tag, fill = N)) +
+                geom_tile(colour = "white") +
+                geom_text(aes(label = N), size = 3) +
+                scale_fill_distiller(palette = "Blues", direction = 1) +
+                theme_bw() +
+                theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+                labs(x = "predicted tag", y = "true tag", fill = "cells",
+                     title = sprintf("sampletag accuracy: %.1f%% (n=%d)",
+                                     100 * acc$accuracy, acc$n_cells))
+            pp_save_pdf(p_conf, pdir, "sim_sampletag_confusion",
+                        width = 4.5, height = 3.5)
+        }
+    }
+
     message("simulation materials written to ", pdir)
 }
 
@@ -245,7 +303,11 @@ run_biology = function(opt) {
                                                 median_umi, median_genes)],
                        id.vars = "pipeline", variable.name = "metric")
         p_qc = ggplot(qc_long, aes(pipeline, value, fill = pipeline)) +
-            geom_col() + facet_wrap(~metric, scales = "free_y") +
+            geom_col() +
+            geom_text(aes(label = signif(value, 3)),
+                      vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            facet_wrap(~metric, scales = "free_y") +
             scale_fill_manual(values = aligner_colours) +
             theme_bw() + theme(legend.position = "none") +
             labs(x = NULL, y = NULL)
@@ -278,6 +340,87 @@ run_biology = function(opt) {
             theme_bw() +
             labs(x = NULL, y = NULL, fill = "MARD (%)")
         pp_save_pdf(p, pdir, "bio_pseudobulk_mard", width = 4.5, height = 3.5)
+
+        ## Pairwise pseudobulk scatter, log10 counts, marker genes highlighted.
+        markers = character(0)
+        if (nzchar(opt$markers_file) && file.exists(opt$markers_file)) {
+            marker_meta = read.table(opt$markers_file, header = TRUE, sep = "\t",
+                                     stringsAsFactors = FALSE)
+            markers = marker_meta$marker
+        }
+        if (ncol(pb_mat) >= 2) {
+            pb_log = log10(pb_mat + 1)
+            pb_dt = as.data.table(pb_log, keep.rownames = "gene")
+            pb_dt[, is_marker := gene %in% markers]
+            cor_pairs = combn(colnames(pb_mat), 2, simplify = FALSE)
+            cor_rows = list()
+            scatter_plots = lapply(cor_pairs, function(pair) {
+                d = pb_dt[, .(gene, x = get(pair[1]), y = get(pair[2]), is_marker)]
+                r = cor(d$x, d$y)
+                cor_rows[[paste(pair, collapse = "_vs_")]] <<- data.table(
+                    pipeline1 = pair[1], pipeline2 = pair[2],
+                    n_genes = nrow(d), pearson_r = r)
+                ggplot(d, aes(x = x, y = y)) +
+                    pp_rasterise(geom_point(data = d[is_marker == FALSE],
+                                            alpha = 0.15, size = 0.3,
+                                            colour = "grey50")) +
+                    geom_point(data = d[is_marker == TRUE],
+                               colour = "#E69F00", size = 1.2) +
+                    ggrepel::geom_text_repel(data = d[is_marker == TRUE],
+                                             aes(label = gene), size = 2.4,
+                                             colour = "#E69F00",
+                                             max.overlaps = Inf,
+                                             min.segment.length = 0,
+                                             segment.size = 0.2,
+                                             box.padding = 0.3) +
+                    geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+                                colour = "grey30") +
+                    annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.3,
+                             label = sprintf("R = %.4f", r), size = 3) +
+                    theme_bw() + theme(aspect.ratio = 1) +
+                    labs(x = paste0(pair[1], " log10(count + 1)"),
+                         y = paste0(pair[2], " log10(count + 1)"),
+                         title = paste(pair[1], "vs", pair[2]))
+            })
+            pp_save_csv(rbindlist(cor_rows), pdir, "bio_pseudobulk_correlation")
+            pp_save_pdf(wrap_plots(scatter_plots, nrow = 1), pdir,
+                        "bio_pseudobulk_correlation",
+                        width = 3.2 * length(scatter_plots), height = 3.2)
+        }
+    }
+
+    ## Barcode overlap across pipelines.
+    if (file.exists(biords("cb_umi"))) {
+        bc_dt = as.data.table(readRDS(biords("cb_umi")))
+        bc_lists = split(bc_dt$barcode, bc_dt$pipeline)
+        if (requireNamespace("UpSetR", quietly = TRUE) && length(bc_lists) >= 2) {
+            pp_save_base_pdf(
+                quote(print(UpSetR::upset(UpSetR::fromList(bc_lists),
+                                          order.by = "freq",
+                                          nsets = length(bc_lists),
+                                          text.scale = 1.2))),
+                pdir, "bio_bc_upset", width = 6, height = 4,
+                keep_last_page = TRUE)
+            set_sizes = data.table(set = names(bc_lists),
+                                   size = vapply(bc_lists, length, integer(1)))
+            pp_save_csv(set_sizes, pdir, "bio_bc_upset_sizes")
+        }
+    }
+
+    ## Cell recovery bar plot (separate panel for parity with the simulation).
+    if (file.exists(biords("qc"))) {
+        qc_df = as.data.table(readRDS(biords("qc")))
+        if ("n_cells" %in% colnames(qc_df)) {
+            p_rec = ggplot(qc_df, aes(pipeline, n_cells, fill = pipeline)) +
+                geom_col() +
+                geom_text(aes(label = n_cells), vjust = -0.3, size = 3) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+                scale_fill_manual(values = aligner_colours) +
+                theme_bw() + theme(legend.position = "none") +
+                labs(x = NULL, y = "cells recovered")
+            pp_save_pdf(p_rec, pdir, "bio_cell_counts", width = 4, height = 3)
+            pp_save_csv(qc_df[, .(pipeline, n_cells)], pdir, "bio_cell_counts")
+        }
     }
 
     ## Bland-Altman UMI plots. cb_umi holds per-barcode UMIs per pipeline.
@@ -358,6 +501,9 @@ run_biology = function(opt) {
                 geom_col(fill = "#0072B2") +
                 geom_errorbar(aes(ymin = ci_lo, ymax = ci_hi),
                               width = 0.2, linewidth = 0.4) +
+                geom_text(aes(y = ci_hi, label = sprintf("%.3f", ari)),
+                          vjust = -0.4, size = 3) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                 theme_bw() +
                 theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
                 labs(x = NULL, y = ylab)
@@ -365,6 +511,40 @@ run_biology = function(opt) {
         }
         ari_bar(cluster_ari, "bio_cluster_ari", "cluster ARI")
         ari_bar(ct_ari,      "bio_celltype_ari", "cell-type ARI")
+
+        ## Pairwise confusion-matrix heatmaps underlying each ARI. Rows are
+        ## labels from pipeline A, columns from pipeline B, cell entries are
+        ## cell counts on shared barcodes.
+        draw_confusion = function(key, name, xlab) {
+            pipes = sort(unique(clusters_dt$pipeline))
+            if (length(pipes) < 2) return(invisible(NULL))
+            pairs = combn(pipes, 2, simplify = FALSE)
+            panels = lapply(pairs, function(pair) {
+                d1 = clusters_dt[pipeline == pair[1], .(barcode, a = get(key))]
+                d2 = clusters_dt[pipeline == pair[2], .(barcode, b = get(key))]
+                sh = merge(d1, d2, by = "barcode")
+                if (nrow(sh) < 10) return(NULL)
+                tab = as.data.table(sh[, .N, by = .(a, b)])
+                ggplot(tab, aes(a, b, fill = N)) +
+                    geom_tile(colour = "white") +
+                    scale_fill_distiller(palette = "Blues", direction = 1) +
+                    theme_bw(base_size = 11) +
+                    theme(aspect.ratio = 1,
+                          axis.text.x = element_text(angle = 45,
+                                                     hjust = 1, vjust = 1),
+                          legend.position = "right",
+                          plot.margin = margin(4, 4, 4, 4)) +
+                    labs(x = pair[1], y = pair[2], fill = "cells",
+                         title = paste(pair[1], "vs", pair[2]))
+            })
+            panels = Filter(Negate(is.null), panels)
+            if (length(panels) == 0) return(invisible(NULL))
+            p = wrap_plots(panels, nrow = 1)
+            pp_save_pdf(p, pdir, name,
+                        width = 14, height = 14 / length(panels))
+        }
+        draw_confusion("cluster_prefixed", "bio_cluster_confusion", "cluster")
+        draw_confusion("celltype",         "bio_celltype_confusion", "cell type")
     }
 
     ## UMAP coloured by marker cell type, one panel per pipeline. Requires
@@ -403,6 +583,27 @@ run_biology = function(opt) {
             pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
                         width = 3.2 * length(panels), height = 3.2)
         }
+
+        ## UMAP coloured by Louvain cluster, one panel per pipeline.
+        cl_panels = lapply(names(seu_fns), function(pipe) {
+            so = readRDS(seu_fns[[pipe]])
+            emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+            colnames(emb) = c("UMAP_1", "UMAP_2")
+            emb$barcode = rownames(emb)
+            cl_map = clusters_dt[pipeline == pipe,
+                                 setNames(as.character(cluster_prefixed), barcode)]
+            emb$cluster = factor(
+                ifelse(emb$barcode %in% names(cl_map), cl_map[emb$barcode], NA))
+            ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
+                pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                theme_bw() + theme(aspect.ratio = 1, legend.position = "right") +
+                labs(title = pipe, colour = "Louvain")
+        })
+        if (length(cl_panels) > 0) {
+            p_cl = wrap_plots(cl_panels, nrow = 1)
+            pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
+                        width = 3.6 * length(cl_panels), height = 3.2)
+        }
     }
 
     ## Per-pipeline runtime and peak RSS from benchmark files.
@@ -413,11 +614,19 @@ run_biology = function(opt) {
         pp_save_csv(pipe_time, pdir, "bio_perf_time")
         pp_save_csv(pipe_mem, pdir, "bio_perf_memory")
         p_t = ggplot(pipe_time, aes(pipeline, total_min, fill = pipeline)) +
-            geom_col() + scale_fill_manual(values = aligner_colours) +
+            geom_col() +
+            geom_text(aes(label = round(total_min, 1)),
+                      vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            scale_fill_manual(values = aligner_colours) +
             theme_bw() + theme(legend.position = "none") +
             labs(x = NULL, y = "wall-clock (min)")
         p_m = ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
-            geom_col() + scale_fill_manual(values = aligner_colours) +
+            geom_col() +
+            geom_text(aes(label = round(peak_rss_gb, 1)),
+                      vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            scale_fill_manual(values = aligner_colours) +
             theme_bw() + theme(legend.position = "none") +
             labs(x = NULL, y = "peak RSS (GB)")
         pp_save_pdf(p_t + p_m, pdir, "bio_perf", width = 6, height = 3)
@@ -438,9 +647,9 @@ run_benchmarks = function(opt) {
     bm = load_benchmarks(bench_dir, aligners)
     pp_save_csv(bm, pdir, "bench_full")
 
-    pipe_time = bm[pipeline %in% aligners,
+    pipe_time = bm[pipeline %in% aligners & !is_install_rule(file),
                    .(total_min = sum(minutes)), by = pipeline]
-    pipe_mem = bm[pipeline %in% aligners,
+    pipe_mem = bm[pipeline %in% aligners & !is_install_rule(file),
                   .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
     pp_save_csv(pipe_time, pdir, "bench_total_time")
     pp_save_csv(pipe_mem, pdir, "bench_peak_memory")
@@ -448,12 +657,14 @@ run_benchmarks = function(opt) {
     p_t = ggplot(pipe_time, aes(pipeline, total_min, fill = pipeline)) +
         geom_col() + geom_text(aes(label = round(total_min, 1)),
                                vjust = -0.3, size = 3) +
+        scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
         scale_fill_manual(values = aligner_colours) +
         theme_bw() + theme(legend.position = "none") +
         labs(x = NULL, y = "total time (min)")
     p_m = ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
         geom_col() + geom_text(aes(label = round(peak_rss_gb, 1)),
                                vjust = -0.3, size = 3) +
+        scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
         scale_fill_manual(values = aligner_colours) +
         theme_bw() + theme(legend.position = "none") +
         labs(x = NULL, y = "peak RSS (GB)")
@@ -496,14 +707,20 @@ load_benchmarks = function(bench_dir, aligners) {
     bm[]
 }
 
+## One-off source-compilation rules matched by benchmark file name. Excluded
+## from per-pipeline totals so figures reflect per-run cost rather than the
+## first-invocation install cost.
+is_install_rule = function(file) grepl("_install\\.txt$", file)
+
 load_pipeline_time = function(bench_dir, aligners) {
     bm = load_benchmarks(bench_dir, aligners)
-    bm[pipeline %in% aligners, .(total_min = sum(minutes)), by = pipeline]
+    bm[pipeline %in% aligners & !is_install_rule(file),
+       .(total_min = sum(minutes)), by = pipeline]
 }
 
 load_pipeline_memory = function(bench_dir, aligners) {
     bm = load_benchmarks(bench_dir, aligners)
-    bm[pipeline %in% aligners,
+    bm[pipeline %in% aligners & !is_install_rule(file),
        .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
 }
 

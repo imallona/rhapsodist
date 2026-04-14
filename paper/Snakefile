@@ -27,6 +27,7 @@ ENV = op.join(PAPER_DIR, "env.yaml")
 
 aligners_arg = ",".join(ALIGNERS)
 has_sbg_arg = "true" if HAS_SBG else "false"
+MARKERS_FILE = config.get("biology_markers_file", "")
 
 
 def simulation_sentinel(sample):
@@ -99,6 +100,7 @@ rule biology_materials:
         wd = WD,
         aligners = aligners_arg,
         has_sbg = has_sbg_arg,
+        markers_file = MARKERS_FILE,
     log:
         op.join(WD, "logs", "paper_biology_{sample}.log")
     shell:
@@ -108,7 +110,8 @@ rule biology_materials:
             --working_dir {params.wd} \
             --sample {wildcards.sample} \
             --aligners {params.aligners} \
-            --has_sbg {params.has_sbg} &> {log}
+            --has_sbg {params.has_sbg} \
+            --markers_file '{params.markers_file}' &> {log}
         """
 
 

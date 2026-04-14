@@ -25,11 +25,27 @@ pp_save_pdf = function(plot, pdir, name, width = 5, height = 4) {
     invisible(fn)
 }
 
-pp_save_base_pdf = function(expr, pdir, name, width = 7, height = 5) {
+pp_save_base_pdf = function(expr, pdir, name, width = 7, height = 5,
+                            keep_last_page = FALSE) {
     caller_env = parent.frame()
     fn = file.path(pdir, paste0(name, ".pdf"))
     grDevices::cairo_pdf(fn, width = width, height = height)
     tryCatch(eval(expr, envir = caller_env), finally = grDevices::dev.off())
+    ## UpSetR calls grid.newpage() internally, which leaves a blank page 1 on
+    ## cairo_pdf. Keep only page 2 using Ghostscript when available.
+    if (isTRUE(keep_last_page) && nzchar(Sys.which("gs"))) {
+        tmp = paste0(fn, ".tmp")
+        status = suppressWarnings(system2("gs",
+            c("-sDEVICE=pdfwrite", "-dNOPAUSE", "-dBATCH", "-dQUIET",
+              "-dFirstPage=2", "-dLastPage=2",
+              paste0("-sOutputFile=", tmp), fn),
+            stdout = FALSE, stderr = FALSE))
+        if (status == 0 && file.exists(tmp) && file.info(tmp)$size > 0) {
+            file.rename(tmp, fn)
+        } else if (file.exists(tmp)) {
+            file.remove(tmp)
+        }
+    }
     invisible(fn)
 }
 
