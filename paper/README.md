@@ -6,8 +6,8 @@ in the paper. Nothing in `workflow/` depends on this directory.
 
 ## Layout
 
-- `Snakefile`: optional, three rules (`simulation_materials`,
-  `biology_materials`, `benchmarks_materials`).
+- `Snakefile`: optional, three rules (`simulations_figure`,
+  `sendoel_figure`, `benchmarks_figure`).
 - `assemble_paper_figures.R`: the single script that does the work.
 - `export_helpers.R`: small helpers for CSV and PDF writing, bootstrap
   confidence intervals, and ggrastr-based rasterisation.

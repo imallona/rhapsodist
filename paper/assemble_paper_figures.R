@@ -50,12 +50,70 @@ parse_args = function() {
     p$add_argument("--has_sbg", default = "false")
     p$add_argument("--n_expected_cells", type = "integer", default = 0L)
     p$add_argument("--markers_file", default = "")
+    p$add_argument("--bench_prefix", default = "fig_sim")
     p$parse_args()
 }
 
 aligner_colours = c(starsolo = "#E69F00", kallisto = "#56B4E9",
                     alevin = "#009E73", sbg = "#CC79A7",
                     truth = "#000000")
+
+## Shared paper theme. Uses cowplot::theme_cowplot when available (no grids,
+## harmonised fonts, paper-friendly), otherwise a theme_bw fallback with the
+## background grid removed.
+paper_theme = function(base_size = 10) {
+    if (requireNamespace("cowplot", quietly = TRUE)) {
+        cowplot::theme_cowplot(font_size = base_size) +
+            theme(plot.tag = element_text(face = "bold", size = base_size + 2),
+                  legend.key.size = grid::unit(0.35, "cm"),
+                  plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    } else {
+        theme_bw(base_size = base_size) +
+            theme(panel.grid = element_blank(),
+                  plot.tag = element_text(face = "bold", size = base_size + 2),
+                  legend.key.size = grid::unit(0.35, "cm"),
+                  plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    }
+}
+
+## Shared text sizes applied to every panel via patchwork's `&` operator so
+## axis, legend, and strip labels are consistent across figures.
+paper_shared_theme = theme(axis.title  = element_text(size = 9),
+                           axis.text   = element_text(size = 8),
+                           legend.title = element_text(size = 9),
+                           legend.text  = element_text(size = 8),
+                           strip.text   = element_text(size = 9),
+                           plot.subtitle = element_text(size = 8))
+
+## Render an UpSetR plot to a temporary PNG, then return a real ggplot that
+## displays it via annotation_raster. Wrapping the upset as a grid grob via
+## wrap_elements breaks patchwork composition (other panels collapse), so the
+## raster trick is the workaround.
+upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
+    if (!requireNamespace("UpSetR", quietly = TRUE)) return(NULL)
+    if (!requireNamespace("png", quietly = TRUE)) return(NULL)
+    if (length(set_list) < 2) return(NULL)
+    tmp = tempfile(fileext = ".png")
+    grDevices::png(tmp, width = width_in * dpi, height = height_in * dpi,
+                   res = dpi, bg = "white")
+    print(UpSetR::upset(UpSetR::fromList(set_list), order.by = "freq",
+                        nsets = length(set_list), text.scale = 1.1,
+                        mb.ratio = c(0.55, 0.45),
+                        point.size = 2.2, line.size = 0.7))
+    grDevices::dev.off()
+    img = png::readPNG(tmp)
+    ## Force the patchwork cell to honour the rendered PNG aspect ratio.
+    ## Without this, annotation_raster stretches the bitmap to fill a cell
+    ## with a different aspect and the UpSet bars look squashed.
+    ggplot() +
+        annotation_raster(img, xmin = 0, xmax = 1, ymin = 0, ymax = 1,
+                          interpolate = TRUE) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1),
+                        expand = FALSE, clip = "off") +
+        theme_void() +
+        theme(aspect.ratio = height_in / width_in,
+              plot.margin = grid::unit(c(2, 2, 2, 2), "pt"))
+}
 
 ## Simulation kind. Reads per-pipeline SCEs plus the simulation truth (barcodes
 ## and matrix market format) and produces Figs 1 to 3 plus S1, S2, Table 1.
@@ -153,14 +211,34 @@ run_simulation = function(opt) {
         }))
         pp_save_csv(mard_dt, pdir, "sim_pseudobulk_mard")
 
-        p_mard = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard * 100)) +
+        p_mard = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard)) +
             geom_tile(colour = "white") +
-            geom_text(aes(label = sprintf("%.1f%%", mard * 100)), size = 3) +
-            scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
+            geom_text(aes(label = sprintf("%.3f", mard)), size = 3) +
+            scale_fill_viridis_c(option = "viridis", direction = -1,
+                                 limits = c(0, NA),
+                                 alpha = 0.75) +
             theme_bw() +
             theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-            labs(x = NULL, y = NULL, fill = "MARD (%)")
+            labs(x = "pipeline", y = "pipeline", fill = "MARD",
+                 title = "Pseudobulk MARD on raw counts")
         pp_save_pdf(p_mard, pdir, "sim_pseudobulk_mard", width = 5, height = 4)
+
+        cor_mat = cor(pb_mat, method = "pearson")
+        cor_dt = as.data.table(as.table(cor_mat))
+        setnames(cor_dt, c("pipeline1", "pipeline2", "pearson_r"))
+        pp_save_csv(cor_dt, pdir, "sim_pseudobulk_correlation")
+        p_pcor = ggplot(cor_dt, aes(pipeline1, pipeline2, fill = pearson_r)) +
+            geom_tile(colour = "white") +
+            geom_text(aes(label = sprintf("%.3f", pearson_r)), size = 3) +
+            scale_fill_viridis_c(option = "viridis", direction = 1,
+                                 limits = c(min(cor_dt$pearson_r), 1),
+                                 alpha = 0.75) +
+            theme_bw() +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+            labs(x = "pipeline", y = "pipeline", fill = "Pearson r",
+                 title = "Pseudobulk Pearson r on raw counts")
+        pp_save_pdf(p_pcor, pdir, "sim_pseudobulk_correlation",
+                    width = 5, height = 4)
 
         ## Per-aligner sanity table versus truth.
         if (!is.null(truth_pb)) {
@@ -198,7 +276,7 @@ run_simulation = function(opt) {
         geom_density(linewidth = 0.6) +
         scale_colour_manual(values = aligner_colours) +
         theme_bw() +
-        labs(x = "log10(UMI + 1)", y = "density", colour = NULL)
+        labs(x = "log10(UMI + 1)", y = "density", colour = "pipeline")
     pp_save_pdf(p_umi, pdir, "sim_umi_distribution", width = 5, height = 3)
 
     ## Accuracy vs speed if benchmark files exist.
@@ -285,28 +363,26 @@ run_simulation = function(opt) {
         }
     }
 
-    panel_theme = theme_bw(base_size = 10) +
-        theme(plot.tag = element_text(face = "bold", size = 12),
-              legend.key.size = grid::unit(0.35, "cm"),
-              plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    panel_theme = paper_theme(10)
     panels = list()
-    if (exists("bc_lists", inherits = FALSE) && length(bc_lists) >= 2 &&
-        requireNamespace("UpSetR", quietly = TRUE)) {
-        upset_grob = grid::grid.grabExpr(print(UpSetR::upset(
-            UpSetR::fromList(bc_lists), order.by = "freq",
-            nsets = length(bc_lists), text.scale = 1.0,
-            mb.ratio = c(0.55, 0.45), point.size = 1.8,
-            line.size = 0.6)), wrap.grobs = TRUE)
-        panels$B = patchwork::wrap_elements(full = upset_grob)
+    if (exists("bc_lists", inherits = FALSE)) {
+        panels$B = upset_panel(bc_lists, width_in = 12, height_in = 6)
     }
     if (exists("p_mard", inherits = FALSE)) {
         panels$D = p_mard + panel_theme +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1))
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  aspect.ratio = 1)
     }
     if (exists("p_conf", inherits = FALSE)) {
         panels$C = p_conf + panel_theme +
             theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  plot.subtitle = element_text(size = 8))
+                  plot.subtitle = element_text(size = 8),
+                  aspect.ratio = 1)
+    }
+    if (exists("p_pcor", inherits = FALSE)) {
+        panels$G = p_pcor + panel_theme +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  aspect.ratio = 1)
     }
     bench_dir = file.path(wd, "benchmarks")
     if (dir.exists(bench_dir)) {
@@ -319,38 +395,45 @@ run_simulation = function(opt) {
                           by = pipeline]
             bar_theme = panel_theme +
                 theme(legend.position = "none",
-                      plot.margin = grid::unit(c(2, 12, 2, 12), "pt"),
+                      plot.margin = grid::unit(c(2, 6, 2, 2), "pt"),
+                      axis.title.y = element_text(margin = margin(r = 2)),
                       axis.text.x = element_text(angle = 30, hjust = 1))
             panels$E = ggplot(pipe_time, aes(pipeline, total_min,
                                              fill = pipeline)) +
                 geom_col(width = 0.55) +
-                geom_text(aes(label = round(total_min, 1)), vjust = -0.3,
-                          size = 3) +
+                geom_text(aes(label = sprintf("%.2f", total_min)),
+                          vjust = -0.3, size = 3) +
                 scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                 scale_fill_manual(values = aligner_colours) +
-                bar_theme + labs(x = NULL, y = "total time (min)")
+                bar_theme + labs(x = "pipeline", y = "total time (min)")
             panels$F = ggplot(pipe_mem, aes(pipeline, peak_rss_gb,
                                             fill = pipeline)) +
                 geom_col(width = 0.55) +
-                geom_text(aes(label = round(peak_rss_gb, 1)), vjust = -0.3,
-                          size = 3) +
+                geom_text(aes(label = sprintf("%.2f", peak_rss_gb)),
+                          vjust = -0.3, size = 3) +
                 scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                 scale_fill_manual(values = aligner_colours) +
-                bar_theme + labs(x = NULL, y = "peak RSS (GB)")
+                bar_theme + labs(x = "pipeline", y = "peak RSS (GB)")
         }
     }
     blank = function() ggplot() + theme_void()
-    for (k in c("B", "C", "D", "E", "F")) {
-        if (is.null(panels[[k]])) panels[[k]] = blank()
+    for (k in c("B", "C", "D", "E", "F", "G")) {
+        if (is.null(panels[[k]])) {
+            warning("fig1 panel ", k, " missing; rendering blank. wd=", wd)
+            panels[[k]] = blank()
+        }
     }
-    row2 = panels$B + panels$C + panels$D +
-        patchwork::plot_layout(ncol = 3, widths = c(1.5, 1, 1.1))
-    row3 = panels$E + panels$F +
-        patchwork::plot_layout(ncol = 2, widths = c(1, 1))
-    fig1 = row2 / row3 +
-        patchwork::plot_layout(heights = c(1.1, 0.9)) +
+    fig1_design = paste("BBBCCCDDD",
+                        "BBBCCCDDD",
+                        "BBBCCCDDD",
+                        "GGGEEEFFF",
+                        "GGGEEEFFF", sep = "\n")
+    fig1 = patchwork::wrap_plots(B = panels$B, C = panels$C, D = panels$D,
+                                 G = panels$G, E = panels$E, F = panels$F,
+                                 design = fig1_design) +
         patchwork::plot_annotation(tag_levels = list(c("B", "C", "D",
-                                                       "E", "F")))
+                                                       "G", "E", "F"))) &
+        paper_shared_theme
     pp_save_pdf(fig1, pdir, "fig1_simulations_panels",
                 width = 10.5, height = 7.5)
 
@@ -412,9 +495,14 @@ run_biology = function(opt) {
         p = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard * 100)) +
             geom_tile(colour = "white") +
             geom_text(aes(label = sprintf("%.1f%%", mard * 100)), size = 3) +
-            scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
+            scale_fill_viridis_c(option = "viridis", direction = -1,
+                                 limits = c(0, NA), alpha = 0.75) +
             theme_bw() +
-            labs(x = NULL, y = NULL, fill = "MARD (%)")
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  plot.title = element_text(size = 10,
+                                            margin = margin(b = 2))) +
+            labs(x = "pipeline", y = "pipeline", fill = "MARD (%)",
+                 title = "Pseudobulk MARD on log-normalized counts")
         pp_save_pdf(p, pdir, "bio_pseudobulk_mard", width = 4.5, height = 3.5)
 
         ## Pairwise pseudobulk scatter, log10 counts, marker genes highlighted.
@@ -462,6 +550,25 @@ run_biology = function(opt) {
             pp_save_pdf(wrap_plots(scatter_plots, nrow = 1), pdir,
                         "bio_pseudobulk_correlation",
                         width = 3.2 * length(scatter_plots), height = 3.2)
+
+            ## Symmetric Pearson r heatmap, mirroring the simulation panel.
+            bcor_mat = cor(pb_mat, method = "pearson")
+            bcor_dt = as.data.table(as.table(bcor_mat))
+            setnames(bcor_dt, c("pipeline1", "pipeline2", "pearson_r"))
+            pp_save_csv(bcor_dt, pdir, "bio_pseudobulk_correlation_matrix")
+            p_bcor = ggplot(bcor_dt,
+                            aes(pipeline1, pipeline2, fill = pearson_r)) +
+                geom_tile(colour = "white") +
+                geom_text(aes(label = sprintf("%.3f", pearson_r)), size = 3) +
+                scale_fill_viridis_c(option = "viridis", direction = 1,
+                                     limits = c(min(bcor_dt$pearson_r), 1),
+                                     alpha = 0.75) +
+                theme_bw() +
+                theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+                labs(x = "pipeline", y = "pipeline", fill = "Pearson r",
+                     title = "Pseudobulk Pearson r on log-normalized counts")
+            pp_save_pdf(p_bcor, pdir, "bio_pseudobulk_correlation_heatmap",
+                        width = 5, height = 4)
         }
     }
 
@@ -653,11 +760,18 @@ run_biology = function(opt) {
             ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
                 pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
                 scale_colour_manual(values = ct_colours, drop = FALSE) +
+                guides(colour = guide_legend(
+                    override.aes = list(size = 2.5, alpha = 1))) +
                 theme_bw() + theme(aspect.ratio = 1) +
                 labs(title = pipe, colour = "cell type")
         })
         if (length(panels) > 0) {
-            p_umap = wrap_plots(panels, nrow = 1) + plot_layout(guides = "collect")
+            p_umap = wrap_plots(panels, nrow = 1) +
+                plot_layout(guides = "collect") +
+                plot_annotation(title = "    Cell embeddings by annotation",
+                                theme = theme(plot.title = element_text(
+                                    size = 11, face = "plain",
+                                    margin = margin(l = 30, b = 4))))
             pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
                         width = 3.2 * length(panels), height = 3.2)
         }
@@ -674,11 +788,19 @@ run_biology = function(opt) {
                 ifelse(emb$barcode %in% names(cl_map), cl_map[emb$barcode], NA))
             ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
                 pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                theme_bw() + theme(aspect.ratio = 1, legend.position = "right") +
+                guides(colour = guide_legend(ncol = 2,
+                                             override.aes = list(size = 1.5))) +
+                theme_bw() + theme(aspect.ratio = 1, legend.position = "right",
+                                   legend.key.size = grid::unit(0.3, "cm"),
+                                   legend.text = element_text(size = 7)) +
                 labs(title = pipe, colour = "Louvain")
         })
         if (length(cl_panels) > 0) {
-            p_cl = wrap_plots(cl_panels, nrow = 1)
+            p_cl = wrap_plots(cl_panels, nrow = 1) +
+                plot_annotation(title = "    Cell embeddings by cluster",
+                                theme = theme(plot.title = element_text(
+                                    size = 11, face = "plain",
+                                    margin = margin(l = 30, t = 2, b = 6))))
             pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
                         width = 3.6 * length(cl_panels), height = 3.2)
         }
@@ -695,7 +817,25 @@ run_biology = function(opt) {
             total_umi = colSums(counts_m)
             n_genes = colSums(counts_m > 0)
             gene_names = rownames(counts_m)
-            mito_idx = grepl("^(mt-|MT-)", gene_names)
+            mito_idx = grepl("^(mt-|MT-|Mt-)", gene_names)
+            if (!any(mito_idx)) {
+                rd = SummarizedExperiment::rowData(sce)
+                sym_col = intersect(c("Symbol", "symbol", "gene_name",
+                                      "gene_symbol", "name"), colnames(rd))
+                if (length(sym_col) > 0) {
+                    syms = as.character(rd[[sym_col[1]]])
+                    mito_idx = grepl("^(mt-|MT-|Mt-)", syms)
+                }
+            }
+            if (!any(mito_idx)) {
+                rd = SummarizedExperiment::rowData(sce)
+                chr_col = intersect(c("chr", "seqnames", "chromosome"),
+                                    colnames(rd))
+                if (length(chr_col) > 0) {
+                    chr_vals = as.character(rd[[chr_col[1]]])
+                    mito_idx = chr_vals %in% c("MT", "chrM", "M", "Mt", "chrMT")
+                }
+            }
             mito_pct = if (any(mito_idx))
                 100 * colSums(counts_m[mito_idx, , drop = FALSE]) / pmax(total_umi, 1)
             else rep(NA_real_, ncol(sce))
@@ -732,27 +872,18 @@ run_biology = function(opt) {
         pp_save_pdf(p_t + p_m, pdir, "bio_perf", width = 6, height = 3)
     }
 
-    panel_theme2 = theme_bw(base_size = 10) +
-        theme(plot.tag = element_text(face = "bold", size = 12),
-              legend.key.size = grid::unit(0.35, "cm"),
-              plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    panel_theme2 = paper_theme(10)
     panels2 = list()
-    if (exists("bc_lists", inherits = FALSE) && length(bc_lists) >= 2 &&
-        requireNamespace("UpSetR", quietly = TRUE)) {
-        upset_grob = grid::grid.grabExpr(print(UpSetR::upset(
-            UpSetR::fromList(bc_lists), order.by = "freq",
-            nsets = length(bc_lists), text.scale = 1.0,
-            mb.ratio = c(0.55, 0.45), point.size = 1.8,
-            line.size = 0.6)), wrap.grobs = TRUE)
-        panels2$A = patchwork::wrap_elements(full = upset_grob)
+    if (exists("bc_lists", inherits = FALSE)) {
+        panels2$A = upset_panel(bc_lists, width_in = 10, height_in = 7)
     }
     if (!is.null(per_cell_qc)) {
         qc_long = melt(per_cell_qc, id.vars = "pipeline",
                        measure.vars = c("total_umi", "n_genes", "mito_pct"),
                        variable.name = "metric", value.name = "value")
-        metric_labels = c(total_umi = "UMIs / cell (log10)",
-                          n_genes = "genes / cell (log10)",
-                          mito_pct = "mito %")
+        metric_labels = c(total_umi = "UMIs\n(log10)",
+                          n_genes = "Features\n(log10)",
+                          mito_pct = "Mitoc.\n(%)")
         qc_long[, metric := factor(metric, levels = names(metric_labels),
                                    labels = metric_labels)]
         qc_long[metric %in% metric_labels[c("total_umi", "n_genes")],
@@ -767,12 +898,13 @@ run_biology = function(opt) {
                                  axis.text.x = element_text(angle = 30,
                                                             hjust = 1),
                                  strip.text = element_text(size = 9)) +
-            labs(x = NULL, y = NULL)
+            labs(x = "pipeline", y = "per-cell value")
     }
     if (exists("p", inherits = FALSE) &&
         file.exists(biords("pseudobulk_mard"))) {
         panels2$C = p + panel_theme2 +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1))
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  aspect.ratio = 1)
     }
     if (exists("p_umap", inherits = FALSE)) {
         panels2$D = patchwork::wrap_elements(full = patchwork::patchworkGrob(p_umap))
@@ -792,26 +924,46 @@ run_biology = function(opt) {
                                vjust = -0.3, size = 3) +
                      scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                      scale_fill_manual(values = aligner_colours) +
-                     bar_theme2 + labs(x = NULL, y = "wall-clock (min)")) +
+                     bar_theme2 + labs(x = "pipeline",
+                                       y = "wall-clock (min)")) +
             (ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
              geom_col(width = 0.55) +
              geom_text(aes(label = round(peak_rss_gb, 1)),
                        vjust = -0.3, size = 3) +
              scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
              scale_fill_manual(values = aligner_colours) +
-             bar_theme2 + labs(x = NULL, y = "peak RSS (GB)")) +
+             bar_theme2 + labs(x = "pipeline", y = "peak RSS (GB)")) +
             patchwork::plot_layout(ncol = 2)
     }
-    blank2 = function() ggplot() + theme_void()
-    for (k in c("A", "B", "C", "D", "E", "F")) {
-        if (is.null(panels2[[k]])) panels2[[k]] = blank2()
+    if (exists("p_bcor", inherits = FALSE)) {
+        panels2$G = p_bcor + panel_theme2 +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  aspect.ratio = 1)
     }
-    row1 = panels2$A + panels2$B + panels2$C +
-        patchwork::plot_layout(ncol = 3, widths = c(1.3, 1.3, 1))
-    fig2 = row1 / panels2$D / panels2$E / panels2$F +
-        patchwork::plot_layout(heights = c(1, 1, 1, 0.7)) +
-        patchwork::plot_annotation(tag_levels = "A")
-    pp_save_pdf(fig2, pdir, "fig2_sendoel", width = 10.5, height = 13)
+    blank2 = function() ggplot() + theme_void()
+    for (k in c("A", "B", "C", "D", "E", "F", "G")) {
+        if (is.null(panels2[[k]])) {
+            warning("fig2 panel ", k, " missing; rendering blank. wd=", wd)
+            panels2[[k]] = blank2()
+        }
+    }
+    fig2_design = paste(
+        "AABBBBCCCC",
+        "AABBBBCCCC",
+        "DDDDDDDDDD",
+        "DDDDDDDDDD",
+        "EEEEEEEEEE",
+        "EEEEEEEEEE",
+        "FFFFFGGGGG",
+        "FFFFFGGGGG", sep = "\n")
+    fig2 = patchwork::wrap_plots(A = panels2$A, B = panels2$B, C = panels2$C,
+                                 D = panels2$D, E = panels2$E, F = panels2$F,
+                                 G = panels2$G,
+                                 design = fig2_design,
+                                 heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
+        patchwork::plot_annotation(tag_levels = "A") &
+        paper_shared_theme
+    pp_save_pdf(fig2, pdir, "fig2_sendoel", width = 10.5, height = 14)
 
     message("biology materials written to ", pdir)
 }
@@ -849,7 +1001,8 @@ run_benchmarks = function(opt) {
         scale_fill_manual(values = aligner_colours) +
         theme_bw() + theme(legend.position = "none") +
         labs(x = NULL, y = "peak RSS (GB)")
-    pp_save_pdf(p_t + p_m, pdir, "bench_total", width = 6, height = 3)
+    pp_save_pdf(p_t + p_m, pdir, paste0(opt$bench_prefix, "_bench_total"),
+                width = 6, height = 3)
 
     bm_steps = bm[pipeline %in% aligners]
     if (nrow(bm_steps) > 0) {
@@ -859,7 +1012,8 @@ run_benchmarks = function(opt) {
             scale_fill_manual(values = aligner_colours) +
             theme_bw() +
             labs(x = NULL, y = "wall-clock time (min)", fill = NULL)
-        pp_save_pdf(p_step, pdir, "bench_step", width = 6, height = 4.5)
+        pp_save_pdf(p_step, pdir, paste0(opt$bench_prefix, "_bench_step"),
+                    width = 6, height = 4.5)
     }
 
     message("benchmark materials written to ", pdir)

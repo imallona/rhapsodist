@@ -28,6 +28,7 @@ ENV = op.join(PAPER_DIR, "env.yaml")
 aligners_arg = ",".join(ALIGNERS)
 has_sbg_arg = "true" if HAS_SBG else "false"
 MARKERS_FILE = config.get("biology_markers_file", "")
+BENCH_PREFIX = config.get("bench_prefix", "fig_sim")
 
 
 def simulation_flag(sample):
@@ -57,7 +58,7 @@ rule all:
         all_targets()
 
 
-rule simulation_materials:
+rule simulations_figure:
     conda:
         ENV
     input:
@@ -117,19 +118,22 @@ rule sendoel_figure:
         """
 
 
-rule benchmarks_materials:
+rule benchmarks_figure:
     conda:
         ENV
     input:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
     output:
-        op.join(WD, "paper", "bench_full.csv")
+        op.join(WD, "paper", "bench_full.csv"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_total.pdf"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf")
     params:
         wd = WD,
         aligners = aligners_arg,
         has_sbg = has_sbg_arg,
         n_exp = N_EXP_CELLS,
+        bench_prefix = BENCH_PREFIX,
     log:
         op.join(WD, "logs", "paper_benchmarks.log")
     shell:
@@ -139,5 +143,6 @@ rule benchmarks_materials:
             --working_dir {params.wd} \
             --aligners {params.aligners} \
             --has_sbg {params.has_sbg} \
-            --n_expected_cells {params.n_exp} &> {log}
+            --n_expected_cells {params.n_exp} \
+            --bench_prefix {params.bench_prefix} &> {log}
         """
