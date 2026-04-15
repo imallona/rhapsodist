@@ -1,20 +1,20 @@
 #!/usr/bin/env Rscript
-## make_paper_materials.R
+## assemble_paper_figures.R
 ##
 ## Reads the RDS outputs produced by the main rhapsodist pipeline and writes
 ## manuscript-ready CSV and PDF artefacts under <working_dir>/paper/<sample>/
 ## (or <working_dir>/paper/ for benchmark-only outputs).
 ##
 ## Usage:
-##   Rscript paper/make_paper_materials.R --kind simulation \
+##   Rscript paper/assemble_paper_figures.R --kind simulation \
 ##       --working_dir output/simul --sample simulated \
 ##       --aligners starsolo,kallisto,alevin,sbg --n_expected_cells 1000
 ##
-##   Rscript paper/make_paper_materials.R --kind biology \
+##   Rscript paper/assemble_paper_figures.R --kind biology \
 ##       --working_dir output/sendoel2024 --sample sample_16_wta_p60 \
 ##       --aligners starsolo,kallisto,alevin
 ##
-##   Rscript paper/make_paper_materials.R --kind benchmarks \
+##   Rscript paper/assemble_paper_figures.R --kind benchmarks \
 ##       --working_dir output/simul --n_expected_cells 1000
 ##
 ## Inputs are the RDS files already saved by 02_comparison.Rmd,
@@ -227,9 +227,15 @@ run_simulation = function(opt) {
     ## ground-truth assignment (simulate/sampletag_assignments.txt).
     st_fn = file.path(wd, "sampletags", samp, "sampletag_counts.tsv.gz")
     truth_st_fn = file.path(wd, "simulate", "sampletag_assignments.txt")
-    if (file.exists(st_fn)) {
-        st = fread(cmd = paste("zcat", shQuote(st_fn)), header = FALSE,
-                   col.names = c("barcode", "umi", "tag", "mismatches"))
+    if (file.exists(st_fn) && file.size(st_fn) > 0) {
+        st = tryCatch(fread(cmd = paste("zcat", shQuote(st_fn)), header = FALSE,
+                            col.names = c("barcode", "umi", "tag", "mismatches")),
+                      error = function(e) NULL)
+        if (is.null(st) || nrow(st) == 0) st = NULL
+    } else {
+        st = NULL
+    }
+    if (!is.null(st)) {
         tag_reads = st[, .(reads = .N,
                            cells = uniqueN(barcode)), by = tag]
         setorder(tag_reads, -reads)
@@ -267,16 +273,86 @@ run_simulation = function(opt) {
             p_conf = ggplot(conf, aes(pred_tag, truth_tag, fill = N)) +
                 geom_tile(colour = "white") +
                 geom_text(aes(label = N), size = 3) +
-                scale_fill_distiller(palette = "Blues", direction = 1) +
+                scale_fill_distiller(palette = "Blues", direction = 1,
+                                     limits = c(0, max(conf$N))) +
                 theme_bw() +
                 theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
                 labs(x = "predicted tag", y = "true tag", fill = "cells",
-                     title = sprintf("sampletag accuracy: %.1f%% (n=%d)",
-                                     100 * acc$accuracy, acc$n_cells))
+                     subtitle = sprintf("accuracy %.1f%% (n=%d)",
+                                        100 * acc$accuracy, acc$n_cells))
             pp_save_pdf(p_conf, pdir, "sim_sampletag_confusion",
                         width = 4.5, height = 3.5)
         }
     }
+
+    panel_theme = theme_bw(base_size = 10) +
+        theme(plot.tag = element_text(face = "bold", size = 12),
+              legend.key.size = grid::unit(0.35, "cm"),
+              plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    panels = list()
+    if (exists("bc_lists", inherits = FALSE) && length(bc_lists) >= 2 &&
+        requireNamespace("UpSetR", quietly = TRUE)) {
+        upset_grob = grid::grid.grabExpr(print(UpSetR::upset(
+            UpSetR::fromList(bc_lists), order.by = "freq",
+            nsets = length(bc_lists), text.scale = 1.0,
+            mb.ratio = c(0.55, 0.45), point.size = 1.8,
+            line.size = 0.6)), wrap.grobs = TRUE)
+        panels$B = patchwork::wrap_elements(full = upset_grob)
+    }
+    if (exists("p_mard", inherits = FALSE)) {
+        panels$D = p_mard + panel_theme +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    }
+    if (exists("p_conf", inherits = FALSE)) {
+        panels$C = p_conf + panel_theme +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  plot.subtitle = element_text(size = 8))
+    }
+    bench_dir = file.path(wd, "benchmarks")
+    if (dir.exists(bench_dir)) {
+        bm = load_benchmarks(bench_dir, aligners)
+        if (nrow(bm) > 0) {
+            pipe_time = bm[pipeline %in% aligners & !is_install_rule(file),
+                           .(total_min = sum(minutes)), by = pipeline]
+            pipe_mem = bm[pipeline %in% aligners & !is_install_rule(file),
+                          .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)),
+                          by = pipeline]
+            bar_theme = panel_theme +
+                theme(legend.position = "none",
+                      plot.margin = grid::unit(c(2, 12, 2, 12), "pt"),
+                      axis.text.x = element_text(angle = 30, hjust = 1))
+            panels$E = ggplot(pipe_time, aes(pipeline, total_min,
+                                             fill = pipeline)) +
+                geom_col(width = 0.55) +
+                geom_text(aes(label = round(total_min, 1)), vjust = -0.3,
+                          size = 3) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+                scale_fill_manual(values = aligner_colours) +
+                bar_theme + labs(x = NULL, y = "total time (min)")
+            panels$F = ggplot(pipe_mem, aes(pipeline, peak_rss_gb,
+                                            fill = pipeline)) +
+                geom_col(width = 0.55) +
+                geom_text(aes(label = round(peak_rss_gb, 1)), vjust = -0.3,
+                          size = 3) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+                scale_fill_manual(values = aligner_colours) +
+                bar_theme + labs(x = NULL, y = "peak RSS (GB)")
+        }
+    }
+    blank = function() ggplot() + theme_void()
+    for (k in c("B", "C", "D", "E", "F")) {
+        if (is.null(panels[[k]])) panels[[k]] = blank()
+    }
+    row2 = panels$B + panels$C + panels$D +
+        patchwork::plot_layout(ncol = 3, widths = c(1.5, 1, 1.1))
+    row3 = panels$E + panels$F +
+        patchwork::plot_layout(ncol = 2, widths = c(1, 1))
+    fig1 = row2 / row3 +
+        patchwork::plot_layout(heights = c(1.1, 0.9)) +
+        patchwork::plot_annotation(tag_levels = list(c("B", "C", "D",
+                                                       "E", "F")))
+    pp_save_pdf(fig1, pdir, "fig1_simulations_panels",
+                width = 10.5, height = 7.5)
 
     message("simulation materials written to ", pdir)
 }
@@ -608,7 +684,29 @@ run_biology = function(opt) {
         }
     }
 
+    per_cell_qc = NULL
+    sce_fns = setNames(file.path(wd, aligners, samp,
+                                 paste0(samp, "_", aligners, "_sce.rds")),
+                       aligners)
+    if (all(file.exists(sce_fns))) {
+        per_cell_qc = rbindlist(lapply(names(sce_fns), function(pipe) {
+            sce = readRDS(sce_fns[[pipe]])
+            counts_m = counts(sce)
+            total_umi = colSums(counts_m)
+            n_genes = colSums(counts_m > 0)
+            gene_names = rownames(counts_m)
+            mito_idx = grepl("^(mt-|MT-)", gene_names)
+            mito_pct = if (any(mito_idx))
+                100 * colSums(counts_m[mito_idx, , drop = FALSE]) / pmax(total_umi, 1)
+            else rep(NA_real_, ncol(sce))
+            data.table(pipeline = pipe, total_umi = total_umi,
+                       n_genes = n_genes, mito_pct = mito_pct)
+        }))
+        pp_save_csv(per_cell_qc, pdir, "bio_per_cell_qc")
+    }
+
     ## Per-pipeline runtime and peak RSS from benchmark files.
+    pipe_time = NULL; pipe_mem = NULL
     bench_dir = file.path(wd, "benchmarks")
     if (dir.exists(bench_dir)) {
         pipe_time = load_pipeline_time(bench_dir, aligners)
@@ -633,6 +731,87 @@ run_biology = function(opt) {
             labs(x = NULL, y = "peak RSS (GB)")
         pp_save_pdf(p_t + p_m, pdir, "bio_perf", width = 6, height = 3)
     }
+
+    panel_theme2 = theme_bw(base_size = 10) +
+        theme(plot.tag = element_text(face = "bold", size = 12),
+              legend.key.size = grid::unit(0.35, "cm"),
+              plot.margin = grid::unit(c(8, 12, 8, 12), "pt"))
+    panels2 = list()
+    if (exists("bc_lists", inherits = FALSE) && length(bc_lists) >= 2 &&
+        requireNamespace("UpSetR", quietly = TRUE)) {
+        upset_grob = grid::grid.grabExpr(print(UpSetR::upset(
+            UpSetR::fromList(bc_lists), order.by = "freq",
+            nsets = length(bc_lists), text.scale = 1.0,
+            mb.ratio = c(0.55, 0.45), point.size = 1.8,
+            line.size = 0.6)), wrap.grobs = TRUE)
+        panels2$A = patchwork::wrap_elements(full = upset_grob)
+    }
+    if (!is.null(per_cell_qc)) {
+        qc_long = melt(per_cell_qc, id.vars = "pipeline",
+                       measure.vars = c("total_umi", "n_genes", "mito_pct"),
+                       variable.name = "metric", value.name = "value")
+        metric_labels = c(total_umi = "UMIs / cell (log10)",
+                          n_genes = "genes / cell (log10)",
+                          mito_pct = "mito %")
+        qc_long[, metric := factor(metric, levels = names(metric_labels),
+                                   labels = metric_labels)]
+        qc_long[metric %in% metric_labels[c("total_umi", "n_genes")],
+                value := log10(pmax(value, 1))]
+        panels2$B = ggplot(qc_long, aes(pipeline, value, fill = pipeline)) +
+            geom_violin(scale = "width", width = 0.8, linewidth = 0.2) +
+            geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white",
+                         linewidth = 0.3) +
+            facet_wrap(~ metric, scales = "free_y", nrow = 1) +
+            scale_fill_manual(values = aligner_colours) +
+            panel_theme2 + theme(legend.position = "none",
+                                 axis.text.x = element_text(angle = 30,
+                                                            hjust = 1),
+                                 strip.text = element_text(size = 9)) +
+            labs(x = NULL, y = NULL)
+    }
+    if (exists("p", inherits = FALSE) &&
+        file.exists(biords("pseudobulk_mard"))) {
+        panels2$C = p + panel_theme2 +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1))
+    }
+    if (exists("p_umap", inherits = FALSE)) {
+        panels2$D = patchwork::wrap_elements(full = patchwork::patchworkGrob(p_umap))
+    }
+    if (exists("p_cl", inherits = FALSE)) {
+        panels2$E = patchwork::wrap_elements(full = patchwork::patchworkGrob(p_cl))
+    }
+    if (!is.null(pipe_time) && !is.null(pipe_mem)) {
+        bar_theme2 = panel_theme2 +
+            theme(legend.position = "none",
+                  plot.margin = grid::unit(c(2, 12, 2, 12), "pt"),
+                  axis.text.x = element_text(angle = 30, hjust = 1))
+        panels2$F = (ggplot(pipe_time, aes(pipeline, total_min,
+                                           fill = pipeline)) +
+                     geom_col(width = 0.55) +
+                     geom_text(aes(label = round(total_min, 1)),
+                               vjust = -0.3, size = 3) +
+                     scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+                     scale_fill_manual(values = aligner_colours) +
+                     bar_theme2 + labs(x = NULL, y = "wall-clock (min)")) +
+            (ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
+             geom_col(width = 0.55) +
+             geom_text(aes(label = round(peak_rss_gb, 1)),
+                       vjust = -0.3, size = 3) +
+             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+             scale_fill_manual(values = aligner_colours) +
+             bar_theme2 + labs(x = NULL, y = "peak RSS (GB)")) +
+            patchwork::plot_layout(ncol = 2)
+    }
+    blank2 = function() ggplot() + theme_void()
+    for (k in c("A", "B", "C", "D", "E", "F")) {
+        if (is.null(panels2[[k]])) panels2[[k]] = blank2()
+    }
+    row1 = panels2$A + panels2$B + panels2$C +
+        patchwork::plot_layout(ncol = 3, widths = c(1.3, 1.3, 1))
+    fig2 = row1 / panels2$D / panels2$E / panels2$F +
+        patchwork::plot_layout(heights = c(1, 1, 1, 0.7)) +
+        patchwork::plot_annotation(tag_levels = "A")
+    pp_save_pdf(fig2, pdir, "fig2_sendoel", width = 10.5, height = 13)
 
     message("biology materials written to ", pdir)
 }

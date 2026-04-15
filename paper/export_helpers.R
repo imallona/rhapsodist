@@ -1,4 +1,4 @@
-## Helpers used by make_paper_materials.R to write manuscript-ready CSV and
+## Helpers used by assemble_paper_figures.R to write manuscript-ready CSV and
 ## PDF artefacts under <working_dir>/paper/<sample>/. Point-heavy scatter
 ## layers are rasterised via ggrastr so PDF files stay small while axes and
 ## text remain vector.

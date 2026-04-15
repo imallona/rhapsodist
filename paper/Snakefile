@@ -22,7 +22,7 @@ IS_SIM = bool(config.get("use_simulated", False))
 N_EXP_CELLS = int(config.get("sim_n_cells", 0))
 
 PAPER_DIR = op.join(workflow.basedir)
-SCRIPT = op.join(PAPER_DIR, "make_paper_materials.R")
+SCRIPT = op.join(PAPER_DIR, "assemble_paper_figures.R")
 ENV = op.join(PAPER_DIR, "env.yaml")
 
 aligners_arg = ",".join(ALIGNERS)
@@ -30,25 +30,25 @@ has_sbg_arg = "true" if HAS_SBG else "false"
 MARKERS_FILE = config.get("biology_markers_file", "")
 
 
-def simulation_sentinel(sample):
+def simulation_flag(sample):
     return op.join(WD, "paper", sample, "sim_cell_counts.csv")
 
 
-def biology_sentinel(sample):
-    return op.join(WD, "paper", sample, "bio_qc.csv")
+def sendoel_flag(sample):
+    return op.join(WD, "paper", sample, "fig2_sendoel.pdf")
 
 
-def benchmark_sentinel():
+def benchmark_flag():
     return op.join(WD, "paper", "bench_full.csv")
 
 
 def all_targets():
-    targets = [benchmark_sentinel()]
+    targets = [benchmark_flag()]
     for s in SAMPLES:
         if IS_SIM:
-            targets.append(simulation_sentinel(s))
+            targets.append(simulation_flag(s))
         else:
-            targets.append(biology_sentinel(s))
+            targets.append(sendoel_flag(s))
     return targets
 
 
@@ -67,7 +67,8 @@ rule simulation_materials:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
     output:
-        op.join(WD, "paper", "{sample}", "sim_cell_counts.csv")
+        op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
+        op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
     params:
         wd = WD,
         aligners = aligners_arg,
@@ -87,7 +88,7 @@ rule simulation_materials:
         """
 
 
-rule biology_materials:
+rule sendoel_figure:
     conda:
         ENV
     input:
@@ -95,7 +96,8 @@ rule biology_materials:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
     output:
-        op.join(WD, "paper", "{sample}", "bio_qc.csv")
+        op.join(WD, "paper", "{sample}", "bio_qc.csv"),
+        op.join(WD, "paper", "{sample}", "fig2_sendoel.pdf")
     params:
         wd = WD,
         aligners = aligners_arg,

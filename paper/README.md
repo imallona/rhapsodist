@@ -8,7 +8,7 @@ in the paper. Nothing in `workflow/` depends on this directory.
 
 - `Snakefile`: optional, three rules (`simulation_materials`,
   `biology_materials`, `benchmarks_materials`).
-- `make_paper_materials.R`: the single script that does the work.
+- `assemble_paper_figures.R`: the single script that does the work.
 - `export_helpers.R`: small helpers for CSV and PDF writing, bootstrap
   confidence intervals, and ggrastr-based rasterisation.
 - `env.yaml`: conda environment used by the Snakemake rules. Lighter
@@ -54,7 +54,7 @@ again from the repo root:
 
 ```bash
 cd /home/imallona/src/rhapsodist
-Rscript paper/make_paper_materials.R \
+Rscript paper/assemble_paper_figures.R \
     --kind simulation \
     --working_dir output/simul \
     --sample simulated \
