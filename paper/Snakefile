@@ -1,0 +1,148 @@
+## Optional paper-materials Snakefile. Consumes RDS outputs produced by the
+## main rhapsodist pipeline and writes manuscript-ready CSV and PDF artefacts
+## under <working_dir>/paper/<sample>/ (or <working_dir>/paper/ for benchmark
+## outputs shared across samples).
+##
+## Run it after the main pipeline has finished, with the same config:
+##
+##   snakemake -s paper/Snakefile \
+##       --configfile configs/sim_config.yaml \
+##       --use-conda --cores 4
+##
+## It does not depend on workflow/Snakefile and does not mutate any pipeline
+## outputs. Nothing here is imported or required by the production pipeline.
+
+import os.path as op
+
+WD = config["working_dir"]
+SAMPLES = [s["name"] for s in config.get("samples", [])]
+ALIGNERS = config.get("aligners", ["starsolo", "kallisto", "alevin"])
+HAS_SBG = bool(config.get("has_sbg", False)) or "sbg" in ALIGNERS
+IS_SIM = bool(config.get("use_simulated", False))
+N_EXP_CELLS = int(config.get("sim_n_cells", 0))
+
+PAPER_DIR = op.join(workflow.basedir)
+SCRIPT = op.join(PAPER_DIR, "assemble_paper_figures.R")
+ENV = op.join(PAPER_DIR, "env.yaml")
+
+aligners_arg = ",".join(ALIGNERS)
+has_sbg_arg = "true" if HAS_SBG else "false"
+MARKERS_FILE = config.get("biology_markers_file", "")
+BENCH_PREFIX = config.get("bench_prefix", "fig_sim")
+
+
+def simulation_flag(sample):
+    return op.join(WD, "paper", sample, "sim_cell_counts.csv")
+
+
+def sendoel_flag(sample):
+    return op.join(WD, "paper", sample, "fig2_sendoel.pdf")
+
+
+def benchmark_flag():
+    return op.join(WD, "paper", "bench_full.csv")
+
+
+def all_targets():
+    targets = [benchmark_flag()]
+    for s in SAMPLES:
+        if IS_SIM:
+            targets.append(simulation_flag(s))
+        else:
+            targets.append(sendoel_flag(s))
+    return targets
+
+
+rule all:
+    input:
+        all_targets()
+
+
+rule simulations_figure:
+    conda:
+        ENV
+    input:
+        sces = expand(op.join(WD, "{aligner}", "{{sample}}",
+                              "{{sample}}_{aligner}_sce.rds"),
+                      aligner = ALIGNERS),
+        script = SCRIPT,
+        helpers = op.join(PAPER_DIR, "export_helpers.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
+        op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
+    params:
+        wd = WD,
+        aligners = aligners_arg,
+        has_sbg = has_sbg_arg,
+        n_exp = N_EXP_CELLS,
+    log:
+        op.join(WD, "logs", "paper_simulation_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} \
+            --kind simulation \
+            --working_dir {params.wd} \
+            --sample {wildcards.sample} \
+            --aligners {params.aligners} \
+            --has_sbg {params.has_sbg} \
+            --n_expected_cells {params.n_exp} &> {log}
+        """
+
+
+rule sendoel_figure:
+    conda:
+        ENV
+    input:
+        biology_rds = op.join(WD, "{sample}_biology_qc.rds"),
+        script = SCRIPT,
+        helpers = op.join(PAPER_DIR, "export_helpers.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "bio_qc.csv"),
+        op.join(WD, "paper", "{sample}", "fig2_sendoel.pdf")
+    params:
+        wd = WD,
+        aligners = aligners_arg,
+        has_sbg = has_sbg_arg,
+        markers_file = MARKERS_FILE,
+    log:
+        op.join(WD, "logs", "paper_biology_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} \
+            --kind biology \
+            --working_dir {params.wd} \
+            --sample {wildcards.sample} \
+            --aligners {params.aligners} \
+            --has_sbg {params.has_sbg} \
+            --markers_file '{params.markers_file}' &> {log}
+        """
+
+
+rule benchmarks_figure:
+    conda:
+        ENV
+    input:
+        script = SCRIPT,
+        helpers = op.join(PAPER_DIR, "export_helpers.R"),
+    output:
+        op.join(WD, "paper", "bench_full.csv"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_total.pdf"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf")
+    params:
+        wd = WD,
+        aligners = aligners_arg,
+        has_sbg = has_sbg_arg,
+        n_exp = N_EXP_CELLS,
+        bench_prefix = BENCH_PREFIX,
+    log:
+        op.join(WD, "logs", "paper_benchmarks.log")
+    shell:
+        """
+        Rscript {input.script} \
+            --kind benchmarks \
+            --working_dir {params.wd} \
+            --aligners {params.aligners} \
+            --has_sbg {params.has_sbg} \
+            --n_expected_cells {params.n_exp} \
+            --bench_prefix {params.bench_prefix} &> {log}
+        """
