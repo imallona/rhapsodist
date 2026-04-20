@@ -89,17 +89,18 @@ jobs:
               - conda-forge
               - bioconda
 
-      - name: assert singularity and apptainer are absent
-        run: |
-          if command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1; then
-            echo "singularity/apptainer unexpectedly present on runner; test precondition broken"
-            exit 1
-          fi
-
       - name: dry-run must fail when sbg is enabled without singularity
         run: |
+          ## Restrict PATH to the conda env plus minimal system bins so
+          ## singularity/apptainer are hidden even if the runner image ships them.
+          guarded_path="$CONDA_PREFIX/bin:/usr/bin:/bin"
+          if PATH="$guarded_path" command -v singularity >/dev/null 2>&1 \
+             || PATH="$guarded_path" command -v apptainer >/dev/null 2>&1; then
+            echo "singularity/apptainer leaked into guarded PATH; test precondition broken"
+            exit 1
+          fi
           set +e
-          output=$(snakemake \
+          output=$(PATH="$guarded_path" snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
             --config "aligner=['sbg']" sbg_cwl=third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl \

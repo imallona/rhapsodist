@@ -78,8 +78,14 @@ _sampletag_reports = (
 _has_sbg = 'sbg' in get_aligners()
 _sbg_samples = get_sample_names() if _has_sbg else []
 
-if _has_sbg and not config.get('sbg_cwl'):
-    raise ValueError("'sbg' is in the aligner list but 'sbg_cwl' is not configured.")
+if _has_sbg:
+    _missing_cwl = [s for s in _sbg_samples if not get_sbg_cwl_by_name(s)]
+    if _missing_cwl:
+        raise ValueError(
+            "'sbg' is in the aligner list but 'sbg_cwl' is not configured "
+            "(globally or via 'uses.sbg_cwl') for sample(s): "
+            + ', '.join(_missing_cwl)
+        )
 
 if _has_sbg and not (shutil.which('singularity') or shutil.which('apptainer')):
     raise RuntimeError(
