@@ -12,7 +12,8 @@ By default alevin uses graph-based EM deduplication. This distributes multi-mapp
 
 ```mermaid
 flowchart TD
-    sra[SRA / local FASTQ R1 + R2] --> cutadapt[cutadapt barcode standardisation]
+    sra[SRA / local FASTQ R1 + R2] --> validate[validate bead version]
+    validate --> cutadapt[cutadapt barcode standardisation]
 
     ref_url[genome/GTF/transcriptome URLs] --> download[download and index references]
     download --> star_idx[STAR index]
@@ -28,6 +29,11 @@ flowchart TD
     star_idx --> starsolo
     salmon_idx --> alevin
     kallisto_idx --> kallisto
+
+    star_idx --> sbg_ref[SBG reference archive]
+    gtf[GTF] --> sbg_ref
+    sbg_ref -. or sbg_reference_url / sbg_reference_archive .- sbg_ref
+    sbg_ref --> sbg
 
     wl --> starsolo
     wl --> bustools[bustools correct + sort + count]
@@ -239,6 +245,8 @@ sbg_reference_url: "http://bd-rhapsody-public.s3-website-us-east-1.amazonaws.com
 # or
 sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
 ```
+
+sbg requires `singularity` or `apptainer` on `PATH` (not installable via conda). The workflow refuses to start otherwise.
 
 ## Contributors
 

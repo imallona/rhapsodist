@@ -32,3 +32,5 @@ curl -sL https://bitbucket.org/CRSwDev/cwl/raw/master/v3.0/rhapsody_pipeline_3.0
 ```
 
 Point `sbg_cwl` in your config to the version you want to use.
+
+Requires `singularity` or `apptainer` on `PATH` on the host: rhapsodist invokes the CWL via `cwl-runner --singularity`, and neither runtime is available from conda.
