@@ -72,6 +72,51 @@ jobs:
             --nolock \
             --cores 2
 
+  sbg-singularity-guard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: assert singularity and apptainer are absent
+        run: |
+          if command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1; then
+            echo "singularity/apptainer unexpectedly present on runner; test precondition broken"
+            exit 1
+          fi
+
+      - name: dry-run must fail when sbg is enabled without singularity
+        run: |
+          set +e
+          output=$(snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['sbg']" sbg_cwl=third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl \
+            --dry-run \
+            --nolock \
+            --cores 2 2>&1)
+          status=$?
+          echo "$output"
+          if [ $status -eq 0 ]; then
+            echo "expected snakemake to fail but it exited 0"
+            exit 1
+          fi
+          if ! echo "$output" | grep -q "neither 'singularity' nor 'apptainer'"; then
+            echo "expected singularity guard error message not found"
+            exit 1
+          fi
+
   integration-run:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
