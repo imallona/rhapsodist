@@ -59,5 +59,7 @@ has_sbg: true
 samples:
   - name: simulated
     uses:
-      bead_version: enhanced_v2
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: yes
       species: 'mouse'
