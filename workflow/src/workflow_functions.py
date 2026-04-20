@@ -62,43 +62,86 @@ def get_expected_cells_by_name(name):
         if config['samples'][i]['name'] == name:
              return(config['samples'][i]['uses']['expected_cells'])
 
-def detect_bead_version(cb_umi_path, n_reads=10000):
-    """Detect bead class from the first n_reads sequence reads of an R1 fastq.
-
-    Returns 'v1', 'enhanced', or 'unknown'.
-    v1 beads have linker ACTGGCCTGCGA at read positions 10-21 (0-indexed 9:21).
-    Enhanced beads have 4bp linker GTGA at positions 10-13, shifted by 0-3 bp
-    stagger (so the motif can sit anywhere in positions 10-16).
-    """
+def scan_r1_linkers(cb_umi_path, n_reads=10000):
+    """Single pass over the first n_reads of an R1 fastq. For each read, compute
+    hamming distance from the fixed linker regions of both v1 and enhanced
+    chemistries (taking the min across the 0-3bp diversity-insert stagger for
+    enhanced). Return a dict with the detected class plus exact-match fractions
+    and per-class error-count histograms for QC reporting.
+    v1 linkers: ACTGGCCTGCGA at positions 9-20 (12bp) and GGTAGCGGTGACA at 30-42 (13bp).
+    Enhanced linkers: GTGA at 9-12 and GACA at 22-25 (each shifted by 0-3bp stagger)."""
     import gzip as _gzip
-    count = 0
-    v1_count = 0
-    enh_count = 0
+    v1_l1 = 'ACTGGCCTGCGA'; v1_l1_start = 9
+    v1_l2 = 'GGTAGCGGTGACA'; v1_l2_start = 30
+    enh_l1 = 'GTGA'; enh_l1_start = 9
+    enh_l2 = 'GACA'; enh_l2_start = 22
+    v1_l2_end = v1_l2_start + len(v1_l2)
+    enh_l2_end = enh_l2_start + 3 + len(enh_l2)
+
+    def _hamming(a, b):
+        return sum(x != y for x, y in zip(a, b))
+
+    total = 0
+    v1_exact = 0
+    enh_exact = 0
+    v1_errs = {}
+    enh_errs = {}
     opener = _gzip.open if str(cb_umi_path).endswith('.gz') else open
     with opener(cb_umi_path, 'rt') as fh:
         for i, line in enumerate(fh):
             if i % 4 != 1:
                 continue
-            seq = line.strip()
-            count += 1
-            if count > n_reads:
+            if total >= n_reads:
                 break
-            if len(seq) >= 21 and seq[9:21] == 'ACTGGCCTGCGA':
-                v1_count += 1
-            else:
-                for offset in range(4):
-                    if len(seq) >= 13 + offset and seq[9 + offset:13 + offset] == 'GTGA':
-                        enh_count += 1
-                        break
-    if count == 0:
-        return 'unknown'
-    v1_frac = v1_count / count
-    enh_frac = enh_count / count
+            seq = line.strip()
+            total += 1
+
+            if len(seq) >= v1_l2_end:
+                e1 = _hamming(seq[v1_l1_start:v1_l1_start + len(v1_l1)], v1_l1)
+                e2 = _hamming(seq[v1_l2_start:v1_l2_start + len(v1_l2)], v1_l2)
+                v1_e = e1 + e2
+                v1_errs[v1_e] = v1_errs.get(v1_e, 0) + 1
+                if v1_e == 0:
+                    v1_exact += 1
+
+            best_enh = None
+            for offset in range(4):
+                s1 = enh_l1_start + offset
+                s2 = enh_l2_start + offset
+                if len(seq) >= s2 + len(enh_l2):
+                    e1 = _hamming(seq[s1:s1 + len(enh_l1)], enh_l1)
+                    e2 = _hamming(seq[s2:s2 + len(enh_l2)], enh_l2)
+                    total_e = e1 + e2
+                    if best_enh is None or total_e < best_enh:
+                        best_enh = total_e
+            if best_enh is not None:
+                enh_errs[best_enh] = enh_errs.get(best_enh, 0) + 1
+                if best_enh == 0:
+                    enh_exact += 1
+
+    if total == 0:
+        return {'class': 'unknown', 'n_reads': 0,
+                'v1_frac': 0.0, 'enh_frac': 0.0,
+                'v1_errors': {}, 'enh_errors': {}}
+
+    v1_frac = v1_exact / total
+    enh_frac = enh_exact / total
     if v1_frac >= enh_frac and v1_frac > 0.1:
-        return 'v1'
-    if enh_frac > 0.1:
-        return 'enhanced'
-    return 'unknown'
+        klass = 'v1'
+    elif enh_frac > 0.1:
+        klass = 'enhanced'
+    else:
+        klass = 'unknown'
+
+    return {'class': klass, 'n_reads': total,
+            'v1_frac': v1_frac, 'enh_frac': enh_frac,
+            'v1_errors': v1_errs, 'enh_errors': enh_errs}
+
+
+def detect_bead_version(cb_umi_path, n_reads=10000):
+    """Detect bead class ('v1', 'enhanced', or 'unknown') from the first n_reads
+    of an R1 fastq. Thin wrapper around scan_r1_linkers that returns only the class."""
+    return scan_r1_linkers(cb_umi_path, n_reads)['class']
 
 def _sample_uses(name):
     for s in config['samples']:

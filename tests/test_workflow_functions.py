@@ -463,3 +463,45 @@ def test_detect_bead_version_n_reads_limit(tmp_path):
     p = tmp_path / 'r1.fastq'
     _write_fastq(p, [V1_READ] * 5 + ['ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT'] * 1000)
     assert wf.detect_bead_version(p, n_reads=5) == 'v1'
+
+
+## scan_r1_linkers histogram output (linker QC) -------------------------------
+
+def test_scan_r1_linkers_v1_exact(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 100)
+    stats = wf.scan_r1_linkers(p, n_reads=100)
+    assert stats['class'] == 'v1'
+    assert stats['n_reads'] == 100
+    assert stats['v1_frac'] == 1.0
+    assert stats['v1_errors'] == {0: 100}
+
+
+def test_scan_r1_linkers_enhanced_exact(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [ENH_READ] * 50)
+    stats = wf.scan_r1_linkers(p, n_reads=50)
+    assert stats['class'] == 'enhanced'
+    assert stats['enh_frac'] == 1.0
+    assert stats['enh_errors'][0] == 50
+
+
+def test_scan_r1_linkers_v1_with_errors(tmp_path):
+    ## introduce a single substitution in the first v1 linker (position 9)
+    mutated = 'A' * 9 + 'TCTGGCCTGCGA' + 'C' * 9 + 'GGTAGCGGTGACA' + 'G' * 9 + 'T' * 8
+    p = tmp_path / 'r1.fastq'
+    _write_fastq(p, [V1_READ] * 80 + [mutated] * 20)
+    stats = wf.scan_r1_linkers(p, n_reads=100)
+    assert stats['n_reads'] == 100
+    assert stats['v1_errors'].get(0) == 80
+    assert stats['v1_errors'].get(1) == 20
+
+
+def test_scan_r1_linkers_empty(tmp_path):
+    p = tmp_path / 'r1.fastq'
+    p.write_text('')
+    stats = wf.scan_r1_linkers(p)
+    assert stats['class'] == 'unknown'
+    assert stats['n_reads'] == 0
+    assert stats['v1_errors'] == {}
+    assert stats['enh_errors'] == {}

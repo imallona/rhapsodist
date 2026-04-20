@@ -194,9 +194,7 @@ alevin_sketch: true
 
 ### Samples
 
-FASTQs can be local files or fetched from SRA by accession. Per-sample fields
-are all optional; bead chemistry is auto-detected from R1 linkers and the
-config values below are used as a QC check and for logging.
+FASTQs can be local files or fetched from SRA by accession. Per-sample fields are all optional; bead chemistry is auto-detected from R1 linkers and the config values below are used as a QC check and for logging.
 
 ```yaml
 samples:
@@ -232,20 +230,17 @@ samples:
 
 ### CB/UMI harmonization tolerance
 
-The R1 linker trim step runs cutadapt with `-e` set by `cb_umi_max_errors`
-(integer, default 0 = exact match). Raise it to accept mismatches in the
-fixed linker sequences on noisy reads.
+The R1 linker trim step runs cutadapt with `-e` set by `cb_umi_max_errors` (integer, default 0 = exact match). Raise it to accept mismatches in the fixed linker sequences on noisy reads.
 
 ```yaml
 cb_umi_max_errors: 1
 ```
 
+To pick a sensible value, use the per-sample linker QC report (`linker_qc/{sample}_linker_qc.html`). It scans the first 10000 R1 reads, computes the hamming distance of each read to the expected fixed linker sequences (for both v1 and enhanced chemistries), and reports the fraction of reads at each error count. The cumulative table maps a given `cb_umi_max_errors` value to the fraction of reads that would survive the cutadapt trim at that tolerance.
+
 ### Downsampling
 
-Set `downsample` to a percentage in (0, 100] to randomly subsample paired
-R1/R2 fastqs before trimming. Default 100 keeps all reads; the same seed
-(`downsample_seed`, default 42) is used for R1 and R2 so pairs stay
-aligned. Per-sample `uses.downsample` overrides the global key.
+Set `downsample` to a percentage in (0, 100] to randomly subsample paired R1/R2 fastqs before trimming. Default 100 keeps all reads; the same seed (`downsample_seed`, default 42) is used for R1 and R2 so pairs stay aligned. Per-sample `uses.downsample` overrides the global key.
 
 ```yaml
 downsample: 10           # use 10% of reads

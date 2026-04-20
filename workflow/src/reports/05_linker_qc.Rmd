@@ -1,0 +1,86 @@
+---
+title: "rhapsodist: linker QC"
+author: "Izaskun Mallona"
+output:
+  html_document:
+    toc: false
+    self_contained: true
+params:
+  sample: "sample"
+  tsv:    ""
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+    library(data.table)
+    library(ggplot2)
+})
+
+samp <- params$sample
+tsv  <- params$tsv
+
+raw   <- readLines(tsv)
+meta  <- raw[grepl("^#", raw)]
+body  <- raw[!grepl("^#", raw)]
+dt    <- fread(text = paste(body, collapse = "\n"))
+
+parse_meta <- function(meta, key) {
+    line <- grep(paste0("^# ", key, "\\t"), meta, value = TRUE)
+    if (length(line) == 0) return(NA_character_)
+    strsplit(line[1], "\t")[[1]][2]
+}
+detected_class <- parse_meta(meta, "detected_class")
+n_reads_scanned <- as.integer(parse_meta(meta, "n_reads"))
+```
+
+## Sample: `r samp`
+
+Auto-detected bead class: **`r detected_class`**.
+Reads scanned: `r format(n_reads_scanned, big.mark = ",")`.
+
+Each read's R1 was compared to the expected fixed linker sequences for both the
+`v1` and `enhanced` chemistries. The histogram below is the total hamming
+distance across the two linker regions per read (for enhanced the minimum
+across the 0-3 bp diversity-insert stagger is taken). Zero means an exact
+match; one means a single substitution somewhere in the fixed linker bases;
+two or more means the barcode call is likely unreliable for cutadapt with
+`-e 0`.
+
+```{r plot, fig.width=7, fig.height=4.5}
+if (nrow(dt) == 0) {
+    cat("No reads scanned; skipping plot.\n")
+} else {
+    max_err_to_plot <- min(max(dt$n_errors), 10)
+    plot_dt <- dt[n_errors <= max_err_to_plot]
+    ggplot(plot_dt, aes(x = factor(n_errors), y = frac, fill = class)) +
+        geom_col(position = position_dodge(width = 0.9)) +
+        geom_text(aes(label = scales::percent(frac, accuracy = 0.1)),
+                  position = position_dodge(width = 0.9),
+                  vjust = -0.3, size = 2.8) +
+        scale_fill_brewer(palette = "Set2") +
+        theme_bw() +
+        labs(title = paste0("Linker mismatches per read (", samp, ")"),
+             subtitle = "Hamming distance of R1 fixed linker regions to expected sequence",
+             x = "Linker mismatches per read (sum across both linkers)",
+             y = "Fraction of reads", fill = "Candidate class")
+}
+```
+
+## Cumulative fractions by tolerance
+
+Each row tells you the fraction of reads that would survive a cutadapt
+`-e N` trim at the linker level. Use this to pick `cb_umi_max_errors`.
+
+```{r table}
+if (nrow(dt) > 0) {
+    cum_tbl <- dt[, {
+        ord <- order(n_errors)
+        cf  <- cumsum(frac[ord])
+        .(n_errors = n_errors[ord], cumulative_frac = cf)
+    }, by = class]
+    out <- dcast(cum_tbl, n_errors ~ class, value.var = "cumulative_frac", fill = NA_real_)
+    out <- out[n_errors <= 5]
+    knitr::kable(out, digits = 4,
+                 caption = "Fraction of reads within N linker mismatches, per candidate class")
+}
+```
