@@ -29,6 +29,13 @@ aligners_arg = ",".join(ALIGNERS)
 has_sbg_arg = "true" if HAS_SBG else "false"
 MARKERS_FILE = config.get("biology_markers_file", "")
 BENCH_PREFIX = config.get("bench_prefix", "fig_sim")
+USE_CASE = config.get("use_case", "sendoel")
+_USE_CASE_FIG_STEMS = {"hela": "fig2_hela", "sendoel": "fig3_sendoel"}
+if USE_CASE not in _USE_CASE_FIG_STEMS:
+    raise ValueError(
+        "use_case must be one of %s, got %r"
+        % (sorted(_USE_CASE_FIG_STEMS), USE_CASE))
+BIOLOGY_FIG_STEM = _USE_CASE_FIG_STEMS[USE_CASE]
 
 
 def simulation_flag(sample):
@@ -36,7 +43,7 @@ def simulation_flag(sample):
 
 
 def sendoel_flag(sample):
-    return op.join(WD, "paper", sample, "fig2_sendoel.pdf")
+    return op.join(WD, "paper", sample, BIOLOGY_FIG_STEM + ".pdf")
 
 
 def benchmark_flag():
@@ -98,12 +105,13 @@ rule sendoel_figure:
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
-        op.join(WD, "paper", "{sample}", "fig2_sendoel.pdf")
+        op.join(WD, "paper", "{sample}", BIOLOGY_FIG_STEM + ".pdf")
     params:
         wd = WD,
         aligners = aligners_arg,
         has_sbg = has_sbg_arg,
         markers_file = MARKERS_FILE,
+        use_case = USE_CASE,
     log:
         op.join(WD, "logs", "paper_biology_{sample}.log")
     shell:
@@ -114,6 +122,7 @@ rule sendoel_figure:
             --sample {wildcards.sample} \
             --aligners {params.aligners} \
             --has_sbg {params.has_sbg} \
+            --use_case {params.use_case} \
             --markers_file '{params.markers_file}' &> {log}
         """
 

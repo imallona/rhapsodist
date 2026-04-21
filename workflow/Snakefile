@@ -1821,6 +1821,7 @@ rule render_biology_report:
         has_sbg = 'true' if _has_sbg else 'false',
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        use_case = config.get('use_case', 'sendoel'),
         guide_csv = lambda wildcards: (
             op.join(config['working_dir'], 'data', 'guides',
                     wildcards.sample + '_guides.csv.gz')
@@ -1844,6 +1845,7 @@ rule render_biology_report:
               aligners = "{params.aligners}",
               has_sbg = "{params.has_sbg}",
               markers_file = "{params.markers_file}",
+              use_case = "{params.use_case}",
               guide_csv = "{params.guide_csv}"))' &> {log}
         """
 

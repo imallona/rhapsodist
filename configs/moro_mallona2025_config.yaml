@@ -34,6 +34,12 @@ sjdbOverhang: 70
 
 skip_sampletags: true
 
+## Use case selects the biology panels and the paper figure filename.
+## hela: no marker celltype, swap in an ARI heatmap and a cell-cycle UMAP.
+## Writes <wd>/paper/<sample>/fig2_hela.pdf.
+use_case: hela
+run_biology_report: true
+
 aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
 has_sbg: true
 

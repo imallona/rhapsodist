@@ -15,6 +15,7 @@ params:
   has_sbg: false
   markers_file: ""
   guide_csv: ""
+  use_case: "sendoel"
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -49,18 +50,26 @@ wd = params$working_dir
 samp = params$sample
 aligners = strsplit(params$aligners, ",")[[1]]
 has_sbg = isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
+use_case = if (nzchar(params$use_case)) params$use_case else "sendoel"
+stopifnot(use_case %in% c("sendoel", "hela"))
+is_hela = identical(use_case, "hela")
 
-if (!nzchar(params$markers_file) || !file.exists(params$markers_file)) {
-    stop("markers_file not set or not found: '", params$markers_file,
-         "'. Set biology_markers_file in the config.")
+if (!is_hela) {
+    if (!nzchar(params$markers_file) || !file.exists(params$markers_file)) {
+        stop("markers_file not set or not found: '", params$markers_file,
+             "'. Set biology_markers_file in the config.")
+    }
+    marker_meta = read.table(params$markers_file, header = TRUE, sep = "\t",
+                             stringsAsFactors = FALSE)
+    markers = marker_meta$marker
+    stopifnot(!anyDuplicated(marker_meta$marker))
+} else {
+    marker_meta = data.frame(marker = character(0), cell_type = character(0),
+                             stringsAsFactors = FALSE)
+    markers = character(0)
 }
-marker_meta = read.table(params$markers_file, header = TRUE, sep = "\t",
-                         stringsAsFactors = FALSE)
-markers = marker_meta$marker
 
 if (has_sbg) aligners = c(aligners, "sbg")
-
-stopifnot(!anyDuplicated(marker_meta$marker))
 
 pipeline_colours = setNames(
     rep(cbbPalette, length.out = length(aligners)),
@@ -251,7 +260,98 @@ rm(sces)
 gc()
 ```
 
-```{r umap-assign-celltype}
+```{r cell-cycle-scoring}
+## Seurat ships Tirosh S and G2M gene lists as human symbols. For mouse we
+## Title-case them. Pick the organism by overlap with the first Seurat object's
+## rownames so sendoel and hela runs alike get cell cycle phase annotations.
+s_genes_hs = Seurat::cc.genes.updated.2019$s.genes
+g2m_genes_hs = Seurat::cc.genes.updated.2019$g2m.genes
+s_genes_mm = stringr::str_to_title(s_genes_hs)
+g2m_genes_mm = stringr::str_to_title(g2m_genes_hs)
+
+pick_cc_genes = function(so) {
+    rn = rownames(so)
+    hs_hits = length(intersect(rn, c(s_genes_hs, g2m_genes_hs)))
+    mm_hits = length(intersect(rn, c(s_genes_mm, g2m_genes_mm)))
+    if (hs_hits == 0 && mm_hits == 0) return(NULL)
+    if (hs_hits >= mm_hits) list(s = s_genes_hs, g2m = g2m_genes_hs, organism = "human")
+    else list(s = s_genes_mm, g2m = g2m_genes_mm, organism = "mouse")
+}
+
+cc_phase_rows = list()
+cc_score_rows = list()
+for (pipe in names(seurat_objects)) {
+    so = seurat_objects[[pipe]]
+    cc = pick_cc_genes(so)
+    if (is.null(cc)) {
+        warning(pipe, ": no cell-cycle marker overlap; skipping CellCycleScoring")
+        so$Phase = NA_character_
+        so$S.Score = NA_real_
+        so$G2M.Score = NA_real_
+    } else {
+        so = tryCatch(
+            Seurat::CellCycleScoring(so, s.features = cc$s,
+                                     g2m.features = cc$g2m, set.ident = FALSE),
+            error = function(e) {
+                warning(pipe, ": CellCycleScoring failed: ", conditionMessage(e))
+                so$Phase = NA_character_
+                so$S.Score = NA_real_
+                so$G2M.Score = NA_real_
+                so
+            })
+        cat(pipe, ": cell-cycle scored using", cc$organism, "markers\n")
+    }
+    seurat_objects[[pipe]] = so
+
+    ## refresh the seurat cache so downstream consumers see the cell cycle phase
+    cache_fn = file.path(wd, paste0(samp, "_biology_", pipe, "_seurat.rds"))
+    saveRDS(so, cache_fn)
+
+    cc_phase_rows[[pipe]] = data.table(pipeline = pipe,
+                                       phase = so$Phase)[!is.na(phase),
+                                                         .N, by = .(pipeline, phase)]
+    cc_score_rows[[pipe]] = data.table(pipeline = pipe,
+                                       barcode = colnames(so),
+                                       S.Score = so$S.Score,
+                                       G2M.Score = so$G2M.Score,
+                                       Phase = so$Phase)
+}
+cc_phase_dt = rbindlist(cc_phase_rows)
+cc_score_dt = rbindlist(cc_score_rows)
+fwrite(cc_phase_dt,
+       file.path(wd, paste0(samp, "_biology_cell_cycle_phase_counts.csv")))
+fwrite(cc_score_dt,
+       file.path(wd, paste0(samp, "_biology_cell_cycle_scores.csv")))
+saveRDS(cc_score_dt, file.path(wd, paste0(samp, "_biology_cell_cycle.rds")))
+```
+
+```{r cluster-prefixes-and-guides}
+## Always: set per-pipe cluster_prefixed and load guides (if any). Marker-based
+## celltype assignment is kept in the next chunk so hela runs can skip it.
+for (pipe in names(seurat_objects)) {
+    so = seurat_objects[[pipe]]
+    so$cluster_prefixed = paste0(pipe_prefix(pipe), "_", as.character(Idents(so)))
+    seurat_objects[[pipe]] = so
+}
+
+guide_csv = params$guide_csv
+has_guides = nchar(guide_csv) > 0 && file.exists(guide_csv)
+if (has_guides) {
+    guides = fread(guide_csv)
+    guides[, barcode_clean := gsub("_", "", barcode)]
+    setorder(guides, barcode_clean, -counts)
+    guides_top = guides[, .SD[1L], by = barcode_clean]
+    guides_top[, guide_gene := sub("_sgRNA.*", "", sgRNA)]
+
+    for (pipe in names(seurat_objects)) {
+        cells = colnames(seurat_objects[[pipe]])
+        seurat_objects[[pipe]]$guide_assigned = ifelse(
+            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
+    }
+}
+```
+
+```{r umap-assign-celltype, eval=!is_hela}
 ct_map = setNames(marker_meta$cell_type, marker_meta$marker)
 label_map = setNames(
     paste0(marker_meta$marker, " (", marker_meta$cell_type, ")"),
@@ -272,7 +372,6 @@ for (pipe in names(seurat_objects)) {
         names(assigned) = colnames(expr_mat)
         so$marker_celltype = assigned
     }
-    so$cluster_prefixed = paste0(pipe_prefix(pipe), "_", as.character(Idents(so)))
     seurat_objects[[pipe]] = so
 }
 
@@ -280,22 +379,6 @@ ct_levels = unname(c(label_map[sort(names(label_map))], "none"))
 ct_colours = setNames(
     c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
     ct_levels)
-
-guide_csv = params$guide_csv
-has_guides = nchar(guide_csv) > 0 && file.exists(guide_csv)
-if (has_guides) {
-    guides = fread(guide_csv)
-    guides[, barcode_clean := gsub("_", "", barcode)]
-    setorder(guides, barcode_clean, -counts)
-    guides_top = guides[, .SD[1L], by = barcode_clean]
-    guides_top[, guide_gene := sub("_sgRNA.*", "", sgRNA)]
-
-    for (pipe in names(seurat_objects)) {
-        cells = colnames(seurat_objects[[pipe]])
-        seurat_objects[[pipe]]$guide_assigned = ifelse(
-            cells %in% guides_top$barcode_clean, "assigned", "unassigned")
-    }
-}
 ```
 
 ```{r umap-clusters, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
@@ -333,7 +416,31 @@ pca_plots = lapply(names(seurat_objects), function(pipe) {
 print(wrap_plots(pca_plots, nrow = 1))
 ```
 
-```{r umap-celltype, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+```{r umap-cellcycle, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+any_phase = any(vapply(seurat_objects,
+                       function(so) any(!is.na(so$Phase)), logical(1)))
+if (any_phase) {
+    cat("### Cell cycle phase\n\n")
+    cat("Each cell is assigned G1, S, or G2M by Seurat::CellCycleScoring using",
+        "the Tirosh 2016 gene lists (human symbols, Title-cased for mouse).",
+        "The same UMAP is shown as above, coloured by cell cycle phase.\n\n")
+    phase_cols = c(G1 = "#999999", S = "#009E73", G2M = "#D55E00")
+    phase_plots = lapply(names(seurat_objects), function(pipe) {
+        so = seurat_objects[[pipe]]
+        ph = factor(as.character(so$Phase), levels = c("G1", "S", "G2M"))
+        DimPlot(so, reduction = "umap", group.by = "Phase",
+                pt.size = 0.3, cols = phase_cols,
+                shuffle = TRUE, seed = 1) +
+            theme_ng() +
+            labs(title = pipe, colour = "Cell cycle phase")
+    })
+    print(wrap_plots(phase_plots, nrow = 1) + plot_layout(guides = "collect"))
+} else {
+    cat("Cell cycle phase not assigned (no Tirosh gene overlap).\n")
+}
+```
+
+```{r umap-celltype, eval=!is_hela, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
 cat("### Cell type (marker-based)\n\n")
 cat("For each cell, the marker with the highest log-normalised expression is",
     "taken and the cell is labelled with that marker's cell type. Cells with",
@@ -378,7 +485,7 @@ the fraction of cells in the cluster with raw count above zero; colour is the
 scaled mean log-normalised expression (Seurat default). Clusters use the
 per-pipeline prefix (a_N, s_N, k_N).
 
-```{r umap-marker-dotplot, results='asis', fig.width=ng_fig_size(1, 1, panel_mm = 80)$w, fig.height=ng_fig_size(1, 1, panel_mm = 80)$h}
+```{r umap-marker-dotplot, eval=!is_hela, results='asis', fig.width=ng_fig_size(1, 1, panel_mm = 80)$w, fig.height=ng_fig_size(1, 1, panel_mm = 80)$h}
 for (pipe in names(seurat_objects)) {
     cat("####", pipe, "\n\n")
     so = seurat_objects[[pipe]]
@@ -404,7 +511,7 @@ for (pipe in names(seurat_objects)) {
 
 ### Marker expression {.tabset}
 
-```{r umap-markers, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+```{r umap-markers, eval=!is_hela, results='asis', fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
 for (i in seq_len(nrow(marker_meta))) {
     marker = marker_meta$marker[i]
     cell_type = marker_meta$cell_type[i]
@@ -502,7 +609,7 @@ if (has_guides) {
 A cell is counted as expressing a marker if its raw count exceeds zero. Mean
 expression is computed only over expressing cells using log-normalised values.
 
-```{r marker-expression-table}
+```{r marker-expression-table, eval=!is_hela}
 marker_expr = rbindlist(lapply(names(seurat_objects), function(pipe) {
     so = seurat_objects[[pipe]]
     n_total = ncol(so)
@@ -555,13 +662,19 @@ saveRDS(cb_umi_dt, file.path(wd, paste0(samp, "_biology_cb_umi.rds")))
 
 cluster_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
     so = seurat_objects[[pipe]]
+    ct = if (!is.null(so$marker_celltype)) as.character(so$marker_celltype)
+         else rep(NA_character_, ncol(so))
     data.table(pipeline = pipe,
                barcode = colnames(so),
                cluster = as.character(Idents(so)),
                cluster_prefixed = so$cluster_prefixed,
-               celltype = as.character(so$marker_celltype))
+               celltype = ct,
+               Phase = as.character(so$Phase),
+               S.Score = so$S.Score,
+               G2M.Score = so$G2M.Score)
 }))
 saveRDS(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.rds")))
+fwrite(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.csv")))
 
 marker_sets = lapply(names(seurat_objects), function(pipe) {
     so = seurat_objects[[pipe]]
@@ -762,7 +875,7 @@ Total cells called by each pipeline. Differences come from each aligner's
 barcode calling and filtering, not from biology; these numbers are the denominator
 for the percentage calculations below.
 
-```{r cell-recovery, fig.width=ng_fig_size(n_pipelines, 1)$w, fig.height=ng_fig_size(n_pipelines, 1)$h}
+```{r cell-recovery, eval=!is_hela, fig.width=ng_fig_size(n_pipelines, 1)$w, fig.height=ng_fig_size(n_pipelines, 1)$h}
 ncell_df = unique(marker_expr[, .(pipeline, n_total_cells)])
 
 ggplot(ncell_df, aes(x = pipeline, y = n_total_cells, fill = pipeline)) +
@@ -781,7 +894,7 @@ Per-pipeline table of cells positive for each marker (raw count above zero) and
 mean log-normalised expression over those positive cells. Table above, bars
 below.
 
-```{r marker-count-table, results='asis'}
+```{r marker-count-table, eval=!is_hela, results='asis'}
 print(knitr::kable(
     marker_expr[order(marker, pipeline)],
     caption = paste(
@@ -795,7 +908,7 @@ Number of cells with at least one UMI for each marker, split by pipeline. A
 higher count does not always mean better detection; it can also come from more
 cells being called or spurious alignment.
 
-```{r marker-count-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 3, panel_mm = 25)$h}
+```{r marker-count-plot, eval=!is_hela, fig.width=ng_fig_size(max(length(markers), 1L), 1, panel_mm = 25)$w, fig.height=ng_fig_size(max(length(markers), 1L), 3, panel_mm = 25)$h}
 expr_ok = marker_expr[!is.na(n_expressing)]
 expr_ok[, marker_ct := paste0(marker, "\n", cell_type)]
 
@@ -811,7 +924,7 @@ Fraction of cells that are positive for each marker. Dividing by cell count
 removes the effect of each pipeline calling different numbers of cells, so the
 pipelines can be compared on the same scale.
 
-```{r marker-pct-plot, fig.width=ng_fig_size(length(markers), 1, panel_mm = 25)$w, fig.height=ng_fig_size(length(markers), 3, panel_mm = 25)$h}
+```{r marker-pct-plot, eval=!is_hela, fig.width=ng_fig_size(max(length(markers), 1L), 1, panel_mm = 25)$w, fig.height=ng_fig_size(max(length(markers), 1L), 3, panel_mm = 25)$h}
 ggplot(expr_ok, aes(x = marker_ct, y = pct_expressing, fill = pipeline)) +
     geom_col(position = "dodge") +
     scale_fill_manual(values = pipeline_colours) +
@@ -825,7 +938,7 @@ ggplot(expr_ok, aes(x = marker_ct, y = pct_expressing, fill = pipeline)) +
 For each pipeline, cells are grouped by which panel markers they express (raw
 count above zero). Bars show the number of cells in each intersection.
 
-```{r marker-upset, results='asis', fig.width=7, fig.height=5}
+```{r marker-upset, eval=!is_hela, results='asis', fig.width=7, fig.height=5}
 for (pipe in names(marker_sets)) {
     cat("####", pipe, "\n\n")
     ms = marker_sets[[pipe]]
@@ -856,7 +969,7 @@ pipeline's cells in that combination, so pipelines with different totals are
 directly comparable. Cells with zero counts across all markers are labelled
 "none".
 
-```{r marker-combo-bar, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
+```{r marker-combo-bar, eval=!is_hela, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
 combo_dt = rbindlist(lapply(names(marker_sets), function(pipe) {
     ms = marker_sets[[pipe]]
     if (length(ms$present) == 0 || is.null(ms$counts_mat)) {
@@ -905,7 +1018,7 @@ log-normalised expression in those cells. A small bright dot means the marker is
 rare but highly expressed; a large pale dot means it is widespread but lowly
 expressed. Rows are pipelines; columns are markers.
 
-```{r dotplot, fig.width=ng_fig_size(length(markers), n_pipelines, panel_mm = 20)$w, fig.height=ng_fig_size(length(markers), n_pipelines, panel_mm = 20)$h}
+```{r dotplot, eval=!is_hela, fig.width=ng_fig_size(max(length(markers), 1L), n_pipelines, panel_mm = 20)$w, fig.height=ng_fig_size(max(length(markers), 1L), n_pipelines, panel_mm = 20)$h}
 expr_ok[, marker_label := paste0(marker, "\n", cell_type)]
 
 ggplot(expr_ok,
@@ -1015,7 +1128,7 @@ is shared across pipelines (one label per marker, plus "none"), ARI is computed
 directly on these labels without Hungarian relabelling. The confusion matrix
 between the two pipelines is shown for each pair.
 
-```{r celltype-ari, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w * 2, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
+```{r celltype-ari, eval=!is_hela, fig.width=ng_fig_size(3, 1, panel_mm = 70)$w * 2, fig.height=ng_fig_size(3, 1, panel_mm = 70)$h * 2}
 if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
     cat("Cell-type ARI skipped: need at least 2 pipelines.\n")
 } else {

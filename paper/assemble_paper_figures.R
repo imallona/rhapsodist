@@ -51,6 +51,9 @@ parse_args = function() {
     p$add_argument("--n_expected_cells", type = "integer", default = 0L)
     p$add_argument("--markers_file", default = "")
     p$add_argument("--bench_prefix", default = "fig_sim")
+    p$add_argument("--use_case",
+                   choices = c("sendoel", "hela"),
+                   default = "sendoel")
     p$parse_args()
 }
 
@@ -448,6 +451,10 @@ run_biology = function(opt) {
     aligners = strsplit(opt$aligners, ",")[[1]]
     if (isTRUE(as.logical(opt$has_sbg))) aligners = c(aligners, "sbg")
     pdir = setup_paper_dir(wd, samp)
+    use_case = if (is.null(opt$use_case)) "sendoel" else opt$use_case
+    stopifnot(use_case %in% c("sendoel", "hela"))
+    is_hela = identical(use_case, "hela")
+    fig_stem = switch(use_case, hela = "fig2_hela", sendoel = "fig3_sendoel")
 
     biords = function(tag) file.path(wd, paste0(samp, "_biology_", tag, ".rds"))
 
@@ -732,10 +739,12 @@ run_biology = function(opt) {
         draw_confusion("celltype",         "bio_celltype_confusion", "cell type")
     }
 
-    ## UMAP coloured by marker cell type, one panel per pipeline. Requires
-    ## Seurat caches. The Seurat caches are saved by 04_biology.Rmd before
-    ## marker_celltype is assigned, so we pull celltype from the clusters RDS
-    ## (pipeline, barcode, celltype) and join by barcode. Rasterise points.
+    ## UMAP panels. For the sendoel use case, D is celltype UMAP and E is
+    ## cluster UMAP. For the hela use case (no marker celltype on a clonal
+    ## line) D is an ARI heatmap of cluster concordance across aligners and
+    ## E is a UMAP coloured by Seurat cell cycle phase. The Seurat caches
+    ## are saved by 04_biology.Rmd; the per-barcode table with cluster,
+    ## celltype, and cell cycle phase columns is in the clusters RDS.
     seu_fns = setNames(file.path(wd, sprintf("%s_biology_%s_seurat.rds", samp,
                                              aligners)), aligners)
     clusters_fn = biords("clusters")
@@ -744,65 +753,159 @@ run_biology = function(opt) {
         cbbPalette = c("#E69F00", "#56B4E9", "#009E73",
                        "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
         clusters_dt = as.data.table(readRDS(clusters_fn))
-        ct_levels = c(sort(setdiff(unique(clusters_dt$celltype), "none")), "none")
-        ct_colours = setNames(
-            c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
-            ct_levels)
-        panels = lapply(names(seu_fns), function(pipe) {
-            so = readRDS(seu_fns[[pipe]])
-            emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-            colnames(emb) = c("UMAP_1", "UMAP_2")
-            emb$barcode = rownames(emb)
-            ct_map = clusters_dt[pipeline == pipe, setNames(celltype, barcode)]
-            emb$celltype = factor(
-                ifelse(emb$barcode %in% names(ct_map), ct_map[emb$barcode], "none"),
-                levels = ct_levels)
-            ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
-                pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                scale_colour_manual(values = ct_colours, drop = FALSE) +
-                guides(colour = guide_legend(
-                    override.aes = list(size = 2.5, alpha = 1))) +
-                theme_bw() + theme(aspect.ratio = 1) +
-                labs(title = pipe, colour = "cell type")
-        })
-        if (length(panels) > 0) {
-            p_umap = wrap_plots(panels, nrow = 1) +
-                plot_layout(guides = "collect") +
-                plot_annotation(title = "    Cell embeddings by annotation",
-                                theme = theme(plot.title = element_text(
-                                    size = 11, face = "plain",
-                                    margin = margin(l = 30, b = 4))))
-            pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
-                        width = 3.2 * length(panels), height = 3.2)
-        }
 
-        ## UMAP coloured by Louvain cluster, one panel per pipeline.
-        cl_panels = lapply(names(seu_fns), function(pipe) {
-            so = readRDS(seu_fns[[pipe]])
-            emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-            colnames(emb) = c("UMAP_1", "UMAP_2")
-            emb$barcode = rownames(emb)
-            cl_map = clusters_dt[pipeline == pipe,
-                                 setNames(as.character(cluster_prefixed), barcode)]
-            emb$cluster = factor(
-                ifelse(emb$barcode %in% names(cl_map), cl_map[emb$barcode], NA))
-            ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
-                pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                guides(colour = guide_legend(ncol = 2,
-                                             override.aes = list(size = 1.5))) +
-                theme_bw() + theme(aspect.ratio = 1, legend.position = "right",
-                                   legend.key.size = grid::unit(0.3, "cm"),
-                                   legend.text = element_text(size = 7)) +
-                labs(title = pipe, colour = "Louvain")
-        })
-        if (length(cl_panels) > 0) {
-            p_cl = wrap_plots(cl_panels, nrow = 1) +
-                plot_annotation(title = "    Cell embeddings by cluster",
-                                theme = theme(plot.title = element_text(
-                                    size = 11, face = "plain",
-                                    margin = margin(l = 30, t = 2, b = 6))))
-            pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
-                        width = 3.6 * length(cl_panels), height = 3.2)
+        if (!is_hela) {
+            ct_levels = c(sort(setdiff(unique(clusters_dt$celltype), "none")),
+                          "none")
+            ct_colours = setNames(
+                c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
+                ct_levels)
+            panels = lapply(names(seu_fns), function(pipe) {
+                so = readRDS(seu_fns[[pipe]])
+                emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+                colnames(emb) = c("UMAP_1", "UMAP_2")
+                emb$barcode = rownames(emb)
+                ct_map = clusters_dt[pipeline == pipe,
+                                     setNames(celltype, barcode)]
+                emb$celltype = factor(
+                    ifelse(emb$barcode %in% names(ct_map),
+                           ct_map[emb$barcode], "none"),
+                    levels = ct_levels)
+                ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
+                    pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                    scale_colour_manual(values = ct_colours, drop = FALSE) +
+                    guides(colour = guide_legend(
+                        override.aes = list(size = 2.5, alpha = 1))) +
+                    theme_bw() + theme(aspect.ratio = 1) +
+                    labs(title = pipe, colour = "cell type")
+            })
+            if (length(panels) > 0) {
+                p_umap = wrap_plots(panels, nrow = 1) +
+                    plot_layout(guides = "collect") +
+                    plot_annotation(title = "    Cell embeddings by annotation",
+                                    theme = theme(plot.title = element_text(
+                                        size = 11, face = "plain",
+                                        margin = margin(l = 30, b = 4))))
+                pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
+                            width = 3.2 * length(panels), height = 3.2)
+            }
+
+            cl_panels = lapply(names(seu_fns), function(pipe) {
+                so = readRDS(seu_fns[[pipe]])
+                emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+                colnames(emb) = c("UMAP_1", "UMAP_2")
+                emb$barcode = rownames(emb)
+                cl_map = clusters_dt[pipeline == pipe,
+                                     setNames(as.character(cluster_prefixed),
+                                              barcode)]
+                emb$cluster = factor(
+                    ifelse(emb$barcode %in% names(cl_map),
+                           cl_map[emb$barcode], NA))
+                ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
+                    pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                    guides(colour = guide_legend(ncol = 2,
+                                                 override.aes = list(size = 1.5))) +
+                    theme_bw() + theme(aspect.ratio = 1,
+                                       legend.position = "right",
+                                       legend.key.size = grid::unit(0.3, "cm"),
+                                       legend.text = element_text(size = 7)) +
+                    labs(title = pipe, colour = "Louvain")
+            })
+            if (length(cl_panels) > 0) {
+                p_cl = wrap_plots(cl_panels, nrow = 1) +
+                    plot_annotation(title = "    Cell embeddings by cluster",
+                                    theme = theme(plot.title = element_text(
+                                        size = 11, face = "plain",
+                                        margin = margin(l = 30, t = 2, b = 6))))
+                pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
+                            width = 3.6 * length(cl_panels), height = 3.2)
+            }
+        } else {
+            ## hela use case: panel D is the symmetric cluster-ARI heatmap.
+            pipes_sorted = sort(unique(clusters_dt$pipeline))
+            if (requireNamespace("mclust", quietly = TRUE) &&
+                length(pipes_sorted) >= 2) {
+                pair_grid = expand.grid(a = pipes_sorted, b = pipes_sorted,
+                                        stringsAsFactors = FALSE)
+                ari_rows = rbindlist(lapply(seq_len(nrow(pair_grid)),
+                                            function(i) {
+                    aa = pair_grid$a[i]; bb = pair_grid$b[i]
+                    d1 = clusters_dt[pipeline == aa,
+                                     .(barcode, cl = cluster_prefixed)]
+                    d2 = clusters_dt[pipeline == bb,
+                                     .(barcode, cl = cluster_prefixed)]
+                    sh = merge(d1, d2, by = "barcode",
+                               suffixes = c(".a", ".b"))
+                    ari = if (nrow(sh) < 10) NA_real_
+                          else mclust::adjustedRandIndex(sh$cl.a, sh$cl.b)
+                    data.table(pipeline1 = aa, pipeline2 = bb, ari = ari)
+                }))
+                pp_save_csv(ari_rows, pdir, "bio_cluster_ari_matrix")
+                ari_lo = suppressWarnings(min(ari_rows$ari, na.rm = TRUE))
+                if (!is.finite(ari_lo)) ari_lo = 0
+                p_ari_heat = ggplot(ari_rows,
+                                    aes(pipeline1, pipeline2, fill = ari)) +
+                    geom_tile(colour = "white") +
+                    geom_text(aes(label = ifelse(is.na(ari), "",
+                                                 sprintf("%.3f", ari))),
+                              size = 3) +
+                    scale_fill_viridis_c(option = "viridis", direction = 1,
+                                         limits = c(ari_lo, 1),
+                                         alpha = 0.75, na.value = "grey90") +
+                    theme_bw() +
+                    theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                          aspect.ratio = 1,
+                          plot.title = element_text(size = 10,
+                                                    margin = margin(b = 2))) +
+                    labs(x = "pipeline", y = "pipeline", fill = "ARI",
+                         title = "Cluster ARI (prefixed Louvain)")
+                pp_save_pdf(p_ari_heat, pdir, "bio_cluster_ari_matrix",
+                            width = 5, height = 4)
+                p_umap = patchwork::plot_spacer() + p_ari_heat +
+                    patchwork::plot_spacer() +
+                    patchwork::plot_layout(widths = c(1, 2, 1))
+            }
+
+            ## hela use case: panel E is UMAP coloured by cell cycle phase.
+            if ("Phase" %in% colnames(clusters_dt) &&
+                any(!is.na(clusters_dt$Phase))) {
+                phase_levels = c("G1", "S", "G2M")
+                phase_colours = setNames(c("#1B9E77", "#D95F02", "#7570B3"),
+                                         phase_levels)
+                cc_panels = lapply(names(seu_fns), function(pipe) {
+                    so = readRDS(seu_fns[[pipe]])
+                    emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+                    colnames(emb) = c("UMAP_1", "UMAP_2")
+                    emb$barcode = rownames(emb)
+                    ph_map = clusters_dt[pipeline == pipe,
+                                         setNames(as.character(Phase),
+                                                  barcode)]
+                    emb$phase = factor(
+                        ifelse(emb$barcode %in% names(ph_map),
+                               ph_map[emb$barcode], NA),
+                        levels = phase_levels)
+                    ggplot(emb, aes(UMAP_1, UMAP_2, colour = phase)) +
+                        pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                        scale_colour_manual(values = phase_colours,
+                                            na.value = "grey85",
+                                            drop = FALSE) +
+                        guides(colour = guide_legend(
+                            override.aes = list(size = 2.5, alpha = 1))) +
+                        theme_bw() + theme(aspect.ratio = 1) +
+                        labs(title = pipe, colour = "Cell cycle phase")
+                })
+                if (length(cc_panels) > 0) {
+                    p_cl = wrap_plots(cc_panels, nrow = 1) +
+                        plot_layout(guides = "collect") +
+                        plot_annotation(
+                            title = "    Cell embeddings by cell-cycle phase",
+                            theme = theme(plot.title = element_text(
+                                size = 11, face = "plain",
+                                margin = margin(l = 30, t = 2, b = 6))))
+                    pp_save_pdf(p_cl, pdir, "bio_umap_phase",
+                                width = 3.6 * length(cc_panels), height = 3.2)
+                }
+            }
         }
     }
 
@@ -963,7 +1066,7 @@ run_biology = function(opt) {
                                  heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
         patchwork::plot_annotation(tag_levels = "A") &
         paper_shared_theme
-    pp_save_pdf(fig2, pdir, "fig2_sendoel", width = 10.5, height = 14)
+    pp_save_pdf(fig2, pdir, fig_stem, width = 10.5, height = 14)
 
     message("biology materials written to ", pdir)
 }
