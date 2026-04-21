@@ -1515,31 +1515,68 @@ for _sbg_sample in _sbg_samples:
                             'rhapsody_reference.tar.gz')
         _ref_input = [_ref_path]
 
-    ## BD Rhapsody's QualCLAlign rejects fastq names that do not follow the
-    ## Illumina convention <sample>_S1_L001_R{1,2}_001.fastq.gz. Stage the inputs
-    ## under BD-compliant symlink names before invoking the CWL workflow.
-    _stage_dir = op.join(config['working_dir'], 'sbg', _sbg_sample, 'fastq_stage')
-    _staged_r1 = op.join(_stage_dir, f'{_sbg_sample}_S1_L001_R1_001.fastq.gz')
-    _staged_r2 = op.join(_stage_dir, f'{_sbg_sample}_S1_L001_R2_001.fastq.gz')
+    ## BD Rhapsody's QualCLAlign Go binary rejects a fastq if its first read
+    ## header lacks the CASAVA 1.8 mate tag (' 1:N:0:X' for R1, ' 2:N:0:X' for
+    ## R2), reporting a misleading "R1/R2 file does not exist: <stem>" error.
+    ## fasterq-dump --split-files emits SRA-style headers like
+    ##   @SRR35038871.6 LH00289:...:1016 length=61
+    ## with no mate tag. This rule rewrites such headers into CASAVA 1.8 form
+    ## while leaving already-compliant headers untouched. It reads whatever
+    ## get_cbumi_by_name/get_cdna_by_name resolve to (raw or downsampled) so
+    ## upstream rules are not re-triggered.
+    _sbg_fq_dir = op.join(config['working_dir'], 'sbg', _sbg_sample, 'fastq')
+    _sbg_fq_r1 = op.join(_sbg_fq_dir, f'{_sbg_sample}_R1.fastq.gz')
+    _sbg_fq_r2 = op.join(_sbg_fq_dir, f'{_sbg_sample}_R2.fastq.gz')
 
     rule:
-        name: f"stage_sbg_fastqs_{_sbg_sample}"
+        name: f"rewrite_sbg_fastq_headers_{_sbg_sample}"
         input:
             r1 = get_cbumi_by_name(_sbg_sample),
             r2 = get_cdna_by_name(_sbg_sample)
         output:
-            r1 = _staged_r1,
-            r2 = _staged_r2
+            r1 = _sbg_fq_r1,
+            r2 = _sbg_fq_r2
+        threads:
+            config['nthreads']
+        log:
+            op.join(config['working_dir'], 'logs',
+                    f'rewrite_sbg_fastq_headers_{_sbg_sample}.log')
         shell:
-            ## Hardlink, not symlink: cwl-runner resolves symlinks to their real
-            ## path and would stage the file under the original (non-BD) basename,
-            ## defeating the rename. Hardlinks share the inode but keep the new
-            ## basename, so cwltool mounts the file with the BD-compliant name.
-            """
+            r"""
+            set -euo pipefail
             mkdir -p $(dirname {output.r1})
-            rm -f {output.r1} {output.r2}
-            ln "$(realpath {input.r1})" {output.r1}
-            ln "$(realpath {input.r2})" {output.r2}
+
+            ## split pigz workers across the two mate pipelines so they run in parallel
+            T=$(( {threads} / 2 ))
+            if [ "$T" -lt 1 ]; then T=1; fi
+
+            rewrite() {{
+                local src="$1" dst="$2" mate="$3" t="$4"
+                pigz -dc -p 1 "$src" | \
+                    awk -v MATE="$mate" '
+                        NR % 4 == 1 {{
+                            if ($0 ~ / [12]:[NY]:/) {{ print; next }}
+                            sub(/^@[SED]RR[0-9]+\.[0-9]+ /, "@")
+                            sub(/ length=.*$/, "")
+                            print $0 " " MATE ":N:0:0"
+                            next
+                        }}
+                        {{ print }}
+                    ' | pigz -p "$t" > "$dst"
+            }}
+
+            rewrite {input.r1} {output.r1} 1 "$T" 2>> {log} &
+            PID1=$!
+            rewrite {input.r2} {output.r2} 2 "$T" 2>> {log} &
+            PID2=$!
+
+            S1=0; S2=0
+            wait "$PID1" || S1=$?
+            wait "$PID2" || S2=$?
+            if [ "$S1" -ne 0 ] || [ "$S2" -ne 0 ]; then
+                echo "rewrite failed: R1=$S1 R2=$S2" >> {log}
+                exit 1
+            fi
             """
 
     rule:
@@ -1547,8 +1584,8 @@ for _sbg_sample in _sbg_samples:
         conda:
             op.join(workflow.basedir, 'envs', 'sbg.yaml')
         input:
-            r1 = _staged_r1,
-            r2 = _staged_r2,
+            r1 = _sbg_fq_r1,
+            r2 = _sbg_fq_r2,
             ref = _ref_input
         output:
             matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
