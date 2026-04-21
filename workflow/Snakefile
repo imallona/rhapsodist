@@ -1531,10 +1531,15 @@ for _sbg_sample in _sbg_samples:
             r1 = _staged_r1,
             r2 = _staged_r2
         shell:
+            ## Hardlink, not symlink: cwl-runner resolves symlinks to their real
+            ## path and would stage the file under the original (non-BD) basename,
+            ## defeating the rename. Hardlinks share the inode but keep the new
+            ## basename, so cwltool mounts the file with the BD-compliant name.
             """
             mkdir -p $(dirname {output.r1})
-            ln -sf "$(realpath {input.r1})" {output.r1}
-            ln -sf "$(realpath {input.r2})" {output.r2}
+            rm -f {output.r1} {output.r2}
+            ln "$(realpath {input.r1})" {output.r1}
+            ln "$(realpath {input.r2})" {output.r2}
             """
 
     rule:
