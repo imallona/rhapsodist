@@ -42,6 +42,8 @@ skip_sampletags: true
 run_biology_report: true
 
 aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+has_sbg: true
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
 
 samples:
   - name: sample_16_wta_p60
