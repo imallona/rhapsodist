@@ -1515,13 +1515,35 @@ for _sbg_sample in _sbg_samples:
                             'rhapsody_reference.tar.gz')
         _ref_input = [_ref_path]
 
+    ## BD Rhapsody's QualCLAlign rejects fastq names that do not follow the
+    ## Illumina convention <sample>_S1_L001_R{1,2}_001.fastq.gz. Stage the inputs
+    ## under BD-compliant symlink names before invoking the CWL workflow.
+    _stage_dir = op.join(config['working_dir'], 'sbg', _sbg_sample, 'fastq_stage')
+    _staged_r1 = op.join(_stage_dir, f'{_sbg_sample}_S1_L001_R1_001.fastq.gz')
+    _staged_r2 = op.join(_stage_dir, f'{_sbg_sample}_S1_L001_R2_001.fastq.gz')
+
+    rule:
+        name: f"stage_sbg_fastqs_{_sbg_sample}"
+        input:
+            r1 = get_cbumi_by_name(_sbg_sample),
+            r2 = get_cdna_by_name(_sbg_sample)
+        output:
+            r1 = _staged_r1,
+            r2 = _staged_r2
+        shell:
+            """
+            mkdir -p $(dirname {output.r1})
+            ln -sf "$(realpath {input.r1})" {output.r1}
+            ln -sf "$(realpath {input.r2})" {output.r2}
+            """
+
     rule:
         name: f"run_sbg_cwl_{_sbg_sample}"
         conda:
             op.join(workflow.basedir, 'envs', 'sbg.yaml')
         input:
-            r1 = get_cbumi_by_name(_sbg_sample),
-            r2 = get_cdna_by_name(_sbg_sample),
+            r1 = _staged_r1,
+            r2 = _staged_r2,
             ref = _ref_input
         output:
             matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
@@ -1535,6 +1557,8 @@ for _sbg_sample in _sbg_samples:
             sample_tags_version = get_sbg_sample_tags_version_by_name(_sbg_sample) or '',
             ref_path = _ref_path,
             sif_cache = _repo_root
+        threads:
+            config['nthreads']
         log:
             op.join(config['working_dir'], 'logs', f'sbg_cwl_{_sbg_sample}.log')
         benchmark:
@@ -1562,6 +1586,9 @@ Sample_Tags_Version: PLACEHOLDER_STV
 ## switch to bwa-mem2 for long reads, which fails when the reference
 ## archive has no bwa-mem2 index (only a STAR index).
 Long_Reads: false
+
+## Cap internal parallelism to what the Snakemake rule was granted.
+Maximum_Threads: {threads}
 ENDOFYML
 
             sed -i "s|PLACEHOLDER_R1|$(realpath {input.r1})|" "$INPUT_YML"
