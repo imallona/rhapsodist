@@ -662,16 +662,17 @@ saveRDS(cb_umi_dt, file.path(wd, paste0(samp, "_biology_cb_umi.rds")))
 
 cluster_dt = rbindlist(lapply(names(seurat_objects), function(pipe) {
     so = seurat_objects[[pipe]]
-    ct = if (!is.null(so$marker_celltype)) as.character(so$marker_celltype)
-         else rep(NA_character_, ncol(so))
+    md = so[[]]
+    mc = md$marker_celltype
+    ct = if (!is.null(mc)) as.character(mc) else rep(NA_character_, ncol(so))
     data.table(pipeline = pipe,
                barcode = colnames(so),
                cluster = as.character(Idents(so)),
                cluster_prefixed = so$cluster_prefixed,
                celltype = ct,
-               Phase = as.character(so$Phase),
-               S.Score = so$S.Score,
-               G2M.Score = so$G2M.Score)
+               Phase = as.character(md$Phase),
+               S.Score = md$S.Score,
+               G2M.Score = md$G2M.Score)
 }))
 saveRDS(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.rds")))
 fwrite(cluster_dt, file.path(wd, paste0(samp, "_biology_clusters.csv")))
