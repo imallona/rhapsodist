@@ -41,7 +41,7 @@ skip_sampletags: true
 
 run_biology_report: true
 
-aligner: ['starsolo', 'kallisto', 'alevin']
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
 
 samples:
   - name: sample_16_wta_p60
