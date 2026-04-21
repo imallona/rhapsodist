@@ -35,15 +35,15 @@ if USE_CASE not in _USE_CASE_FIG_STEMS:
     raise ValueError(
         "use_case must be one of %s, got %r"
         % (sorted(_USE_CASE_FIG_STEMS), USE_CASE))
-BIOLOGY_FIG_STEM = _USE_CASE_FIG_STEMS[USE_CASE]
+EXPERIMENTAL_FIG_STEM = _USE_CASE_FIG_STEMS[USE_CASE]
 
 
 def simulation_flag(sample):
     return op.join(WD, "paper", sample, "sim_cell_counts.csv")
 
 
-def sendoel_flag(sample):
-    return op.join(WD, "paper", sample, BIOLOGY_FIG_STEM + ".pdf")
+def experimental_flag(sample):
+    return op.join(WD, "paper", sample, EXPERIMENTAL_FIG_STEM + ".pdf")
 
 
 def benchmark_flag():
@@ -56,7 +56,7 @@ def all_targets():
         if IS_SIM:
             targets.append(simulation_flag(s))
         else:
-            targets.append(sendoel_flag(s))
+            targets.append(experimental_flag(s))
     return targets
 
 
@@ -96,7 +96,7 @@ rule simulations_figure:
         """
 
 
-rule sendoel_figure:
+rule experimental_figure:
     conda:
         ENV
     input:
@@ -105,7 +105,7 @@ rule sendoel_figure:
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
-        op.join(WD, "paper", "{sample}", BIOLOGY_FIG_STEM + ".pdf")
+        op.join(WD, "paper", "{sample}", EXPERIMENTAL_FIG_STEM + ".pdf")
     params:
         wd = WD,
         aligners = aligners_arg,
@@ -113,7 +113,7 @@ rule sendoel_figure:
         markers_file = MARKERS_FILE,
         use_case = USE_CASE,
     log:
-        op.join(WD, "logs", "paper_biology_{sample}.log")
+        op.join(WD, "logs", "paper_experimental_{sample}.log")
     shell:
         """
         Rscript {input.script} \

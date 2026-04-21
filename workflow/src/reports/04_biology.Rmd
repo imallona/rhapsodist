@@ -69,7 +69,7 @@ if (!is_hela) {
     markers = character(0)
 }
 
-if (has_sbg) aligners = c(aligners, "sbg")
+if (has_sbg) aligners = unique(c(aligners, "sbg"))
 
 pipeline_colours = setNames(
     rep(cbbPalette, length.out = length(aligners)),
