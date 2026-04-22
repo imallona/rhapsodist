@@ -1561,6 +1561,7 @@ for _sbg_sample in _sbg_samples:
                             print $0 " " MATE ":N:0:0"
                             next
                         }}
+                        NR % 4 == 3 {{ print "+"; next }}
                         {{ print }}
                     ' | pigz -p "$t" > "$dst"
             }}
