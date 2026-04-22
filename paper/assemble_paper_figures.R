@@ -104,17 +104,25 @@ upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
                         mb.ratio = c(0.55, 0.45),
                         point.size = 2.2, line.size = 0.7))
     grDevices::dev.off()
-    img = png::readPNG(tmp)
-    ## Force the patchwork cell to honour the rendered PNG aspect ratio.
-    ## Without this, annotation_raster stretches the bitmap to fill a cell
-    ## with a different aspect and the UpSet bars look squashed.
+    ## Trim the surrounding white margin that UpSetR leaves around its
+    ## grid so the panel occupies its patchwork cell instead of looking
+    ## tiny. Fall back to the raw PNG if magick is not available.
+    if (requireNamespace("magick", quietly = TRUE)) {
+        im = magick::image_trim(magick::image_read(tmp))
+        tmp2 = tempfile(fileext = ".png")
+        magick::image_write(im, path = tmp2, format = "png")
+        img = png::readPNG(tmp2)
+    } else {
+        img = png::readPNG(tmp)
+    }
+    plot_h = nrow(img); plot_w = ncol(img)
     ggplot() +
         annotation_raster(img, xmin = 0, xmax = 1, ymin = 0, ymax = 1,
                           interpolate = TRUE) +
         coord_cartesian(xlim = c(0, 1), ylim = c(0, 1),
                         expand = FALSE, clip = "off") +
         theme_void() +
-        theme(aspect.ratio = height_in / width_in,
+        theme(aspect.ratio = plot_h / plot_w,
               plot.margin = grid::unit(c(2, 2, 2, 2), "pt"))
 }
 
@@ -866,6 +874,55 @@ run_biology = function(opt) {
                     patchwork::plot_layout(widths = c(1, 2, 1))
             }
 
+            ## hela use case: pairwise ARI on Seurat cell-cycle phase. Stands
+            ## in for the celltype ARI heatmap used on sendoel, since a clonal
+            ## line has no marker-based celltype label.
+            if (requireNamespace("mclust", quietly = TRUE) &&
+                "Phase" %in% colnames(clusters_dt) &&
+                any(!is.na(clusters_dt$Phase))) {
+                pipes_ph = sort(unique(clusters_dt$pipeline))
+                if (length(pipes_ph) >= 2) {
+                    ph_grid = expand.grid(a = pipes_ph, b = pipes_ph,
+                                          stringsAsFactors = FALSE)
+                    ph_rows = rbindlist(lapply(seq_len(nrow(ph_grid)),
+                                               function(i) {
+                        aa = ph_grid$a[i]; bb = ph_grid$b[i]
+                        d1 = clusters_dt[pipeline == aa,
+                                         .(barcode, ph = Phase)]
+                        d2 = clusters_dt[pipeline == bb,
+                                         .(barcode, ph = Phase)]
+                        sh = merge(d1, d2, by = "barcode",
+                                   suffixes = c(".a", ".b"))
+                        sh = sh[!is.na(ph.a) & !is.na(ph.b)]
+                        ari = if (nrow(sh) < 10) NA_real_
+                              else mclust::adjustedRandIndex(sh$ph.a, sh$ph.b)
+                        data.table(pipeline1 = aa, pipeline2 = bb, ari = ari)
+                    }))
+                    pp_save_csv(ph_rows, pdir, "bio_phase_ari_matrix")
+                    ph_lo = suppressWarnings(min(ph_rows$ari, na.rm = TRUE))
+                    if (!is.finite(ph_lo)) ph_lo = 0
+                    p_phase_ari = ggplot(ph_rows,
+                                         aes(pipeline1, pipeline2, fill = ari)) +
+                        geom_tile(colour = "white") +
+                        geom_text(aes(label = ifelse(is.na(ari), "",
+                                                     sprintf("%.3f", ari))),
+                                  size = 3) +
+                        scale_fill_viridis_c(option = "viridis", direction = 1,
+                                             limits = c(ph_lo, 1),
+                                             alpha = 0.75,
+                                             na.value = "grey90") +
+                        theme_bw() +
+                        theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                              aspect.ratio = 1,
+                              plot.title = element_text(size = 10,
+                                                        margin = margin(b = 2))) +
+                        labs(x = "pipeline", y = "pipeline", fill = "ARI",
+                             title = "Cell-cycle phase ARI")
+                    pp_save_pdf(p_phase_ari, pdir, "bio_phase_ari_matrix",
+                                width = 5, height = 4)
+                }
+            }
+
             ## hela use case: panel E is UMAP coloured by cell cycle phase.
             if ("Phase" %in% colnames(clusters_dt) &&
                 any(!is.na(clusters_dt$Phase))) {
@@ -910,12 +967,15 @@ run_biology = function(opt) {
     }
 
     per_cell_qc = NULL
+    p_per_cell_cor = NULL
     sce_fns = setNames(file.path(wd, aligners, samp,
                                  paste0(samp, "_", aligners, "_sce.rds")),
                        aligners)
+    sce_list = NULL
     if (all(file.exists(sce_fns))) {
-        per_cell_qc = rbindlist(lapply(names(sce_fns), function(pipe) {
-            sce = readRDS(sce_fns[[pipe]])
+        sce_list = lapply(sce_fns, readRDS)
+        per_cell_qc = rbindlist(lapply(names(sce_list), function(pipe) {
+            sce = sce_list[[pipe]]
             counts_m = counts(sce)
             total_umi = colSums(counts_m)
             n_genes = colSums(counts_m > 0)
@@ -947,6 +1007,84 @@ run_biology = function(opt) {
         }))
         pp_save_csv(per_cell_qc, pdir, "bio_per_cell_qc")
     }
+
+    ## Per-cell cross-aligner Pearson r on log1p counts over shared barcodes
+    ## and shared genes. Mirrors the density plot in 02_comparison.Rmd, stored
+    ## here as both a CSV summary and a standalone PDF so it can be composed
+    ## into the biology figure panel. Shared-cell set is downsampled to at
+    ## most max_cells_per_cell_cor per pair with a fixed seed so the density
+    ## stays cheap to compute on large real datasets and is reproducible.
+    max_cells_per_cell_cor = 500L
+    if (!is.null(sce_list) && length(sce_list) >= 2) {
+        col_pearson = function(A, B) {
+            Am = colMeans(A); Bm = colMeans(B)
+            Ac = sweep(A, 2, Am, "-"); Bc = sweep(B, 2, Bm, "-")
+            num = colSums(Ac * Bc)
+            denom = sqrt(colSums(Ac^2) * colSums(Bc^2))
+            ifelse(denom > 0, num / denom, NA_real_)
+        }
+        pair_combos = combn(names(sce_list), 2, simplify = FALSE)
+        per_cell_cor = rbindlist(lapply(pair_combos, function(pair) {
+            a = pair[1]; b = pair[2]
+            shared_cells = intersect(colnames(sce_list[[a]]),
+                                     colnames(sce_list[[b]]))
+            shared_genes = intersect(rownames(sce_list[[a]]),
+                                     rownames(sce_list[[b]]))
+            if (length(shared_cells) < 2 || length(shared_genes) < 2) return(NULL)
+            n_total = length(shared_cells)
+            if (n_total > max_cells_per_cell_cor) {
+                shared_cells = shared_cells[order(shared_cells)]
+                set.seed(1L)
+                shared_cells = sort(sample(shared_cells,
+                                           max_cells_per_cell_cor,
+                                           replace = FALSE))
+            }
+            A = log1p(as.matrix(counts(sce_list[[a]])[shared_genes,
+                                                      shared_cells, drop = FALSE]))
+            B = log1p(as.matrix(counts(sce_list[[b]])[shared_genes,
+                                                      shared_cells, drop = FALSE]))
+            data.table(pair = paste(a, "vs", b),
+                       cell = shared_cells,
+                       correlation = col_pearson(A, B),
+                       n_sampled = length(shared_cells),
+                       n_shared_total = n_total)
+        }), fill = TRUE)
+        if (nrow(per_cell_cor) > 0) {
+            valid_pc = per_cell_cor[!is.na(correlation)]
+            pc_summary = valid_pc[, .(n_sampled = .N,
+                                      n_shared_total = n_shared_total[1],
+                                      median_r = median(correlation),
+                                      mean_r   = mean(correlation),
+                                      q25      = quantile(correlation, 0.25),
+                                      q75      = quantile(correlation, 0.75)),
+                                  by = pair]
+            pp_save_csv(pc_summary, pdir, "bio_per_cell_correlation_summary")
+            saveRDS(valid_pc, file.path(pdir, "bio_per_cell_correlation.rds"))
+            ## Palette chosen to stay off the aligner hues (Okabe-Ito orange,
+            ## sky-blue, bluish-green, pink). Up to 6 curves, one per aligner
+            ## pair.
+            pair_colours = c("#8B0000", "#4B0082", "#556B2F",
+                             "#8B4513", "#2F4F4F", "#6A5ACD")
+            p_per_cell_cor = ggplot(valid_pc,
+                                    aes(x = correlation, colour = pair,
+                                        fill = pair)) +
+                geom_density(alpha = 0.25, linewidth = 0.7) +
+                scale_colour_manual(values = pair_colours) +
+                scale_fill_manual(values = pair_colours) +
+                theme_bw() +
+                theme(panel.grid = element_blank(),
+                      aspect.ratio = 1) +
+                labs(x = "per-cell Pearson r", y = "density",
+                     colour = NULL, fill = NULL,
+                     title = "Per-cell cross-aligner correlation",
+                     subtitle = sprintf(
+                         "Pearson on log1p counts, shared genes, up to %d cells per pair (seed 1)",
+                         max_cells_per_cell_cor))
+            pp_save_pdf(p_per_cell_cor, pdir, "bio_per_cell_correlation",
+                        width = 4.5, height = 4.5)
+        }
+    }
+    rm(sce_list); invisible(gc(verbose = FALSE))
 
     ## Per-pipeline runtime and peak RSS from benchmark files.
     pipe_time = NULL; pipe_mem = NULL
@@ -1043,30 +1181,74 @@ run_biology = function(opt) {
             theme(axis.text.x = element_text(angle = 30, hjust = 1),
                   aspect.ratio = 1)
     }
+    ## HeLa-only extensions: cell-cycle phase ARI heatmap and per-cell
+    ## cross-aligner correlation density plot. Panels H (phase ARI) and I
+    ## (per-cell correlation) are only composed into fig2 for the hela case.
+    if (is_hela && exists("p_phase_ari", inherits = FALSE)) {
+        panels2$H = p_phase_ari + panel_theme2 +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  aspect.ratio = 1)
+    }
+    if (is_hela && !is.null(p_per_cell_cor)) {
+        panels2$I = p_per_cell_cor + panel_theme2 +
+            theme(panel.grid = element_blank(),
+                  aspect.ratio = 1,
+                  legend.position = "right",
+                  legend.key.size = grid::unit(0.4, "cm"))
+    }
     blank2 = function() ggplot() + theme_void()
-    for (k in c("A", "B", "C", "D", "E", "F", "G")) {
+    required_panels = if (is_hela) c("A", "B", "C", "D", "E", "F", "G", "H")
+                      else         c("A", "B", "C", "D", "E", "F", "G")
+    for (k in required_panels) {
         if (is.null(panels2[[k]])) {
             warning("fig2 panel ", k, " missing; rendering blank. wd=", wd)
             panels2[[k]] = blank2()
         }
     }
-    fig2_design = paste(
-        "AABBBBCCCC",
-        "AABBBBCCCC",
-        "DDDDDDDDDD",
-        "DDDDDDDDDD",
-        "EEEEEEEEEE",
-        "EEEEEEEEEE",
-        "FFFFFGGGGG",
-        "FFFFFGGGGG", sep = "\n")
-    fig2 = patchwork::wrap_plots(A = panels2$A, B = panels2$B, C = panels2$C,
-                                 D = panels2$D, E = panels2$E, F = panels2$F,
-                                 G = panels2$G,
-                                 design = fig2_design,
-                                 heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
-        patchwork::plot_annotation(tag_levels = "A") &
-        paper_shared_theme
-    pp_save_pdf(fig2, pdir, fig_stem, width = 10.5, height = 14)
+    if (is_hela) {
+        ## 8-row A4-friendly layout. Drops the pseudobulk Pearson heatmap to
+        ## reduce vertical footprint while keeping Phase UMAPs at full width.
+        ## Visual reading order and tag mapping:
+        ##   A upset, B QC violins, C MARD heatmap,
+        ##   D cluster ARI, E phase ARI, F per-cell correlation,
+        ##   G Phase UMAPs (full width), H perf bars (full width).
+        fig2_design = paste(
+            "AAABBBBCCC",
+            "AAABBBBCCC",
+            "DDDEEEFFFF",
+            "DDDEEEFFFF",
+            "GGGGGGGGGG",
+            "GGGGGGGGGG",
+            "HHHHHHHHHH",
+            "HHHHHHHHHH", sep = "\n")
+        fig2 = patchwork::wrap_plots(
+            A = panels2$A, B = panels2$B, C = panels2$C,
+            D = panels2$D, E = panels2$H, F = panels2$I,
+            G = panels2$F, H = panels2$G,
+            design = fig2_design,
+            heights = c(0.9, 0.9, 0.9, 0.9, 1.1, 1.1, 1.0, 1.0)) +
+            patchwork::plot_annotation(tag_levels = "A") &
+            paper_shared_theme
+        pp_save_pdf(fig2, pdir, fig_stem, width = 10.5, height = 9)
+    } else {
+        fig2_design = paste(
+            "AABBBBCCCC",
+            "AABBBBCCCC",
+            "DDDDDDDDDD",
+            "DDDDDDDDDD",
+            "EEEEEEEEEE",
+            "EEEEEEEEEE",
+            "FFFFFGGGGG",
+            "FFFFFGGGGG", sep = "\n")
+        fig2 = patchwork::wrap_plots(A = panels2$A, B = panels2$B, C = panels2$C,
+                                     D = panels2$D, E = panels2$E, F = panels2$F,
+                                     G = panels2$G,
+                                     design = fig2_design,
+                                     heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
+            patchwork::plot_annotation(tag_levels = "A") &
+            paper_shared_theme
+        pp_save_pdf(fig2, pdir, fig_stem, width = 10.5, height = 14)
+    }
 
     message("biology materials written to ", pdir)
 }
