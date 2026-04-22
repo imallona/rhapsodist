@@ -106,7 +106,9 @@ upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
     grDevices::dev.off()
     ## Trim the surrounding white margin that UpSetR leaves around its
     ## grid so the panel occupies its patchwork cell instead of looking
-    ## tiny. Fall back to the raw PNG if magick is not available.
+    ## tiny. Prefer magick::image_trim when available; otherwise do a
+    ## pure-R bounding-box crop on the raw PNG so the trim still happens
+    ## without the optional system dependency.
     if (requireNamespace("magick", quietly = TRUE)) {
         im = magick::image_trim(magick::image_read(tmp))
         tmp2 = tempfile(fileext = ".png")
@@ -114,6 +116,19 @@ upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
         img = png::readPNG(tmp2)
     } else {
         img = png::readPNG(tmp)
+        is_white = if (length(dim(img)) == 3) {
+            apply(img[, , seq_len(min(3, dim(img)[3])), drop = FALSE],
+                  c(1, 2), min) >= 0.995
+        } else {
+            img >= 0.995
+        }
+        non_white_rows = which(!apply(is_white, 1, all))
+        non_white_cols = which(!apply(is_white, 2, all))
+        if (length(non_white_rows) >= 2 && length(non_white_cols) >= 2) {
+            img = img[min(non_white_rows):max(non_white_rows),
+                      min(non_white_cols):max(non_white_cols), ,
+                      drop = FALSE]
+        }
     }
     plot_h = nrow(img); plot_w = ncol(img)
     ggplot() +
@@ -1200,7 +1215,7 @@ run_biology = function(opt) {
                   legend.key.size = grid::unit(0.4, "cm"))
     }
     blank2 = function() ggplot() + theme_void()
-    required_panels = if (is_hela) c("A", "B", "C", "D", "E", "F", "G", "H")
+    required_panels = if (is_hela) c("A", "B", "C", "D", "E", "F", "H", "I")
                       else         c("A", "B", "C", "D", "E", "F", "G")
     for (k in required_panels) {
         if (is.null(panels2[[k]])) {
@@ -1209,12 +1224,15 @@ run_biology = function(opt) {
         }
     }
     if (is_hela) {
-        ## 8-row A4-friendly layout. Drops the pseudobulk Pearson heatmap to
-        ## reduce vertical footprint while keeping Phase UMAPs at full width.
+        ## 8-row A4-friendly layout. Drops the pseudobulk Pearson heatmap
+        ## (panels2$G) to reduce vertical footprint while keeping the cell-cycle
+        ## phase UMAPs (panels2$E) at full width.
         ## Visual reading order and tag mapping:
         ##   A upset, B QC violins, C MARD heatmap,
-        ##   D cluster ARI, E phase ARI, F per-cell correlation,
-        ##   G Phase UMAPs (full width), H perf bars (full width).
+        ##   D cluster ARI (panels2$D), E phase ARI (panels2$H),
+        ##   F per-cell correlation (panels2$I),
+        ##   G Phase UMAPs full width (panels2$E),
+        ##   H perf bars full width (panels2$F).
         fig2_design = paste(
             "AAABBBBCCC",
             "AAABBBBCCC",
@@ -1227,7 +1245,7 @@ run_biology = function(opt) {
         fig2 = patchwork::wrap_plots(
             A = panels2$A, B = panels2$B, C = panels2$C,
             D = panels2$D, E = panels2$H, F = panels2$I,
-            G = panels2$F, H = panels2$G,
+            G = panels2$E, H = panels2$F,
             design = fig2_design,
             heights = c(0.9, 0.9, 0.9, 0.9, 1.1, 1.1, 1.0, 1.0)) +
             patchwork::plot_annotation(tag_levels = "A") &

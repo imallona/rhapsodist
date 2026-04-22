@@ -303,7 +303,14 @@ def get_sbg_bead_version_by_name(name):
     if explicit:
         return explicit
     bv = get_bead_type_by_name(name)
-    mapping = {'v1': 'Multiplex', 'enhanced': 'Enh', 'enhanced_v2': 'EnhV2'}
+    ## Map the internal bead type to the branch name accepted by
+    ## index_to_sequence() in workflow/src/index2barcode.R. v1 and enhanced
+    ## both use the A96 keys and produce the same 27-bp cls1+cls2+cls3
+    ## concatenation that starsolo/kallisto/alevin emit, so both go through
+    ## the 'Enh' branch. 'Multiplex' here was a silent bug: index_to_sequence
+    ## has no 'Multiplex' branch, so it returned NULL for every barcode and
+    ## colnames(sce) ended up as 54k duplicate "NULL" strings.
+    mapping = {'v1': 'Enh', 'enhanced': 'Enh', 'enhanced_v2': 'EnhV2'}
     return mapping.get(bv, 'Enh')
 
 def get_sbg_reference_url_by_name(name):
