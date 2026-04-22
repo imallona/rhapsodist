@@ -1014,8 +1014,11 @@ run_biology = function(opt) {
     ## into the biology figure panel. Shared-cell set is downsampled to at
     ## most max_cells_per_cell_cor per pair with a fixed seed so the density
     ## stays cheap to compute on large real datasets and is reproducible.
+    ## Only computed for the HeLa use case because fig3 (sendoel) does not
+    ## include this panel and the dense matrix materialisation is expensive
+    ## on full experimental SCEs.
     max_cells_per_cell_cor = 500L
-    if (!is.null(sce_list) && length(sce_list) >= 2) {
+    if (is_hela && !is.null(sce_list) && length(sce_list) >= 2) {
         col_pearson = function(A, B) {
             Am = colMeans(A); Bm = colMeans(B)
             Ac = sweep(A, 2, Am, "-"); Bc = sweep(B, 2, Bm, "-")
