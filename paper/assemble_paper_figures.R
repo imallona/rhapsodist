@@ -43,7 +43,8 @@ source(file.path(script_dir, "export_helpers.R"))
 parse_args = function() {
     p = ArgumentParser()
     p$add_argument("--kind", required = TRUE,
-                   choices = c("simulation", "biology", "benchmarks"))
+                   choices = c("simulation", "biology", "benchmarks",
+                               "linker_qc"))
     p$add_argument("--working_dir", required = TRUE)
     p$add_argument("--sample", default = "")
     p$add_argument("--aligners", default = "starsolo,kallisto,alevin")
@@ -449,19 +450,24 @@ run_simulation = function(opt) {
             panels[[k]] = blank()
         }
     }
+    ## fig 1: narrative-ordered B-F (A = workflow schematic is overlaid
+    ## manually on the composed PDF). The simulated pseudobulk Pearson r
+    ## heatmap (panels$G) is kept as a standalone supplementary PDF and
+    ## not composed into fig 1, since MARD in panel D already conveys
+    ## pseudobulk agreement on the simulated data.
     fig1_design = paste("BBBCCCDDD",
                         "BBBCCCDDD",
                         "BBBCCCDDD",
-                        "GGGEEEFFF",
-                        "GGGEEEFFF", sep = "\n")
+                        "EEEEEFFFF",
+                        "EEEEEFFFF", sep = "\n")
     fig1 = patchwork::wrap_plots(B = panels$B, C = panels$C, D = panels$D,
-                                 G = panels$G, E = panels$E, F = panels$F,
+                                 E = panels$E, F = panels$F,
                                  design = fig1_design) +
         patchwork::plot_annotation(tag_levels = list(c("B", "C", "D",
-                                                       "G", "E", "F"))) &
+                                                       "E", "F"))) &
         paper_shared_theme
     pp_save_pdf(fig1, pdir, "fig1_simulations_panels",
-                width = 10.5, height = 7.5)
+                width = 10.5, height = 7)
 
     message("simulation materials written to ", pdir)
 }
@@ -526,7 +532,7 @@ run_biology = function(opt) {
             geom_tile(colour = "white") +
             geom_text(aes(label = sprintf("%.1f%%", mard * 100)), size = 3) +
             scale_fill_viridis_c(option = "viridis", direction = -1,
-                                 limits = c(0, NA), alpha = 0.75) +
+                                 limits = c(0, 100), alpha = 0.75) +
             theme_bw() +
             theme(axis.text.x = element_text(angle = 30, hjust = 1),
                   plot.title = element_text(size = 10,
@@ -591,7 +597,7 @@ run_biology = function(opt) {
                 geom_tile(colour = "white") +
                 geom_text(aes(label = sprintf("%.3f", pearson_r)), size = 3) +
                 scale_fill_viridis_c(option = "viridis", direction = 1,
-                                     limits = c(min(bcor_dt$pearson_r), 1),
+                                     limits = c(0, 1),
                                      alpha = 0.75) +
                 theme_bw() +
                 theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
@@ -726,6 +732,43 @@ run_biology = function(opt) {
         }
         ari_bar(cluster_ari, "bio_cluster_ari", "cluster ARI")
         ari_bar(ct_ari,      "bio_celltype_ari", "cell-type ARI")
+
+        ## Combined cluster + cell-type ARI bar panel. Used as fig 3 panel F
+        ## on the sendoel use case so the main figure exposes ARI directly
+        ## next to the UMAPs and performance bars. Only built when both
+        ## tables are present (i.e. the marker-voting celltype exists, which
+        ## is the case for sendoel but not hela).
+        p_ari_combo = NULL
+        if (!is.null(cluster_ari) && !is.null(ct_ari) &&
+            nrow(cluster_ari) > 0 && nrow(ct_ari) > 0) {
+            ari_combo = rbind(
+                cluster_ari[, .(pair = paste(pipeline1, pipeline2,
+                                             sep = " vs "),
+                                ari, ci_lo, ci_hi, kind = "cluster")],
+                ct_ari[,      .(pair = paste(pipeline1, pipeline2,
+                                             sep = " vs "),
+                                ari, ci_lo, ci_hi, kind = "cell type")])
+            pp_save_csv(ari_combo, pdir, "bio_ari_combo")
+            p_ari_combo = ggplot(ari_combo,
+                                 aes(pair, ari, fill = kind)) +
+                geom_col(position = position_dodge(0.75), width = 0.65) +
+                geom_errorbar(aes(ymin = ci_lo, ymax = ci_hi),
+                              position = position_dodge(0.75),
+                              width = 0.25, linewidth = 0.4) +
+                geom_text(aes(y = ci_hi, label = sprintf("%.3f", ari)),
+                          position = position_dodge(0.75),
+                          vjust = -0.4, size = 2.8) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.12)),
+                                   limits = c(0, 1)) +
+                scale_fill_manual(values = c(cluster = "#0072B2",
+                                             `cell type` = "#E69F00")) +
+                theme_bw() +
+                theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                      legend.position = "top") +
+                labs(x = NULL, y = "ARI", fill = NULL)
+            pp_save_pdf(p_ari_combo, pdir, "bio_ari_combo",
+                        width = 5.5, height = 3.2)
+        }
 
         ## Pairwise confusion-matrix heatmaps underlying each ARI. Rows are
         ## labels from pipeline A, columns from pipeline B, cell entries are
@@ -1214,9 +1257,16 @@ run_biology = function(opt) {
                   legend.position = "right",
                   legend.key.size = grid::unit(0.4, "cm"))
     }
+    ## sendoel-only: combined cluster + cell-type ARI bar panel (fig 3 F).
+    if (!is_hela && exists("p_ari_combo", inherits = FALSE) &&
+        !is.null(p_ari_combo)) {
+        panels2$J = p_ari_combo + panel_theme2 +
+            theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                  legend.position = "top")
+    }
     blank2 = function() ggplot() + theme_void()
     required_panels = if (is_hela) c("A", "B", "C", "D", "E", "F", "H", "I")
-                      else         c("A", "B", "C", "D", "E", "F", "G")
+                      else         c("A", "B", "C", "D", "E", "F", "J")
     for (k in required_panels) {
         if (is.null(panels2[[k]])) {
             warning("fig2 panel ", k, " missing; rendering blank. wd=", wd)
@@ -1224,14 +1274,13 @@ run_biology = function(opt) {
         }
     }
     if (is_hela) {
-        ## 8-row A4-friendly layout. Drops the pseudobulk Pearson heatmap
-        ## (panels2$G) to reduce vertical footprint while keeping the cell-cycle
-        ## phase UMAPs (panels2$E) at full width.
-        ## Visual reading order and tag mapping:
-        ##   A upset, B QC violins, C MARD heatmap,
-        ##   D cluster ARI (panels2$D), E phase ARI (panels2$H),
-        ##   F per-cell correlation (panels2$I),
-        ##   G Phase UMAPs full width (panels2$E),
+        ## HeLa fig 2: narrative-ordered A-H.
+        ##   A UpSet (panels2$A), B per-cell QC violins (panels2$B),
+        ##   C pseudobulk MARD heatmap (panels2$C),
+        ##   D per-cell cross-aligner r density (panels2$I),
+        ##   E cluster ARI heatmap (panels2$D),
+        ##   F cell-cycle phase ARI heatmap (panels2$H),
+        ##   G phase UMAPs full width (panels2$E),
         ##   H perf bars full width (panels2$F).
         fig2_design = paste(
             "AAABBBBCCC",
@@ -1244,7 +1293,7 @@ run_biology = function(opt) {
             "HHHHHHHHHH", sep = "\n")
         fig2 = patchwork::wrap_plots(
             A = panels2$A, B = panels2$B, C = panels2$C,
-            D = panels2$D, E = panels2$H, F = panels2$I,
+            D = panels2$I, E = panels2$D, F = panels2$H,
             G = panels2$E, H = panels2$F,
             design = fig2_design,
             heights = c(0.9, 0.9, 0.9, 0.9, 1.1, 1.1, 1.0, 1.0)) +
@@ -1252,6 +1301,15 @@ run_biology = function(opt) {
             paper_shared_theme
         pp_save_pdf(fig2, pdir, fig_stem, width = 10.5, height = 9)
     } else {
+        ## Sendoel fig 3: narrative-ordered A-G.
+        ##   A UpSet (panels2$A), B per-cell QC violins (panels2$B),
+        ##   C pseudobulk MARD heatmap (panels2$C),
+        ##   D cluster UMAPs full width (panels2$E),
+        ##   E celltype UMAPs full width (panels2$D),
+        ##   F combined cluster + celltype ARI bars (panels2$J),
+        ##   G perf bars (panels2$F).
+        ## The pseudobulk Pearson heatmap (panels2$G) is kept as a
+        ## standalone supplementary PDF and not composed into fig 3.
         fig2_design = paste(
             "AABBBBCCCC",
             "AABBBBCCCC",
@@ -1262,8 +1320,8 @@ run_biology = function(opt) {
             "FFFFFGGGGG",
             "FFFFFGGGGG", sep = "\n")
         fig2 = patchwork::wrap_plots(A = panels2$A, B = panels2$B, C = panels2$C,
-                                     D = panels2$D, E = panels2$E, F = panels2$F,
-                                     G = panels2$G,
+                                     D = panels2$E, E = panels2$D,
+                                     F = panels2$J, G = panels2$F,
                                      design = fig2_design,
                                      heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
             patchwork::plot_annotation(tag_levels = "A") &
@@ -1365,12 +1423,59 @@ load_pipeline_memory = function(bench_dir, aligners) {
        .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
 }
 
+## Per-sample linker error rate panel. Consumes the TSV written by the
+## rhapsodist linker_qc rule (scan_r1_linkers over the first 10,000 R1 reads)
+## and produces a one-panel PDF showing the Hamming-distance distribution
+## against both v1 and enhanced linker templates.
+run_linker_qc = function(opt) {
+    wd = opt$working_dir
+    samp = opt$sample
+    tsv = file.path(wd, "linker_qc", paste0(samp, "_linker_errors.tsv"))
+    stopifnot(file.exists(tsv))
+    pdir = setup_paper_dir(wd, samp)
+
+    raw = readLines(tsv)
+    body = raw[!grepl("^#", raw)]
+    dt = fread(text = paste(body, collapse = "\n"))
+    if (nrow(dt) == 0) {
+        warning("empty linker QC TSV, skipping: ", tsv)
+        return(invisible(NULL))
+    }
+
+    detected = NA_character_
+    hit = grep("^# detected_class\\t", raw, value = TRUE)
+    if (length(hit) > 0) detected = strsplit(hit[1], "\t")[[1]][2]
+    subtitle = sprintf("Auto-detected chemistry: %s", detected)
+
+    max_err = min(max(dt$n_errors), 10)
+    pd = dt[n_errors <= max_err]
+    p = ggplot(pd, aes(x = factor(n_errors), y = frac, fill = class)) +
+        geom_col(position = position_dodge(width = 0.9)) +
+        geom_text(aes(label = scales::percent(frac, accuracy = 0.1)),
+                  position = position_dodge(width = 0.9),
+                  vjust = -0.3, size = 2.4) +
+        scale_fill_brewer(palette = "Set2") +
+        scale_y_continuous(labels = scales::percent,
+                           expand = expansion(mult = c(0.02, 0.12))) +
+        theme_bw(base_size = 10) +
+        labs(title = paste0("Linker mismatches per read (", samp, ")"),
+             subtitle = subtitle,
+             x = "Linker mismatches per read (sum across both linkers)",
+             y = "Fraction of reads",
+             fill = "Candidate class")
+
+    pp_save_pdf(p, pdir, "bio_linker_errors", width = 7, height = 4.5)
+    pp_save_csv(dt, pdir, "bio_linker_errors")
+    message("linker QC figure written to ", pdir)
+}
+
 main = function() {
     opt = parse_args()
     switch(opt$kind,
         simulation = run_simulation(opt),
         biology    = run_biology(opt),
-        benchmarks = run_benchmarks(opt))
+        benchmarks = run_benchmarks(opt),
+        linker_qc  = run_linker_qc(opt))
 }
 
 if (!interactive()) main()

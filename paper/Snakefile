@@ -46,6 +46,10 @@ def experimental_flag(sample):
     return op.join(WD, "paper", sample, EXPERIMENTAL_FIG_STEM + ".pdf")
 
 
+def linker_qc_flag(sample):
+    return op.join(WD, "paper", sample, "bio_linker_errors.pdf")
+
+
 def benchmark_flag():
     return op.join(WD, "paper", "bench_full.csv")
 
@@ -57,6 +61,7 @@ def all_targets():
             targets.append(simulation_flag(s))
         else:
             targets.append(experimental_flag(s))
+            targets.append(linker_qc_flag(s))
     return targets
 
 
@@ -124,6 +129,29 @@ rule experimental_figure:
             --has_sbg {params.has_sbg} \
             --use_case {params.use_case} \
             --markers_file '{params.markers_file}' &> {log}
+        """
+
+
+rule linker_qc_figure:
+    conda:
+        ENV
+    input:
+        tsv = op.join(WD, "linker_qc", "{sample}_linker_errors.tsv"),
+        script = SCRIPT,
+        helpers = op.join(PAPER_DIR, "export_helpers.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "bio_linker_errors.pdf"),
+        op.join(WD, "paper", "{sample}", "bio_linker_errors.csv"),
+    params:
+        wd = WD,
+    log:
+        op.join(WD, "logs", "paper_linker_qc_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} \
+            --kind linker_qc \
+            --working_dir {params.wd} \
+            --sample {wildcards.sample} &> {log}
         """
 
 
