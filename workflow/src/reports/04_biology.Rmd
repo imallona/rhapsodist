@@ -163,9 +163,26 @@ from each aligner's barcode calling approach. Median UMI and genes detected show
 how many counts each aligner assigns per cell.
 
 ```{r qc-table}
+## Mito detection: look up the gene-symbol column in rowData (falling back
+## to rownames) and grep ^MT-|^mt- there. Using integer row indices
+## sidesteps any dimname mismatch between rowData and the assay.
+mito_row_idx = function(sce) {
+    rd = SummarizedExperiment::rowData(sce)
+    syms = NULL
+    for (col in c("name", "SYMBOL", "Symbol", "symbol", "gene_name", "gene_symbol")) {
+        if (col %in% colnames(rd)) {
+            v = as.character(rd[[col]])
+            if (length(v) == nrow(sce) && any(nzchar(v))) { syms = v; break }
+        }
+    }
+    if (is.null(syms)) syms = rownames(sce)
+    if (is.null(syms)) return(integer(0))
+    grep("^MT-|^mt-", syms)
+}
+
 qc_df = rbindlist(lapply(names(sces), function(m) {
     sce = addPerCellQCMetrics(sces[[m]],
-        subsets = list(mito = grep("^mt-|^MT-", rownames(sces[[m]]), value = TRUE)))
+        subsets = list(mito = mito_row_idx(sces[[m]])))
     data.table(
         pipeline = m,
         n_cells = ncol(sce),
@@ -243,6 +260,10 @@ panels and in the Hungarian confusion matrices below.
 ```{r build-seurat-objects}
 make_seurat = function(sce, fallback_project) {
     mat = as(counts(sce), "CsparseMatrix")
+    ## re-attach symbol rownames from the SCE wrapper; DelayedMatrix
+    ## coercion can drop the rename set by symbol_rownames().
+    rownames(mat) = rownames(sce)
+    colnames(mat) = colnames(sce)
     proj = mainExpName(sce)
     if (is.null(proj) || length(proj) == 0 || !nzchar(proj)) proj = fallback_project
     so = CreateSeuratObject(counts = mat, project = proj,
