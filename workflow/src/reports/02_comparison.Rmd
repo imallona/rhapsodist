@@ -266,10 +266,13 @@ the distribution of these per-cell correlations across the shared population.
 
 ```{r per-cell-cor, fig.width=8, fig.height=4.5}
 col_pearson <- function(A, B) {
-    Am <- colMeans(A); Bm <- colMeans(B)
-    Ac <- sweep(A, 2, Am, "-"); Bc <- sweep(B, 2, Bm, "-")
-    num <- colSums(Ac * Bc)
-    denom <- sqrt(colSums(Ac^2) * colSums(Bc^2))
+    n <- nrow(A)
+    sumA <- colSums(A); sumB <- colSums(B)
+    sumAB <- colSums(A * B)
+    sumA2 <- colSums(A * A)
+    sumB2 <- colSums(B * B)
+    num <- sumAB - sumA * sumB / n
+    denom <- sqrt((sumA2 - sumA^2 / n) * (sumB2 - sumB^2 / n))
     ifelse(denom > 0, num / denom, NA_real_)
 }
 
@@ -280,8 +283,8 @@ per_cell_cor <- rbindlist(lapply(pair_combos, function(pair) {
     shared_cells <- intersect(colnames(sces[[a]]), colnames(sces[[b]]))
     shared_genes <- intersect(rownames(sces[[a]]), rownames(sces[[b]]))
     if (length(shared_cells) < 2 || length(shared_genes) < 2) return(NULL)
-    A <- log1p(as.matrix(counts(sces[[a]])[shared_genes, shared_cells, drop = FALSE]))
-    B <- log1p(as.matrix(counts(sces[[b]])[shared_genes, shared_cells, drop = FALSE]))
+    A <- log1p(counts(sces[[a]])[shared_genes, shared_cells, drop = FALSE])
+    B <- log1p(counts(sces[[b]])[shared_genes, shared_cells, drop = FALSE])
     data.table(pair = paste(a, "vs", b),
                cell = shared_cells,
                correlation = col_pearson(A, B))
