@@ -105,6 +105,25 @@ load_sce = function(aligner, wd, samp) {
 sces = setNames(lapply(aligners, load_sce, wd = wd, samp = samp), aligners)
 sces = Filter(Negate(is.null), sces)
 
+## Fail fast: each SCE must have valid rownames or rowData$name.
+for (.pipe in names(sces)) {
+    .sce = sces[[.pipe]]
+    if (nrow(.sce) == 0 || ncol(.sce) == 0) {
+        stop(sprintf("[%s] SCE empty (nrow=%d, ncol=%d)",
+                     .pipe, nrow(.sce), ncol(.sce)))
+    }
+    .rn = rownames(.sce)
+    .rn_ok = !is.null(.rn) && length(.rn) == nrow(.sce) && any(nzchar(.rn))
+    .rd = rowData(.sce)
+    .name_ok = "name" %in% colnames(.rd) &&
+               length(.rd$name) == nrow(.sce) && any(nzchar(.rd$name))
+    if (!.rn_ok && !.name_ok) {
+        stop(sprintf("[%s] SCE has no gene-symbol source; regenerate",
+                     .pipe))
+    }
+}
+rm(.pipe, .sce, .rn, .rn_ok, .rd, .name_ok)
+
 rm_zeros = function(sce) {
     sce = sce[rowSums(counts(sce)) > 0, ]
     sce[, colSums(counts(sce)) > 0]
@@ -113,12 +132,19 @@ sces = lapply(sces, rm_zeros)
 
 symbol_rownames = function(sce) {
     rd = rowData(sce)
-    sym = rownames(sce)
-    for (col in c("name", "SYMBOL", "gene_name")) {
+    sym = NULL
+    for (col in c("name", "SYMBOL", "gene_name", "symbol")) {
         if (col %in% colnames(rd)) {
-            sym = as.character(rd[[col]])
-            break
+            v = as.character(rd[[col]])
+            if (length(v) == nrow(sce) && any(nzchar(v))) {
+                sym = v
+                break
+            }
         }
+    }
+    if (is.null(sym)) sym = rownames(sce)
+    if (is.null(sym) || length(sym) != nrow(sce)) {
+        sym = as.character(seq_len(nrow(sce)))
     }
     rownames(sce) = make.unique(sym)
     sce

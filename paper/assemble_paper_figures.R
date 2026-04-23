@@ -873,81 +873,13 @@ run_biology = function(opt) {
                        "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
         clusters_dt = as.data.table(readRDS(clusters_fn))
 
-        if (!is_hela) {
-            ct_levels = c(sort(setdiff(unique(clusters_dt$celltype), "none")),
-                          "none")
-            ct_colours = setNames(
-                c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
-                ct_levels)
-            panels = lapply(names(seu_fns), function(pipe) {
-                so = readRDS(seu_fns[[pipe]])
-                emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-                colnames(emb) = c("UMAP_1", "UMAP_2")
-                emb$barcode = rownames(emb)
-                ct_map = clusters_dt[pipeline == pipe,
-                                     setNames(celltype, barcode)]
-                emb$celltype = factor(
-                    ifelse(emb$barcode %in% names(ct_map),
-                           ct_map[emb$barcode], "none"),
-                    levels = ct_levels)
-                ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
-                    pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                    scale_colour_manual(values = ct_colours, drop = FALSE) +
-                    guides(colour = guide_legend(
-                        override.aes = list(size = 2.5, alpha = 1))) +
-                    theme_bw() + theme(aspect.ratio = 1,
-                                       panel.grid = element_blank()) +
-                    labs(title = pipe, colour = "cell type")
-            })
-            if (length(panels) > 0) {
-                p_umap = wrap_plots(panels, nrow = 1) +
-                    plot_layout(guides = "collect") +
-                    plot_annotation(title = "    Cell embeddings by annotation",
-                                    theme = theme(plot.title = element_text(
-                                        size = 11, face = "plain",
-                                        margin = margin(l = 30, b = 4))))
-                pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
-                            width = 3.2 * length(panels), height = 3.2)
-            }
-
-            cl_panels = lapply(names(seu_fns), function(pipe) {
-                so = readRDS(seu_fns[[pipe]])
-                emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-                colnames(emb) = c("UMAP_1", "UMAP_2")
-                emb$barcode = rownames(emb)
-                cl_map = clusters_dt[pipeline == pipe,
-                                     setNames(as.character(cluster_prefixed),
-                                              barcode)]
-                emb$cluster = factor(
-                    ifelse(emb$barcode %in% names(cl_map),
-                           cl_map[emb$barcode], NA))
-                ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
-                    pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                    guides(colour = guide_legend(ncol = 2,
-                                                 override.aes = list(size = 1.5))) +
-                    theme_bw() + theme(aspect.ratio = 1,
-                                       panel.grid = element_blank(),
-                                       legend.position = "right",
-                                       legend.key.size = grid::unit(0.3, "cm"),
-                                       legend.text = element_text(size = 7)) +
-                    labs(title = pipe, colour = "Louvain")
-            })
-            if (length(cl_panels) > 0) {
-                p_cl = wrap_plots(cl_panels, nrow = 1) +
-                    plot_annotation(title = "    Cell embeddings by cluster",
-                                    theme = theme(plot.title = element_text(
-                                        size = 11, face = "plain",
-                                        margin = margin(l = 30, t = 2, b = 6))))
-                pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
-                            width = 3.6 * length(cl_panels), height = 3.2)
-            }
-        } else {
-            ## hela use case. Fig 2 bottom block will stack two 1x4 UMAP rows
-            ## (cluster on top, cell cycle phase below) on the left 8/12 cols
-            ## and stack time/memory bars on the right 4/12 cols. The cluster
-            ## and phase ARI heatmaps fill panels E and F in the middle row.
-
-            ## Cluster ARI heatmap (panel E).
+        ## Unified biology-panels block for both fig 2 (HeLa) and fig 3
+        ## (mouse skin, Sendoel). Both use_cases now produce the same
+        ## panels2 keys A-J; the only difference is the second UMAP row
+        ## (phase for HeLa, celltype for Sendoel) and the second ARI
+        ## heatmap (phase ARI for HeLa, celltype ARI for Sendoel).
+        {
+            ## Cluster ARI heatmap (panel E) — both use cases.
             if (requireNamespace("mclust", quietly = TRUE) &&
                 length(aligners) >= 2) {
                 pair_grid = expand.grid(a = aligners, b = aligners,
@@ -987,32 +919,33 @@ run_biology = function(opt) {
                             width = 5, height = 4)
             }
 
-            ## Cell-cycle phase ARI heatmap (panel F).
-            if (requireNamespace("mclust", quietly = TRUE) &&
-                "Phase" %in% colnames(clusters_dt) &&
-                any(!is.na(clusters_dt$Phase)) &&
-                length(aligners) >= 2) {
-                ph_grid = expand.grid(a = aligners, b = aligners,
-                                      stringsAsFactors = FALSE)
-                ph_rows = rbindlist(lapply(seq_len(nrow(ph_grid)),
-                                           function(i) {
-                    aa = ph_grid$a[i]; bb = ph_grid$b[i]
+            ## Second ARI heatmap (panel F). HeLa uses cell-cycle Phase;
+            ## Sendoel uses marker-based celltype. Built by a small
+            ## helper to avoid duplication.
+            build_second_ari_heatmap = function(label_col, title, out_stem) {
+                if (!requireNamespace("mclust", quietly = TRUE)) return(NULL)
+                if (!(label_col %in% colnames(clusters_dt))) return(NULL)
+                if (!any(!is.na(clusters_dt[[label_col]]))) return(NULL)
+                if (length(aligners) < 2) return(NULL)
+                lg = expand.grid(a = aligners, b = aligners,
+                                 stringsAsFactors = FALSE)
+                rows = rbindlist(lapply(seq_len(nrow(lg)), function(i) {
+                    aa = lg$a[i]; bb = lg$b[i]
                     d1 = clusters_dt[pipeline == aa,
-                                     .(barcode, ph = Phase)]
+                                     .(barcode, v = get(label_col))]
                     d2 = clusters_dt[pipeline == bb,
-                                     .(barcode, ph = Phase)]
+                                     .(barcode, v = get(label_col))]
                     sh = merge(d1, d2, by = "barcode",
                                suffixes = c(".a", ".b"))
-                    sh = sh[!is.na(ph.a) & !is.na(ph.b)]
+                    sh = sh[!is.na(v.a) & !is.na(v.b)]
                     ari = if (nrow(sh) < 10) NA_real_
-                          else mclust::adjustedRandIndex(sh$ph.a, sh$ph.b)
+                          else mclust::adjustedRandIndex(sh$v.a, sh$v.b)
                     data.table(pipeline1 = aa, pipeline2 = bb, ari = ari)
                 }))
-                pp_save_csv(ph_rows, pdir, "bio_phase_ari_matrix")
-                ph_rows[, pipeline1 := order_pipelines(pipeline1, aligners)]
-                ph_rows[, pipeline2 := order_pipelines(pipeline2, aligners)]
-                p_phase_ari = ggplot(ph_rows,
-                                     aes(pipeline1, pipeline2, fill = ari)) +
+                pp_save_csv(rows, pdir, out_stem)
+                rows[, pipeline1 := order_pipelines(pipeline1, aligners)]
+                rows[, pipeline2 := order_pipelines(pipeline2, aligners)]
+                p = ggplot(rows, aes(pipeline1, pipeline2, fill = ari)) +
                     geom_tile(colour = "white") +
                     geom_text(aes(label = ifelse(is.na(ari), "",
                                                  sprintf("%.3f", ari))),
@@ -1026,9 +959,16 @@ run_biology = function(opt) {
                     theme(axis.text.x = element_text(angle = 30, hjust = 1),
                           aspect.ratio = 1) +
                     labs(x = NULL, y = NULL, fill = "ARI",
-                         title = "Cellcycle phase ARI")
-                pp_save_pdf(p_phase_ari, pdir, "bio_phase_ari_matrix",
-                            width = 5, height = 4)
+                         title = title)
+                pp_save_pdf(p, pdir, out_stem, width = 5, height = 4)
+                p
+            }
+            if (is_hela) {
+                p_second_ari = build_second_ari_heatmap(
+                    "Phase", "Cellcycle phase ARI", "bio_phase_ari_matrix")
+            } else {
+                p_second_ari = build_second_ari_heatmap(
+                    "celltype", "Celltype ARI", "bio_celltype_ari_matrix")
             }
 
             ## Cluster UMAPs (panel G): one per aligner, horizontal row.
@@ -1078,15 +1018,20 @@ run_biology = function(opt) {
                         max.overlaps = Inf,
                         seed = 1L,
                         show.legend = FALSE) +
-                    guides(colour = guide_legend(ncol = 2,
-                                                 override.aes = list(size = 1.5))) +
+                    guides(colour = guide_legend(
+                        ncol = 2,
+                        override.aes = list(size = 1.5))) +
                     theme_bw() +
                     theme(aspect.ratio = 1,
                           panel.grid = element_blank(),
                           axis.title.x = axis_title_theme,
                           axis.title.y = axis_title_theme,
                           legend.position = "bottom",
-                          legend.key.size = grid::unit(0.3, "cm"),
+                          legend.box.margin = margin(0, 0, 0, 0),
+                          legend.margin = margin(0, 0, 0, 0),
+                          legend.box.spacing = grid::unit(2, "pt"),
+                          legend.key.size = grid::unit(0.25, "cm"),
+                          legend.spacing.y = grid::unit(0, "pt"),
                           legend.text = element_text(size = 7),
                           legend.title = element_text(size = 8)) +
                     labs(title = pipe, colour = "Louvain")
@@ -1098,36 +1043,38 @@ run_biology = function(opt) {
                             width = 3.6 * length(cl_panels_hela), height = 3.6)
             }
 
-            ## Cell-cycle phase UMAPs (panel H): one per aligner, horizontal row.
-            ## Shared categorical (G1, S, G2M) → collected legend, single row below.
-            if ("Phase" %in% colnames(clusters_dt) &&
-                any(!is.na(clusters_dt$Phase))) {
-                phase_levels = c("G1", "S", "G2M")
-                phase_colours = setNames(c("#1B9E77", "#D95F02", "#7570B3"),
-                                         phase_levels)
-                cc_panels = lapply(seq_along(aligners), function(i) {
+            ## Second UMAP row (panel H). HeLa: cell-cycle phase (shared
+            ## categorical G1/S/G2M, collected legend). Sendoel: marker-
+            ## based celltype (shared categorical across aligners,
+            ## collected legend). Same geometry.
+            build_second_umap_row = function(label_col, label_levels,
+                                             label_colours, legend_title,
+                                             out_stem, legend_nrow = 1) {
+                if (!(label_col %in% colnames(clusters_dt))) return(NULL)
+                if (!any(!is.na(clusters_dt[[label_col]]))) return(NULL)
+                panels_out = lapply(seq_along(aligners), function(i) {
                     pipe = aligners[i]
                     if (!file.exists(seu_fns[[pipe]])) return(NULL)
                     so = readRDS(seu_fns[[pipe]])
                     emb = as.data.frame(Seurat::Embeddings(so, "umap"))
                     colnames(emb) = c("UMAP_1", "UMAP_2")
                     emb$barcode = rownames(emb)
-                    ph_map = clusters_dt[pipeline == pipe,
-                                         setNames(as.character(Phase),
-                                                  barcode)]
-                    emb$phase = factor(
-                        ifelse(emb$barcode %in% names(ph_map),
-                               ph_map[emb$barcode], NA),
-                        levels = phase_levels)
+                    lab_map = clusters_dt[pipeline == pipe,
+                                          setNames(as.character(get(label_col)),
+                                                   barcode)]
+                    emb$lab = factor(
+                        ifelse(emb$barcode %in% names(lab_map),
+                               lab_map[emb$barcode], NA),
+                        levels = label_levels)
                     axis_title_theme = if (i == 1) element_text(size = 9)
                                        else element_blank()
-                    ggplot(emb, aes(UMAP_1, UMAP_2, colour = phase)) +
+                    ggplot(emb, aes(UMAP_1, UMAP_2, colour = lab)) +
                         pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                        scale_colour_manual(values = phase_colours,
+                        scale_colour_manual(values = label_colours,
                                             na.value = "grey85",
                                             drop = FALSE) +
                         guides(colour = guide_legend(
-                            nrow = 1,
+                            nrow = legend_nrow,
                             override.aes = list(size = 2.5, alpha = 1))) +
                         theme_bw() +
                         theme(aspect.ratio = 1,
@@ -1137,16 +1084,36 @@ run_biology = function(opt) {
                               legend.key.size = grid::unit(0.3, "cm"),
                               legend.text = element_text(size = 7),
                               legend.title = element_text(size = 8)) +
-                        labs(title = pipe, colour = "Cell cycle phase")
+                        labs(title = pipe, colour = legend_title)
                 })
-                cc_panels = Filter(Negate(is.null), cc_panels)
-                if (length(cc_panels) > 0) {
-                    p_phase_row = wrap_plots(cc_panels, nrow = 1) +
-                        plot_layout(guides = "collect") &
-                        theme(legend.position = "bottom")
-                    pp_save_pdf(p_phase_row, pdir, "bio_umap_phase",
-                                width = 3.6 * length(cc_panels), height = 3.6)
-                }
+                panels_out = Filter(Negate(is.null), panels_out)
+                if (length(panels_out) == 0) return(NULL)
+                p = wrap_plots(panels_out, nrow = 1) +
+                    plot_layout(guides = "collect") &
+                    theme(legend.position = "bottom")
+                pp_save_pdf(p, pdir, out_stem,
+                            width = 3.6 * length(panels_out), height = 3.6)
+                p
+            }
+            if (is_hela) {
+                phase_levels = c("G1", "S", "G2M")
+                phase_colours = setNames(c("#1B9E77", "#D95F02", "#7570B3"),
+                                         phase_levels)
+                p_second_umap = build_second_umap_row(
+                    "Phase", phase_levels, phase_colours,
+                    "Cell cycle phase", "bio_umap_phase",
+                    legend_nrow = 1)
+            } else {
+                ct_levels = c(sort(setdiff(unique(clusters_dt$celltype),
+                                           "none")), "none")
+                ct_colours = setNames(
+                    c(rep(cbbPalette, length.out = length(ct_levels) - 1),
+                      "grey85"),
+                    ct_levels)
+                p_second_umap = build_second_umap_row(
+                    "celltype", ct_levels, ct_colours,
+                    "cell type", "bio_umap_celltype",
+                    legend_nrow = 2)
             }
         }
     }
@@ -1194,16 +1161,13 @@ run_biology = function(opt) {
     }
 
     ## Per-cell cross-aligner Pearson r on log1p counts over shared barcodes
-    ## and shared genes. Mirrors the density plot in 02_comparison.Rmd, stored
-    ## here as both a CSV summary and a standalone PDF so it can be composed
-    ## into the biology figure panel. Shared-cell set is downsampled to at
-    ## most max_cells_per_cell_cor per pair with a fixed seed so the density
-    ## stays cheap to compute on large real datasets and is reproducible.
-    ## Only computed for the HeLa use case because fig3 (sendoel) does not
-    ## include this panel and the dense matrix materialisation is expensive
-    ## on full experimental SCEs.
+    ## and shared genes. Stored as CSV summary and standalone PDF so it can
+    ## be composed into panel D of fig 2 (HeLa) and fig 3 (Sendoel). Shared
+    ## cells are downsampled to max_cells_per_cell_cor per pair with a
+    ## fixed seed so the density stays cheap to compute on large real
+    ## datasets and is reproducible.
     max_cells_per_cell_cor = 500L
-    if (is_hela && !is.null(sce_list) && length(sce_list) >= 2) {
+    if (!is.null(sce_list) && length(sce_list) >= 2) {
         col_pearson = function(A, B) {
             Am = colMeans(A); Bm = colMeans(B)
             Ac = sweep(A, 2, Am, "-"); Bc = sweep(B, 2, Bm, "-")
@@ -1399,8 +1363,8 @@ run_biology = function(opt) {
         file.exists(biords("pseudobulk_mard"))) {
         panels2$C = p + panel_theme2 + heatmap_legend_theme
     }
-    ## Per-cell cross-aligner r density → HeLa panel D.
-    if (is_hela && !is.null(p_per_cell_cor)) {
+    ## Per-cell cross-aligner r density → panel D (both use cases).
+    if (!is.null(p_per_cell_cor)) {
         panels2$D = p_per_cell_cor + panel_theme2 +
             theme(panel.grid = element_blank(),
                   aspect.ratio = 1,
@@ -1411,24 +1375,25 @@ run_biology = function(opt) {
                   legend.box.spacing = grid::unit(2, "pt"),
                   legend.key.size = grid::unit(0.4, "cm"))
     }
-    ## Cluster ARI heatmap (hela) → panel E.
-    if (is_hela && exists("p_ari_heat", inherits = FALSE)) {
+    ## Cluster ARI heatmap → panel E (both use cases).
+    if (exists("p_ari_heat", inherits = FALSE)) {
         panels2$E = p_ari_heat + panel_theme2 + heatmap_legend_theme
     }
-    ## Phase ARI heatmap (hela) → panel F.
-    if (is_hela && exists("p_phase_ari", inherits = FALSE)) {
-        panels2$F = p_phase_ari + panel_theme2 + heatmap_legend_theme
+    ## Second ARI heatmap → panel F. HeLa: phase ARI. Sendoel: celltype ARI.
+    if (exists("p_second_ari", inherits = FALSE) &&
+        !is.null(p_second_ari)) {
+        panels2$F = p_second_ari + panel_theme2 + heatmap_legend_theme
     }
-    ## Cluster UMAP row (hela) → panel G. Wrapped as one patchwork element
-    ## so it receives a single tag letter.
-    if (is_hela && exists("p_cluster_row", inherits = FALSE)) {
+    ## Cluster UMAP row → panel G (both). Wrapped so it gets a single tag.
+    if (exists("p_cluster_row", inherits = FALSE)) {
         panels2$G = patchwork::wrap_elements(
             full = patchwork::patchworkGrob(p_cluster_row))
     }
-    ## Phase UMAP row (hela) → panel H.
-    if (is_hela && exists("p_phase_row", inherits = FALSE)) {
+    ## Second UMAP row → panel H. HeLa: phase. Sendoel: celltype.
+    if (exists("p_second_umap", inherits = FALSE) &&
+        !is.null(p_second_umap)) {
         panels2$H = patchwork::wrap_elements(
-            full = patchwork::patchworkGrob(p_phase_row))
+            full = patchwork::patchworkGrob(p_second_umap))
     }
     ## Perf: two standalone ggplots so fig 2 gets separate tags I (time)
     ## and J (memory) stacked on the right of the UMAP block. Tight
@@ -1457,98 +1422,52 @@ run_biology = function(opt) {
             scale_fill_manual(values = aligner_colours) +
             bar_theme2 + labs(x = "pipeline", y = "peak RSS (GB)")
     }
-    ## Sendoel-only compositions (legacy; preserved so Fig 3 still builds).
-    ## Sendoel UMAPs (celltype and cluster) come from the !is_hela branch
-    ## above where p_umap (celltype) and p_cl (cluster) are built.
-    if (!is_hela && exists("p_umap", inherits = FALSE)) {
-        panels2$sendoel_umap = patchwork::wrap_elements(
-            full = patchwork::patchworkGrob(p_umap))
-    }
-    if (!is_hela && exists("p_cl", inherits = FALSE)) {
-        panels2$sendoel_cl = patchwork::wrap_elements(
-            full = patchwork::patchworkGrob(p_cl))
-    }
-    if (!is_hela && exists("p_bcor", inherits = FALSE)) {
-        panels2$sendoel_bcor = p_bcor + panel_theme2 +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  aspect.ratio = 1)
-    }
-    if (!is_hela && exists("p_ari_combo", inherits = FALSE) &&
-        !is.null(p_ari_combo)) {
-        panels2$sendoel_ari = p_ari_combo + panel_theme2 +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  legend.position = "top")
-    }
     blank2 = function() ggplot() + theme_void()
-    required_panels = if (is_hela) c("A", "B", "C", "D", "E", "F",
-                                     "G", "H", "I", "J")
-                      else         c("A", "B", "C")
+    required_panels = c("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
     for (k in required_panels) {
         if (is.null(panels2[[k]])) {
-            warning("fig2 panel ", k, " missing; rendering blank. wd=", wd)
+            warning(fig_stem, " panel ", k, " missing; rendering blank. wd=",
+                    wd)
             panels2[[k]] = blank2()
         }
     }
-    if (is_hela) {
-        ## HeLa fig 2: 18 cols x 8 rows, A-J. Orphan rows removed;
-        ## every panel now spans exactly 2 rows so no blank strips
-        ## remain under A, G, or H.
-        ##   Row 1-2: A UpSet (6), B QC violins (6), C MARD heatmap (6)
-        ##   Row 3-4: D per-cell r (6), E cluster ARI (6), F phase ARI (6)
-        ##   Row 5-6: G cluster UMAPs (14), I perf wall-clock (4)
-        ##   Row 7-8: H phase UMAPs (14), J perf peak RSS (4)
-        fig2_design = paste(
-            "AAAAAABBBBBBCCCCCC",
-            "AAAAAABBBBBBCCCCCC",
-            "DDDDDDEEEEEEFFFFFF",
-            "DDDDDDEEEEEEFFFFFF",
-            "GGGGGGGGGGGGGII###",
-            "GGGGGGGGGGGGGII###",
-            "HHHHHHHHHHHHHJJ###",
-            "HHHHHHHHHHHHHJJ###", sep = "\n")
-        fig2 = patchwork::wrap_plots(
-            A = panels2$A, B = panels2$B, C = panels2$C,
-            D = panels2$D, E = panels2$E, F = panels2$F,
-            G = panels2$G, H = panels2$H,
-            I = panels2$I, J = panels2$J,
-            design = fig2_design,
-            heights = c(1.0, 1.0, 1.0, 1.0, 0.97, 0.97, 0.97, 0.97)) +
-            patchwork::plot_annotation(tag_levels = "A") &
-            paper_shared_theme
-        pp_save_pdf(fig2, pdir, fig_stem, width = 18, height = 10)
-    } else {
-        ## Sendoel fig 3: narrative-ordered A-G. See the is_hela branch above
-        ## for the canonical "2/3 UMAPs left, 1/3 perf right" layout; this
-        ## branch uses an earlier stacked layout and is scheduled to move to
-        ## the same 12-col design as HeLa on the next pass.
-        ## Panel I/J are the separate perf ggplots shared with HeLa.
-        bar_theme_s = paper_theme(10) +
-            theme(legend.position = "none",
-                  plot.margin = grid::unit(c(2, 8, 2, 8), "pt"),
-                  axis.text.x = element_text(angle = 30, hjust = 1))
-        sendoel_perf = (panels2$I + panels2$J) +
-            patchwork::plot_layout(ncol = 2)
-        fig3_design = paste(
-            "AABBBBCCCC",
-            "AABBBBCCCC",
-            "DDDDDDDDDD",
-            "DDDDDDDDDD",
-            "EEEEEEEEEE",
-            "EEEEEEEEEE",
-            "FFFFFGGGGG",
-            "FFFFFGGGGG", sep = "\n")
-        fig3 = patchwork::wrap_plots(
-            A = panels2$A, B = panels2$B, C = panels2$C,
-            D = panels2$sendoel_cl,
-            E = panels2$sendoel_umap,
-            F = panels2$sendoel_ari,
-            G = sendoel_perf,
-            design = fig3_design,
-            heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
-            patchwork::plot_annotation(tag_levels = "A") &
-            paper_shared_theme
-        pp_save_pdf(fig3, pdir, fig_stem, width = 10.5, height = 14)
-    }
+    ## Unified fig 2 (HeLa) / fig 3 (Sendoel) design: 18 cols x 14 rows,
+    ## A-J. HeLa has phase UMAPs + phase ARI as H/F; Sendoel has celltype
+    ## UMAPs + celltype ARI in the same slots. G spans 5 sub-rows (0.8
+    ## each → 4.0 total); I spans the first 4 → I = 3.2 = 80% of G. H
+    ## spans 5 sub-rows (0.72 each → 3.6); J spans first 4 → J = 2.88 =
+    ## 80% of H.
+    fig_design = paste(
+        "AAAAAABBBBBBCCCCCC",
+        "AAAAAABBBBBBCCCCCC",
+        "DDDDDDEEEEEEFFFFFF",
+        "DDDDDDEEEEEEFFFFFF",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGG##",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHH##", sep = "\n")
+    ## H sub-row height: Sendoel's celltype UMAPs need an extra row of
+    ## legend room below and the user asked for 20% less vertical space
+    ## on H vs HeLa. HeLa keeps 0.72, Sendoel runs at 0.576.
+    h_sub = if (is_hela) 0.72 else 0.576
+    fig = patchwork::wrap_plots(
+        A = panels2$A, B = panels2$B, C = panels2$C,
+        D = panels2$D, E = panels2$E, F = panels2$F,
+        G = panels2$G, H = panels2$H,
+        I = panels2$I, J = panels2$J,
+        design = fig_design,
+        heights = c(1.0, 1.0, 1.0, 1.0,
+                    0.8, 0.8, 0.8, 0.8, 0.8,
+                    h_sub, h_sub, h_sub, h_sub, h_sub)) +
+        patchwork::plot_annotation(tag_levels = "A") &
+        paper_shared_theme
+    pp_save_pdf(fig, pdir, fig_stem, width = 18, height = 12)
 
     message("biology materials written to ", pdir)
 }

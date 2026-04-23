@@ -90,12 +90,15 @@ colnames(counts) <- barcodes$V1
 sce <- SingleCellExperiment(assays = list(counts = counts),
                             mainExpName = args$sample)
 
+## keep symbol in rowData$name (same as starsolo/kallisto/alevin)
+SummarizedExperiment::rowData(sce)$name <- features$V1
+
 ## Decode numeric barcode indices → 27-bp concatenated CB1·CB2·CB3 sequences
 colnames(sce) <- sapply(colnames(sce), index_to_sequence,
                         bead_version = args$bead_version)
 
-## Remap SBG gene symbols to Ensembl IDs using STARsolo features.tsv so that
-## rownames match the other aligners in the comparison report.
+## Remap symbols to Ensembl IDs via STARsolo features.tsv; make.unique
+## guards against duplicate rownames from many-to-one mappings.
 if (!is.null(args$features_map) && file.exists(args$features_map)) {
     feat <- read.table(args$features_map, header = FALSE, sep = '\t',
                        stringsAsFactors = FALSE)
@@ -105,9 +108,12 @@ if (!is.null(args$features_map) && file.exists(args$features_map)) {
     valid <- !is.na(remapped)
     cat(sprintf('Gene symbol remapping: %d / %d genes matched to Ensembl IDs\n',
                 sum(valid), nrow(sce)))
-    rownames(sce)[valid] <- remapped[valid]
+    new_rn <- rownames(sce)
+    new_rn[valid] <- remapped[valid]
+    rownames(sce) <- make.unique(new_rn)
 } else {
     cat('No features_map provided; keeping gene symbols as rownames\n')
+    rownames(sce) <- make.unique(rownames(sce))
 }
 
 if (args$cell_filtering == 'emptydrops') {
@@ -125,6 +131,19 @@ if (args$cell_filtering == 'emptydrops') {
         sce <- sce[, keep]
     }
 }
+
+## Fail fast: shape assertions before HDF5 save.
+stopifnot(
+    "rownames missing or empty" = {
+        rn <- rownames(sce)
+        !is.null(rn) && length(rn) == nrow(sce) && any(nzchar(rn))
+    },
+    "rownames not unique" = !anyDuplicated(rownames(sce)),
+    "rowData$name missing" = {
+        nm <- SummarizedExperiment::rowData(sce)$name
+        !is.null(nm) && length(nm) == nrow(sce) && any(nzchar(nm))
+    }
+)
 
 dir.create(dirname(args$output_fn), recursive = TRUE, showWarnings = FALSE)
 hdf5_dir <- sub('\\.rds$', '_hdf5', args$output_fn)
