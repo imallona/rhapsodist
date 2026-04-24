@@ -25,6 +25,17 @@ alevin_sketch: false
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
 
+## cb/umi harmonization tolerance: number of mismatches allowed in the fixed
+## linker parts of the R1 adapter passed to cutadapt (-e). Integer >= 0.
+## Default 0 (exact match). Increase to be more permissive on noisy reads.
+cb_umi_max_errors: 0
+
+## downsample reads before processing. Percentage in (0, 100]; 100 keeps all.
+## Applied paired (same seed for R1/R2). Optional; default 100. Per-sample
+## override via samples.uses.downsample.
+downsample: 100
+# downsample_seed: 42
+
 ## path where outputs will be generated; relative paths are resolved from the repo root
 working_dir: output
 
@@ -54,5 +65,11 @@ samples:
     uses:
       cb_umi_fq: /path/to/R1.fastq.gz
       cdna_fq: /path/to/R2.fastq.gz
-      bead_version: enhanced  # v1, enhanced, or enhanced_v2
-      species: 'human'  # human or mouse
+      # optional; all fields below default when absent. Bead chemistry is
+      # auto-detected from R1 linkers; allowedlist/diversity_insets are used
+      # as a QC check against the detection and for printing.
+      # allowedlist: 384          # 96 or 384 (default: 384)
+      # diversity_insets: yes     # yes or no (default: yes)
+      # use_sampletags: no        # yes or no (default: follows global skip_sampletags)
+      # species: human            # human or mouse; required when use_sampletags is yes
+      # downsample: 100           # percentage in (0, 100]; default 100

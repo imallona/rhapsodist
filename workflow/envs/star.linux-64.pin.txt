@@ -28,6 +28,7 @@ https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42-h5347b49_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.5-h2d0b736_3.conda
 https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.2-h35e630c_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/pigz-2.8-h421ea60_2.conda
+https://conda.anaconda.org/bioconda/linux-64/seqtk-1.5-h577a1d6_1.tar.bz2
 https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_h366c992_103.conda
 https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h33c6efd_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/libedit-3.1.20250104-pl5321h7949ede_0.conda
@@ -44,7 +45,7 @@ https://conda.anaconda.org/conda-forge/linux-64/pbzip2-1.1.13-h1fcc475_2.conda
 https://conda.anaconda.org/conda-forge/linux-64/libcurl-8.19.0-hcf29cc6_0.conda
 https://conda.anaconda.org/conda-forge/linux-64/python-3.12.13-hd63d673_0_cpython.conda
 https://conda.anaconda.org/bioconda/linux-64/htslib-1.23.1-h633afcb_0.conda
-https://conda.anaconda.org/conda-forge/noarch/packaging-26.0-pyhcf101f3_0.conda
+https://conda.anaconda.org/conda-forge/noarch/packaging-26.1-pyhc364b38_0.conda
 https://conda.anaconda.org/conda-forge/noarch/pycparser-2.22-pyh29332c3_1.conda
 https://conda.anaconda.org/conda-forge/linux-64/python-isal-1.8.0-py312h4c3975b_1.conda
 https://conda.anaconda.org/conda-forge/linux-64/python-zlib-ng-1.0.0-py312hc77a125_1.conda

@@ -43,7 +43,8 @@ source(file.path(script_dir, "export_helpers.R"))
 parse_args = function() {
     p = ArgumentParser()
     p$add_argument("--kind", required = TRUE,
-                   choices = c("simulation", "biology", "benchmarks"))
+                   choices = c("simulation", "biology", "benchmarks",
+                               "linker_qc"))
     p$add_argument("--working_dir", required = TRUE)
     p$add_argument("--sample", default = "")
     p$add_argument("--aligners", default = "starsolo,kallisto,alevin")
@@ -51,6 +52,9 @@ parse_args = function() {
     p$add_argument("--n_expected_cells", type = "integer", default = 0L)
     p$add_argument("--markers_file", default = "")
     p$add_argument("--bench_prefix", default = "fig_sim")
+    p$add_argument("--use_case",
+                   choices = c("sendoel", "hela"),
+                   default = "sendoel")
     p$parse_args()
 }
 
@@ -89,7 +93,8 @@ paper_shared_theme = theme(axis.title  = element_text(size = 9),
 ## displays it via annotation_raster. Wrapping the upset as a grid grob via
 ## wrap_elements breaks patchwork composition (other panels collapse), so the
 ## raster trick is the workaround.
-upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
+upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200,
+                       title = NULL) {
     if (!requireNamespace("UpSetR", quietly = TRUE)) return(NULL)
     if (!requireNamespace("png", quietly = TRUE)) return(NULL)
     if (length(set_list) < 2) return(NULL)
@@ -101,18 +106,51 @@ upset_panel = function(set_list, width_in = 6, height_in = 4, dpi = 200) {
                         mb.ratio = c(0.55, 0.45),
                         point.size = 2.2, line.size = 0.7))
     grDevices::dev.off()
-    img = png::readPNG(tmp)
-    ## Force the patchwork cell to honour the rendered PNG aspect ratio.
-    ## Without this, annotation_raster stretches the bitmap to fill a cell
-    ## with a different aspect and the UpSet bars look squashed.
-    ggplot() +
+    ## Trim the surrounding white margin that UpSetR leaves around its
+    ## grid so the panel occupies its patchwork cell instead of looking
+    ## tiny. Prefer magick::image_trim when available; otherwise do a
+    ## pure-R bounding-box crop on the raw PNG so the trim still happens
+    ## without the optional system dependency.
+    if (requireNamespace("magick", quietly = TRUE)) {
+        ## fuzz="5%" catches near-white pixels (antialiasing halo around
+        ## UpSetR's lines and text) that plain image_trim would leave
+        ## behind as margin.
+        im = magick::image_trim(magick::image_read(tmp), fuzz = 5)
+        tmp2 = tempfile(fileext = ".png")
+        magick::image_write(im, path = tmp2, format = "png")
+        img = png::readPNG(tmp2)
+    } else {
+        img = png::readPNG(tmp)
+        ## More aggressive threshold (0.97 vs 0.995) to clip near-white
+        ## halo in the pure-R fallback.
+        is_white = if (length(dim(img)) == 3) {
+            apply(img[, , seq_len(min(3, dim(img)[3])), drop = FALSE],
+                  c(1, 2), min) >= 0.97
+        } else {
+            img >= 0.97
+        }
+        non_white_rows = which(!apply(is_white, 1, all))
+        non_white_cols = which(!apply(is_white, 2, all))
+        if (length(non_white_rows) >= 2 && length(non_white_cols) >= 2) {
+            img = img[min(non_white_rows):max(non_white_rows),
+                      min(non_white_cols):max(non_white_cols), ,
+                      drop = FALSE]
+        }
+    }
+    plot_h = nrow(img); plot_w = ncol(img)
+    p = ggplot() +
         annotation_raster(img, xmin = 0, xmax = 1, ymin = 0, ymax = 1,
                           interpolate = TRUE) +
         coord_cartesian(xlim = c(0, 1), ylim = c(0, 1),
                         expand = FALSE, clip = "off") +
         theme_void() +
-        theme(aspect.ratio = height_in / width_in,
-              plot.margin = grid::unit(c(2, 2, 2, 2), "pt"))
+        theme(aspect.ratio = plot_h / plot_w,
+              plot.title = element_text(size = 10, face = "plain",
+                                        hjust = 0.5,
+                                        margin = margin(b = 2)),
+              plot.margin = grid::unit(c(0, 0, 0, 0), "pt"))
+    if (!is.null(title)) p = p + ggtitle(title)
+    p
 }
 
 ## Simulation kind. Reads per-pipeline SCEs plus the simulation truth (barcodes
@@ -423,31 +461,80 @@ run_simulation = function(opt) {
             panels[[k]] = blank()
         }
     }
+    ## fig 1: narrative-ordered B-F (A = workflow schematic is overlaid
+    ## manually on the composed PDF). The simulated pseudobulk Pearson r
+    ## heatmap (panels$G) is kept as a standalone supplementary PDF and
+    ## not composed into fig 1, since MARD in panel D already conveys
+    ## pseudobulk agreement on the simulated data.
     fig1_design = paste("BBBCCCDDD",
                         "BBBCCCDDD",
                         "BBBCCCDDD",
-                        "GGGEEEFFF",
-                        "GGGEEEFFF", sep = "\n")
+                        "EEEEEFFFF",
+                        "EEEEEFFFF", sep = "\n")
     fig1 = patchwork::wrap_plots(B = panels$B, C = panels$C, D = panels$D,
-                                 G = panels$G, E = panels$E, F = panels$F,
+                                 E = panels$E, F = panels$F,
                                  design = fig1_design) +
         patchwork::plot_annotation(tag_levels = list(c("B", "C", "D",
-                                                       "G", "E", "F"))) &
+                                                       "E", "F"))) &
         paper_shared_theme
     pp_save_pdf(fig1, pdir, "fig1_simulations_panels",
-                width = 10.5, height = 7.5)
+                width = 10.5, height = 7)
 
     message("simulation materials written to ", pdir)
 }
 
 ## Biology kind. Consumes derived biology_*.rds files written by the
 ## production report and Seurat caches for UMAP plots.
+## Canonical plot order: sbg first (if present), then alevin, kallisto, starsolo.
+## Used everywhere pipeline drives axis, fill, or facet order so figures read
+## consistently across samples.
+canonical_pipeline_order = c("sbg", "alevin", "kallisto", "starsolo", "truth")
+
+order_pipelines = function(x, present = NULL) {
+    if (is.null(present)) present = unique(as.character(x))
+    lv = intersect(canonical_pipeline_order, present)
+    factor(x, levels = lv)
+}
+
+## Disjoint hue ranges per aligner for cluster UMAPs. Hue windows are
+## centred on each aligner's Okabe-Ito colour (aligner_colours above),
+## so cluster hues in G sit in the same family as the aligner's bars
+## and violins elsewhere and never overlap across aligners.
+##   starsolo  #E69F00  → hue ~45   (orange/yellow)
+##   kallisto  #56B4E9  → hue ~210  (sky blue)
+##   alevin    #009E73  → hue ~160  (bluish green)
+##   sbg       #CC79A7  → hue ~345  (reddish pink)
+cluster_hue_range = list(
+    starsolo = c(30,  70),
+    kallisto = c(190, 240),
+    alevin   = c(130, 180),
+    sbg      = c(325, 365))
+
+cluster_palette_for = function(pipe, n_levels) {
+    h_range = cluster_hue_range[[pipe]]
+    if (is.null(h_range)) h_range = c(0, 360)
+    if (n_levels <= 1) {
+        return(hcl(h = mean(h_range), c = 90, l = 55))
+    }
+    ## Sweep hue, luminance, and chroma together so clusters within a
+    ## single aligner's zone differ in tint/shade as well as hue.
+    hues = seq(h_range[1], h_range[2], length.out = n_levels)
+    lums = seq(40, 75, length.out = n_levels)
+    chromas = seq(100, 70, length.out = n_levels)
+    hcl(h = hues, c = chromas, l = lums)
+}
+
 run_biology = function(opt) {
     wd = opt$working_dir
     samp = opt$sample
     aligners = strsplit(opt$aligners, ",")[[1]]
     if (isTRUE(as.logical(opt$has_sbg))) aligners = c(aligners, "sbg")
+    aligners = intersect(canonical_pipeline_order, aligners)
     pdir = setup_paper_dir(wd, samp)
+    use_case = if (is.null(opt$use_case)) "sendoel" else opt$use_case
+    stopifnot(use_case %in% c("sendoel", "hela"))
+    is_hela = identical(use_case, "hela")
+    fig_stem = switch(use_case, hela = "fig2_hela", sendoel = "fig3_sendoel")
 
     biords = function(tag) file.path(wd, paste0(samp, "_biology_", tag, ".rds"))
 
@@ -492,17 +579,19 @@ run_biology = function(opt) {
                        ci_lo = ci[1], ci_hi = ci[2])
         }))
         pp_save_csv(mard_dt, pdir, "bio_pseudobulk_mard")
+        mard_dt[, pipeline1 := order_pipelines(pipeline1, aligners)]
+        mard_dt[, pipeline2 := order_pipelines(pipeline2, aligners)]
         p = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard * 100)) +
             geom_tile(colour = "white") +
-            geom_text(aes(label = sprintf("%.1f%%", mard * 100)), size = 3) +
+            geom_text(aes(label = sprintf("%.1f", mard * 100)), size = 2.8) +
             scale_fill_viridis_c(option = "viridis", direction = -1,
-                                 limits = c(0, NA), alpha = 0.75) +
+                                 limits = c(0, 100), alpha = 0.75) +
+            scale_y_discrete(limits = rev) +
             theme_bw() +
             theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  plot.title = element_text(size = 10,
-                                            margin = margin(b = 2))) +
-            labs(x = "pipeline", y = "pipeline", fill = "MARD (%)",
-                 title = "Pseudobulk MARD on log-normalized counts")
+                  aspect.ratio = 1) +
+            labs(x = NULL, y = NULL, fill = "MARD (%)",
+                 title = "Pseudobulk MARD")
         pp_save_pdf(p, pdir, "bio_pseudobulk_mard", width = 4.5, height = 3.5)
 
         ## Pairwise pseudobulk scatter, log10 counts, marker genes highlighted.
@@ -561,7 +650,7 @@ run_biology = function(opt) {
                 geom_tile(colour = "white") +
                 geom_text(aes(label = sprintf("%.3f", pearson_r)), size = 3) +
                 scale_fill_viridis_c(option = "viridis", direction = 1,
-                                     limits = c(min(bcor_dt$pearson_r), 1),
+                                     limits = c(0, 1),
                                      alpha = 0.75) +
                 theme_bw() +
                 theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
@@ -697,6 +786,43 @@ run_biology = function(opt) {
         ari_bar(cluster_ari, "bio_cluster_ari", "cluster ARI")
         ari_bar(ct_ari,      "bio_celltype_ari", "cell-type ARI")
 
+        ## Combined cluster + cell-type ARI bar panel. Used as fig 3 panel F
+        ## on the sendoel use case so the main figure exposes ARI directly
+        ## next to the UMAPs and performance bars. Only built when both
+        ## tables are present (i.e. the marker-voting celltype exists, which
+        ## is the case for sendoel but not hela).
+        p_ari_combo = NULL
+        if (!is.null(cluster_ari) && !is.null(ct_ari) &&
+            nrow(cluster_ari) > 0 && nrow(ct_ari) > 0) {
+            ari_combo = rbind(
+                cluster_ari[, .(pair = paste(pipeline1, pipeline2,
+                                             sep = " vs "),
+                                ari, ci_lo, ci_hi, kind = "cluster")],
+                ct_ari[,      .(pair = paste(pipeline1, pipeline2,
+                                             sep = " vs "),
+                                ari, ci_lo, ci_hi, kind = "cell type")])
+            pp_save_csv(ari_combo, pdir, "bio_ari_combo")
+            p_ari_combo = ggplot(ari_combo,
+                                 aes(pair, ari, fill = kind)) +
+                geom_col(position = position_dodge(0.75), width = 0.65) +
+                geom_errorbar(aes(ymin = ci_lo, ymax = ci_hi),
+                              position = position_dodge(0.75),
+                              width = 0.25, linewidth = 0.4) +
+                geom_text(aes(y = ci_hi, label = sprintf("%.3f", ari)),
+                          position = position_dodge(0.75),
+                          vjust = -0.4, size = 2.8) +
+                scale_y_continuous(expand = expansion(mult = c(0.05, 0.12)),
+                                   limits = c(0, 1)) +
+                scale_fill_manual(values = c(cluster = "#0072B2",
+                                             `cell type` = "#E69F00")) +
+                theme_bw() +
+                theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                      legend.position = "top") +
+                labs(x = NULL, y = "ARI", fill = NULL)
+            pp_save_pdf(p_ari_combo, pdir, "bio_ari_combo",
+                        width = 5.5, height = 3.2)
+        }
+
         ## Pairwise confusion-matrix heatmaps underlying each ARI. Rows are
         ## labels from pipeline A, columns from pipeline B, cell entries are
         ## cell counts on shared barcodes.
@@ -704,19 +830,57 @@ run_biology = function(opt) {
             pipes = sort(unique(clusters_dt$pipeline))
             if (length(pipes) < 2) return(invisible(NULL))
             pairs = combn(pipes, 2, simplify = FALSE)
+            square_pad = function(ct) {
+                nr = nrow(ct); nc = ncol(ct)
+                if (nr == nc) return(ct)
+                if (nr > nc) {
+                    extra = matrix(0L, nrow = nr, ncol = nr - nc,
+                                   dimnames = list(rownames(ct),
+                                                   paste0("__pad",
+                                                          seq_len(nr - nc))))
+                    cbind(ct, extra)
+                } else {
+                    extra = matrix(0L, nrow = nc - nr, ncol = nc,
+                                   dimnames = list(paste0("__pad",
+                                                          seq_len(nc - nr)),
+                                                   colnames(ct)))
+                    rbind(ct, extra)
+                }
+            }
+            do_hungarian = (key == "cluster_prefixed") &&
+                           requireNamespace("clue", quietly = TRUE)
             panels = lapply(pairs, function(pair) {
                 d1 = clusters_dt[pipeline == pair[1], .(barcode, a = get(key))]
                 d2 = clusters_dt[pipeline == pair[2], .(barcode, b = get(key))]
                 sh = merge(d1, d2, by = "barcode")
                 if (nrow(sh) < 10) return(NULL)
-                tab = as.data.table(sh[, .N, by = .(a, b)])
+                ct = table(sh$a, sh$b)
+                if (do_hungarian) {
+                    ctm = square_pad(as.matrix(unclass(ct)))
+                    perm = as.integer(clue::solve_LSAP(ctm, maximum = TRUE))
+                    ctm = ctm[, perm]
+                    keep_r = rowSums(ctm) > 0
+                    keep_c = colSums(ctm) > 0
+                    ctm = ctm[keep_r, keep_c, drop = FALSE]
+                    tab = as.data.table(as.table(ctm))
+                } else {
+                    tab = as.data.table(as.table(ct))
+                }
+                setnames(tab, c("a", "b", "N"))
+                tab[, a := factor(a, levels = unique(a))]
+                tab[, b := factor(b, levels = unique(b))]
                 ggplot(tab, aes(a, b, fill = N)) +
                     geom_tile(colour = "white") +
-                    scale_fill_distiller(palette = "Blues", direction = 1) +
-                    theme_bw(base_size = 11) +
+                    geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.0) +
+                    scale_fill_distiller(palette = "Blues", direction = 1,
+                                         trans = "log1p",
+                                         breaks = c(0, 10, 100, 1000, 10000)) +
+                    theme_bw(base_size = 10) +
                     theme(aspect.ratio = 1,
                           axis.text.x = element_text(angle = 45,
-                                                     hjust = 1, vjust = 1),
+                                                     hjust = 1, vjust = 1,
+                                                     size = 7),
+                          axis.text.y = element_text(size = 7),
                           legend.position = "right",
                           plot.margin = margin(4, 4, 4, 4)) +
                     labs(x = pair[1], y = pair[2], fill = "cells",
@@ -724,18 +888,19 @@ run_biology = function(opt) {
             })
             panels = Filter(Negate(is.null), panels)
             if (length(panels) == 0) return(invisible(NULL))
-            p = wrap_plots(panels, nrow = 1)
-            pp_save_pdf(p, pdir, name,
-                        width = 14, height = 14 / length(panels))
+            p = wrap_plots(panels, ncol = 3)
+            pp_save_pdf(p, pdir, name, width = 13, height = 9)
         }
         draw_confusion("cluster_prefixed", "bio_cluster_confusion", "cluster")
         draw_confusion("celltype",         "bio_celltype_confusion", "cell type")
     }
 
-    ## UMAP coloured by marker cell type, one panel per pipeline. Requires
-    ## Seurat caches. The Seurat caches are saved by 04_biology.Rmd before
-    ## marker_celltype is assigned, so we pull celltype from the clusters RDS
-    ## (pipeline, barcode, celltype) and join by barcode. Rasterise points.
+    ## UMAP panels. For the sendoel use case, D is celltype UMAP and E is
+    ## cluster UMAP. For the hela use case (no marker celltype on a clonal
+    ## line) D is an ARI heatmap of cluster concordance across aligners and
+    ## E is a UMAP coloured by Seurat cell cycle phase. The Seurat caches
+    ## are saved by 04_biology.Rmd; the per-barcode table with cluster,
+    ## celltype, and cell cycle phase columns is in the clusters RDS.
     seu_fns = setNames(file.path(wd, sprintf("%s_biology_%s_seurat.rds", samp,
                                              aligners)), aligners)
     clusters_fn = biords("clusters")
@@ -744,75 +909,262 @@ run_biology = function(opt) {
         cbbPalette = c("#E69F00", "#56B4E9", "#009E73",
                        "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
         clusters_dt = as.data.table(readRDS(clusters_fn))
-        ct_levels = c(sort(setdiff(unique(clusters_dt$celltype), "none")), "none")
-        ct_colours = setNames(
-            c(rep(cbbPalette, length.out = length(ct_levels) - 1), "grey85"),
-            ct_levels)
-        panels = lapply(names(seu_fns), function(pipe) {
-            so = readRDS(seu_fns[[pipe]])
-            emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-            colnames(emb) = c("UMAP_1", "UMAP_2")
-            emb$barcode = rownames(emb)
-            ct_map = clusters_dt[pipeline == pipe, setNames(celltype, barcode)]
-            emb$celltype = factor(
-                ifelse(emb$barcode %in% names(ct_map), ct_map[emb$barcode], "none"),
-                levels = ct_levels)
-            ggplot(emb, aes(UMAP_1, UMAP_2, colour = celltype)) +
-                pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                scale_colour_manual(values = ct_colours, drop = FALSE) +
-                guides(colour = guide_legend(
-                    override.aes = list(size = 2.5, alpha = 1))) +
-                theme_bw() + theme(aspect.ratio = 1) +
-                labs(title = pipe, colour = "cell type")
-        })
-        if (length(panels) > 0) {
-            p_umap = wrap_plots(panels, nrow = 1) +
-                plot_layout(guides = "collect") +
-                plot_annotation(title = "    Cell embeddings by annotation",
-                                theme = theme(plot.title = element_text(
-                                    size = 11, face = "plain",
-                                    margin = margin(l = 30, b = 4))))
-            pp_save_pdf(p_umap, pdir, "bio_umap_celltype",
-                        width = 3.2 * length(panels), height = 3.2)
-        }
 
-        ## UMAP coloured by Louvain cluster, one panel per pipeline.
-        cl_panels = lapply(names(seu_fns), function(pipe) {
-            so = readRDS(seu_fns[[pipe]])
-            emb = as.data.frame(Seurat::Embeddings(so, "umap"))
-            colnames(emb) = c("UMAP_1", "UMAP_2")
-            emb$barcode = rownames(emb)
-            cl_map = clusters_dt[pipeline == pipe,
-                                 setNames(as.character(cluster_prefixed), barcode)]
-            emb$cluster = factor(
-                ifelse(emb$barcode %in% names(cl_map), cl_map[emb$barcode], NA))
-            ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
-                pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
-                guides(colour = guide_legend(ncol = 2,
-                                             override.aes = list(size = 1.5))) +
-                theme_bw() + theme(aspect.ratio = 1, legend.position = "right",
-                                   legend.key.size = grid::unit(0.3, "cm"),
-                                   legend.text = element_text(size = 7)) +
-                labs(title = pipe, colour = "Louvain")
-        })
-        if (length(cl_panels) > 0) {
-            p_cl = wrap_plots(cl_panels, nrow = 1) +
-                plot_annotation(title = "    Cell embeddings by cluster",
-                                theme = theme(plot.title = element_text(
-                                    size = 11, face = "plain",
-                                    margin = margin(l = 30, t = 2, b = 6))))
-            pp_save_pdf(p_cl, pdir, "bio_umap_cluster",
-                        width = 3.6 * length(cl_panels), height = 3.2)
+        ## Unified biology-panels block for both fig 2 (HeLa) and fig 3
+        ## (mouse skin, Sendoel). Both use_cases now produce the same
+        ## panels2 keys A-J; the only difference is the second UMAP row
+        ## (phase for HeLa, celltype for Sendoel) and the second ARI
+        ## heatmap (phase ARI for HeLa, celltype ARI for Sendoel).
+        {
+            ## Cluster ARI heatmap (panel E) — both use cases.
+            if (requireNamespace("mclust", quietly = TRUE) &&
+                length(aligners) >= 2) {
+                pair_grid = expand.grid(a = aligners, b = aligners,
+                                        stringsAsFactors = FALSE)
+                ari_rows = rbindlist(lapply(seq_len(nrow(pair_grid)),
+                                            function(i) {
+                    aa = pair_grid$a[i]; bb = pair_grid$b[i]
+                    d1 = clusters_dt[pipeline == aa,
+                                     .(barcode, cl = cluster_prefixed)]
+                    d2 = clusters_dt[pipeline == bb,
+                                     .(barcode, cl = cluster_prefixed)]
+                    sh = merge(d1, d2, by = "barcode",
+                               suffixes = c(".a", ".b"))
+                    ari = if (nrow(sh) < 10) NA_real_
+                          else mclust::adjustedRandIndex(sh$cl.a, sh$cl.b)
+                    data.table(pipeline1 = aa, pipeline2 = bb, ari = ari)
+                }))
+                pp_save_csv(ari_rows, pdir, "bio_cluster_ari_matrix")
+                ari_rows[, pipeline1 := order_pipelines(pipeline1, aligners)]
+                ari_rows[, pipeline2 := order_pipelines(pipeline2, aligners)]
+                p_ari_heat = ggplot(ari_rows,
+                                    aes(pipeline1, pipeline2, fill = ari)) +
+                    geom_tile(colour = "white") +
+                    geom_text(aes(label = ifelse(is.na(ari), "",
+                                                 sprintf("%.3f", ari))),
+                              size = 2.8) +
+                    scale_fill_viridis_c(option = "viridis", direction = 1,
+                                         limits = c(0, 1),
+                                         alpha = 0.75, na.value = "grey90") +
+                    scale_y_discrete(limits = rev) +
+                    theme_bw() +
+                    theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                          aspect.ratio = 1) +
+                    labs(x = NULL, y = NULL, fill = "ARI",
+                         title = "Cluster ARI")
+                pp_save_pdf(p_ari_heat, pdir, "bio_cluster_ari_matrix",
+                            width = 5, height = 4)
+            }
+
+            ## Second ARI heatmap (panel F). HeLa uses cell-cycle Phase;
+            ## Sendoel uses marker-based celltype. Built by a small
+            ## helper to avoid duplication.
+            build_second_ari_heatmap = function(label_col, title, out_stem) {
+                if (!requireNamespace("mclust", quietly = TRUE)) return(NULL)
+                if (!(label_col %in% colnames(clusters_dt))) return(NULL)
+                if (!any(!is.na(clusters_dt[[label_col]]))) return(NULL)
+                if (length(aligners) < 2) return(NULL)
+                lg = expand.grid(a = aligners, b = aligners,
+                                 stringsAsFactors = FALSE)
+                rows = rbindlist(lapply(seq_len(nrow(lg)), function(i) {
+                    aa = lg$a[i]; bb = lg$b[i]
+                    d1 = clusters_dt[pipeline == aa,
+                                     .(barcode, v = get(label_col))]
+                    d2 = clusters_dt[pipeline == bb,
+                                     .(barcode, v = get(label_col))]
+                    sh = merge(d1, d2, by = "barcode",
+                               suffixes = c(".a", ".b"))
+                    sh = sh[!is.na(v.a) & !is.na(v.b)]
+                    ari = if (nrow(sh) < 10) NA_real_
+                          else mclust::adjustedRandIndex(sh$v.a, sh$v.b)
+                    data.table(pipeline1 = aa, pipeline2 = bb, ari = ari)
+                }))
+                pp_save_csv(rows, pdir, out_stem)
+                rows[, pipeline1 := order_pipelines(pipeline1, aligners)]
+                rows[, pipeline2 := order_pipelines(pipeline2, aligners)]
+                p = ggplot(rows, aes(pipeline1, pipeline2, fill = ari)) +
+                    geom_tile(colour = "white") +
+                    geom_text(aes(label = ifelse(is.na(ari), "",
+                                                 sprintf("%.3f", ari))),
+                              size = 2.8) +
+                    scale_fill_viridis_c(option = "viridis", direction = 1,
+                                         limits = c(0, 1),
+                                         alpha = 0.75,
+                                         na.value = "grey90") +
+                    scale_y_discrete(limits = rev) +
+                    theme_bw() +
+                    theme(axis.text.x = element_text(angle = 30, hjust = 1),
+                          aspect.ratio = 1) +
+                    labs(x = NULL, y = NULL, fill = "ARI",
+                         title = title)
+                pp_save_pdf(p, pdir, out_stem, width = 5, height = 4)
+                p
+            }
+            if (is_hela) {
+                p_second_ari = build_second_ari_heatmap(
+                    "Phase", "Cellcycle phase ARI", "bio_phase_ari_matrix")
+            } else {
+                p_second_ari = build_second_ari_heatmap(
+                    "celltype", "Celltype ARI", "bio_celltype_ari_matrix")
+            }
+
+            ## Cluster UMAPs (panel G): one per aligner, horizontal row.
+            ## Per-aligner Louvain labels are distinct (s_0, k_0, ...), so
+            ## legends cannot be collected; render one legend below each
+            ## UMAP in two columns to match the UMAP width. Colors per
+            ## aligner come from cluster_palette_for() which uses disjoint
+            ## HCL hue zones so no cluster color repeats across aligners.
+            ## Centroid labels help distinguish clusters within an aligner's
+            ## narrow hue band. UMAP_1/UMAP_2 axis titles appear only on the
+            ## leftmost panel.
+            cl_panels_hela = lapply(seq_along(aligners), function(i) {
+                pipe = aligners[i]
+                if (!file.exists(seu_fns[[pipe]])) return(NULL)
+                so = readRDS(seu_fns[[pipe]])
+                emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+                colnames(emb) = c("UMAP_1", "UMAP_2")
+                emb$barcode = rownames(emb)
+                cl_map = clusters_dt[pipeline == pipe,
+                                     setNames(as.character(cluster_prefixed),
+                                              barcode)]
+                emb$cluster = factor(
+                    ifelse(emb$barcode %in% names(cl_map),
+                           cl_map[emb$barcode], NA))
+                pal = cluster_palette_for(pipe, nlevels(emb$cluster))
+                emb_dt = as.data.table(emb)
+                centroids = emb_dt[!is.na(cluster),
+                                   .(UMAP_1 = median(UMAP_1),
+                                     UMAP_2 = median(UMAP_2)),
+                                   by = cluster]
+                axis_title_theme = if (i == 1) element_text(size = 9)
+                                   else element_blank()
+                ggplot(emb, aes(UMAP_1, UMAP_2, colour = cluster)) +
+                    pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                    scale_colour_manual(values = pal, na.value = "grey85") +
+                    ggrepel::geom_text_repel(
+                        data = centroids,
+                        aes(label = cluster),
+                        colour = "black",
+                        size = 2.5,
+                        fontface = "bold",
+                        bg.colour = "white",
+                        bg.r = 0.15,
+                        box.padding = 0.25,
+                        min.segment.length = 0,
+                        segment.size = 0.2,
+                        max.overlaps = Inf,
+                        seed = 1L,
+                        show.legend = FALSE) +
+                    guides(colour = guide_legend(
+                        ncol = 2,
+                        override.aes = list(size = 1.5))) +
+                    theme_bw() +
+                    theme(aspect.ratio = 1,
+                          panel.grid = element_blank(),
+                          axis.title.x = axis_title_theme,
+                          axis.title.y = axis_title_theme,
+                          legend.position = "bottom",
+                          legend.box.margin = margin(0, 0, 0, 0),
+                          legend.margin = margin(0, 0, 0, 0),
+                          legend.box.spacing = grid::unit(2, "pt"),
+                          legend.key.size = grid::unit(0.25, "cm"),
+                          legend.spacing.y = grid::unit(0, "pt"),
+                          legend.text = element_text(size = 7),
+                          legend.title = element_text(size = 8)) +
+                    labs(title = pipe, colour = "Louvain")
+            })
+            cl_panels_hela = Filter(Negate(is.null), cl_panels_hela)
+            if (length(cl_panels_hela) > 0) {
+                p_cluster_row = wrap_plots(cl_panels_hela, nrow = 1)
+                pp_save_pdf(p_cluster_row, pdir, "bio_umap_cluster",
+                            width = 3.6 * length(cl_panels_hela), height = 3.6)
+            }
+
+            ## Second UMAP row (panel H). HeLa: cell-cycle phase (shared
+            ## categorical G1/S/G2M, collected legend). Sendoel: marker-
+            ## based celltype (shared categorical across aligners,
+            ## collected legend). Same geometry.
+            build_second_umap_row = function(label_col, label_levels,
+                                             label_colours, legend_title,
+                                             out_stem, legend_nrow = 1) {
+                if (!(label_col %in% colnames(clusters_dt))) return(NULL)
+                if (!any(!is.na(clusters_dt[[label_col]]))) return(NULL)
+                panels_out = lapply(seq_along(aligners), function(i) {
+                    pipe = aligners[i]
+                    if (!file.exists(seu_fns[[pipe]])) return(NULL)
+                    so = readRDS(seu_fns[[pipe]])
+                    emb = as.data.frame(Seurat::Embeddings(so, "umap"))
+                    colnames(emb) = c("UMAP_1", "UMAP_2")
+                    emb$barcode = rownames(emb)
+                    lab_map = clusters_dt[pipeline == pipe,
+                                          setNames(as.character(get(label_col)),
+                                                   barcode)]
+                    emb$lab = factor(
+                        ifelse(emb$barcode %in% names(lab_map),
+                               lab_map[emb$barcode], NA),
+                        levels = label_levels)
+                    axis_title_theme = if (i == 1) element_text(size = 9)
+                                       else element_blank()
+                    ggplot(emb, aes(UMAP_1, UMAP_2, colour = lab)) +
+                        pp_rasterise(geom_point(size = 0.3, alpha = 0.8)) +
+                        scale_colour_manual(values = label_colours,
+                                            na.value = "grey85",
+                                            drop = FALSE) +
+                        guides(colour = guide_legend(
+                            nrow = legend_nrow,
+                            override.aes = list(size = 2.5, alpha = 1))) +
+                        theme_bw() +
+                        theme(aspect.ratio = 1,
+                              panel.grid = element_blank(),
+                              axis.title.x = axis_title_theme,
+                              axis.title.y = axis_title_theme,
+                              legend.key.size = grid::unit(0.3, "cm"),
+                              legend.text = element_text(size = 7),
+                              legend.title = element_text(size = 8)) +
+                        labs(title = pipe, colour = legend_title)
+                })
+                panels_out = Filter(Negate(is.null), panels_out)
+                if (length(panels_out) == 0) return(NULL)
+                p = wrap_plots(panels_out, nrow = 1) +
+                    plot_layout(guides = "collect") &
+                    theme(legend.position = "bottom")
+                pp_save_pdf(p, pdir, out_stem,
+                            width = 3.6 * length(panels_out), height = 3.6)
+                p
+            }
+            if (is_hela) {
+                phase_levels = c("G1", "S", "G2M")
+                phase_colours = setNames(c("#1B9E77", "#D95F02", "#7570B3"),
+                                         phase_levels)
+                p_second_umap = build_second_umap_row(
+                    "Phase", phase_levels, phase_colours,
+                    "Cell cycle phase", "bio_umap_phase",
+                    legend_nrow = 1)
+            } else {
+                ct_levels = c(sort(setdiff(unique(clusters_dt$celltype),
+                                           "none")), "none")
+                ct_colours = setNames(
+                    c(rep(cbbPalette, length.out = length(ct_levels) - 1),
+                      "grey85"),
+                    ct_levels)
+                p_second_umap = build_second_umap_row(
+                    "celltype", ct_levels, ct_colours,
+                    "cell type", "bio_umap_celltype",
+                    legend_nrow = 2)
+            }
         }
     }
 
     per_cell_qc = NULL
+    p_per_cell_cor = NULL
     sce_fns = setNames(file.path(wd, aligners, samp,
                                  paste0(samp, "_", aligners, "_sce.rds")),
                        aligners)
+    sce_list = NULL
     if (all(file.exists(sce_fns))) {
-        per_cell_qc = rbindlist(lapply(names(sce_fns), function(pipe) {
-            sce = readRDS(sce_fns[[pipe]])
+        sce_list = lapply(sce_fns, readRDS)
+        per_cell_qc = rbindlist(lapply(names(sce_list), function(pipe) {
+            sce = sce_list[[pipe]]
             counts_m = counts(sce)
             total_umi = colSums(counts_m)
             n_genes = colSums(counts_m > 0)
@@ -845,6 +1197,125 @@ run_biology = function(opt) {
         pp_save_csv(per_cell_qc, pdir, "bio_per_cell_qc")
     }
 
+    ## Per-cell cross-aligner Pearson r on log1p counts over shared barcodes
+    ## and shared genes. Stored as CSV summary and standalone PDF so it can
+    ## be composed into panel D of fig 2 (HeLa) and fig 3 (Sendoel). Shared
+    ## cells are downsampled to max_cells_per_cell_cor per pair with a
+    ## fixed seed so the density stays cheap to compute on large real
+    ## datasets and is reproducible.
+    max_cells_per_cell_cor = 500L
+    if (!is.null(sce_list) && length(sce_list) >= 2) {
+        col_pearson = function(A, B) {
+            Am = colMeans(A); Bm = colMeans(B)
+            Ac = sweep(A, 2, Am, "-"); Bc = sweep(B, 2, Bm, "-")
+            num = colSums(Ac * Bc)
+            denom = sqrt(colSums(Ac^2) * colSums(Bc^2))
+            ifelse(denom > 0, num / denom, NA_real_)
+        }
+        ## Harmonize gene identifiers across aligners so SBG (rownames are
+        ## gene symbols) can be matched against starsolo/kallisto/alevin
+        ## (rownames are Ensembl IDs; gene symbols live in rowData). We
+        ## match on keys and subset the counts matrix by integer index,
+        ## rather than overwriting rownames on the SCE wrapper, because the
+        ## HDF5-backed assay does not always inherit the updated dimnames.
+        ## Picking the rowData column: prefer explicitly-named symbol
+        ## columns, otherwise the highest-cardinality column (skips static
+        ## columns like "type"="Gene" or "value"="Expression" added by
+        ## STARsolo's features.tsv import).
+        gene_key = function(sce) {
+            rd = SummarizedExperiment::rowData(sce)
+            for (col in c("Symbol", "symbol", "gene_name", "gene_symbol")) {
+                if (col %in% colnames(rd)) {
+                    v = as.character(rd[[col]])
+                    if (length(v) && all(nzchar(v))) return(v)
+                }
+            }
+            n = nrow(sce)
+            best_col = NA_character_
+            best_u = 1L
+            for (col in colnames(rd)) {
+                v = as.character(rd[[col]])
+                if (length(v) != n || !all(nzchar(v))) next
+                u = length(unique(v))
+                if (u > best_u && u >= max(10, n * 0.5)) {
+                    best_col = col
+                    best_u = u
+                }
+            }
+            if (!is.na(best_col)) return(as.character(rd[[best_col]]))
+            rn = rownames(sce)
+            if (!is.null(rn) && length(rn) && all(nzchar(rn))) return(rn)
+            as.character(seq_len(n))
+        }
+        gene_keys = lapply(sce_list, gene_key)
+        pair_combos = combn(names(sce_list), 2, simplify = FALSE)
+        per_cell_cor = rbindlist(lapply(pair_combos, function(pair) {
+            a = pair[1]; b = pair[2]
+            shared_cells = intersect(colnames(sce_list[[a]]),
+                                     colnames(sce_list[[b]]))
+            key_a = gene_keys[[a]]
+            key_b = gene_keys[[b]]
+            shared_genes = intersect(key_a, key_b)
+            if (length(shared_cells) < 2 || length(shared_genes) < 2) return(NULL)
+            ## integer row indices into each SCE's counts matrix; first-match
+            ## wins on duplicates, which is fine for the density plot.
+            ix_a = match(shared_genes, key_a)
+            ix_b = match(shared_genes, key_b)
+            n_total = length(shared_cells)
+            if (n_total > max_cells_per_cell_cor) {
+                shared_cells = shared_cells[order(shared_cells)]
+                set.seed(1L)
+                shared_cells = sort(sample(shared_cells,
+                                           max_cells_per_cell_cor,
+                                           replace = FALSE))
+            }
+            A = log1p(as.matrix(counts(sce_list[[a]])[ix_a,
+                                                      shared_cells, drop = FALSE]))
+            B = log1p(as.matrix(counts(sce_list[[b]])[ix_b,
+                                                      shared_cells, drop = FALSE]))
+            data.table(pair = paste(a, "vs", b),
+                       cell = shared_cells,
+                       correlation = col_pearson(A, B),
+                       n_sampled = length(shared_cells),
+                       n_shared_total = n_total)
+        }), fill = TRUE)
+        if (nrow(per_cell_cor) > 0) {
+            valid_pc = per_cell_cor[!is.na(correlation)]
+            pc_summary = valid_pc[, .(n_sampled = .N,
+                                      n_shared_total = n_shared_total[1],
+                                      median_r = median(correlation),
+                                      mean_r   = mean(correlation),
+                                      q25      = quantile(correlation, 0.25),
+                                      q75      = quantile(correlation, 0.75)),
+                                  by = pair]
+            pp_save_csv(pc_summary, pdir, "bio_per_cell_correlation_summary")
+            saveRDS(valid_pc, file.path(pdir, "bio_per_cell_correlation.rds"))
+            ## Palette chosen to stay off the aligner hues (Okabe-Ito orange,
+            ## sky-blue, bluish-green, pink). Up to 6 curves, one per aligner
+            ## pair.
+            pair_colours = c("#8B0000", "#4B0082", "#556B2F",
+                             "#8B4513", "#2F4F4F", "#6A5ACD")
+            p_per_cell_cor = ggplot(valid_pc,
+                                    aes(x = correlation, colour = pair,
+                                        fill = pair)) +
+                geom_density(alpha = 0.25, linewidth = 0.7) +
+                scale_colour_manual(values = pair_colours) +
+                scale_fill_manual(values = pair_colours) +
+                theme_bw() +
+                theme(panel.grid = element_blank(),
+                      aspect.ratio = 1) +
+                labs(x = "per-cell Pearson r", y = "density",
+                     colour = NULL, fill = NULL,
+                     title = "Per-cell cross-aligner correlation",
+                     subtitle = sprintf(
+                         "Pearson on log1p counts, shared genes, up to %d cells per pair",
+                         max_cells_per_cell_cor))
+            pp_save_pdf(p_per_cell_cor, pdir, "bio_per_cell_correlation",
+                        width = 4.5, height = 4.5)
+        }
+    }
+    rm(sce_list); invisible(gc(verbose = FALSE))
+
     ## Per-pipeline runtime and peak RSS from benchmark files.
     pipe_time = NULL; pipe_mem = NULL
     bench_dir = file.path(wd, "benchmarks")
@@ -853,6 +1324,8 @@ run_biology = function(opt) {
         pipe_mem = load_pipeline_memory(bench_dir, aligners)
         pp_save_csv(pipe_time, pdir, "bio_perf_time")
         pp_save_csv(pipe_mem, pdir, "bio_perf_memory")
+        pipe_time[, pipeline := order_pipelines(pipeline, aligners)]
+        pipe_mem[, pipeline := order_pipelines(pipeline, aligners)]
         p_t = ggplot(pipe_time, aes(pipeline, total_min, fill = pipeline)) +
             geom_col() +
             geom_text(aes(label = round(total_min, 1)),
@@ -875,7 +1348,15 @@ run_biology = function(opt) {
     panel_theme2 = paper_theme(10)
     panels2 = list()
     if (exists("bc_lists", inherits = FALSE)) {
-        panels2$A = upset_panel(bc_lists, width_in = 10, height_in = 7)
+        ## Smaller internal render dims → UpSetR text uses a larger fraction
+        ## of the canvas, so fonts look bigger after patchwork scales the
+        ## raster up to fill the grid cell. Title names the sample so
+        ## the reader sees at a glance whether this is fig 2 (HeLa) or
+        ## fig 3 (mouse skin).
+        upset_title = if (is_hela) "Cell-barcode overlap (HeLa)"
+                      else         "Cell-barcode overlap (mouse skin)"
+        panels2$A = upset_panel(bc_lists, width_in = 5, height_in = 3.5,
+                                title = upset_title)
     }
     if (!is.null(per_cell_qc)) {
         qc_long = melt(per_cell_qc, id.vars = "pipeline",
@@ -888,6 +1369,7 @@ run_biology = function(opt) {
                                    labels = metric_labels)]
         qc_long[metric %in% metric_labels[c("total_umi", "n_genes")],
                 value := log10(pmax(value, 1))]
+        qc_long[, pipeline := order_pipelines(pipeline, aligners)]
         panels2$B = ggplot(qc_long, aes(pipeline, value, fill = pipeline)) +
             geom_violin(scale = "width", width = 0.8, linewidth = 0.2) +
             geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white",
@@ -900,70 +1382,129 @@ run_biology = function(opt) {
                                  strip.text = element_text(size = 9)) +
             labs(x = "pipeline", y = "per-cell value")
     }
+    ## Shared theme tweak for the three square heatmaps (MARD, cluster ARI,
+    ## phase ARI): pull the legend in close to the tile grid and keep
+    ## panel titles plain (not bold) so they read like a caption.
+    heatmap_legend_theme = theme(
+        axis.text.x = element_text(angle = 30, hjust = 1),
+        aspect.ratio = 1,
+        plot.title = element_text(size = 9, face = "plain",
+                                  margin = margin(b = 2)),
+        legend.box.margin = margin(0, 0, 0, 0),
+        legend.margin = margin(0, 0, 0, 0),
+        legend.box.spacing = grid::unit(0, "pt"),
+        legend.key.size = grid::unit(0.35, "cm"),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7))
     if (exists("p", inherits = FALSE) &&
         file.exists(biords("pseudobulk_mard"))) {
-        panels2$C = p + panel_theme2 +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  aspect.ratio = 1)
+        panels2$C = p + panel_theme2 + heatmap_legend_theme
     }
-    if (exists("p_umap", inherits = FALSE)) {
-        panels2$D = patchwork::wrap_elements(full = patchwork::patchworkGrob(p_umap))
+    ## Per-cell cross-aligner r density → panel D (both use cases).
+    if (!is.null(p_per_cell_cor)) {
+        panels2$D = p_per_cell_cor + panel_theme2 +
+            theme(panel.grid = element_blank(),
+                  aspect.ratio = 1,
+                  plot.title = element_text(size = 10, face = "plain",
+                                            margin = margin(b = 2)),
+                  plot.subtitle = element_text(size = 8, face = "plain"),
+                  legend.position = "right",
+                  legend.box.spacing = grid::unit(2, "pt"),
+                  legend.key.size = grid::unit(0.4, "cm"))
     }
-    if (exists("p_cl", inherits = FALSE)) {
-        panels2$E = patchwork::wrap_elements(full = patchwork::patchworkGrob(p_cl))
+    ## Cluster ARI heatmap → panel E (both use cases).
+    if (exists("p_ari_heat", inherits = FALSE)) {
+        panels2$E = p_ari_heat + panel_theme2 + heatmap_legend_theme
     }
+    ## Second ARI heatmap → panel F. HeLa: phase ARI. Sendoel: celltype ARI.
+    if (exists("p_second_ari", inherits = FALSE) &&
+        !is.null(p_second_ari)) {
+        panels2$F = p_second_ari + panel_theme2 + heatmap_legend_theme
+    }
+    ## Cluster UMAP row → panel G (both). Wrapped so it gets a single tag.
+    if (exists("p_cluster_row", inherits = FALSE)) {
+        panels2$G = patchwork::wrap_elements(
+            full = patchwork::patchworkGrob(p_cluster_row))
+    }
+    ## Second UMAP row → panel H. HeLa: phase. Sendoel: celltype.
+    if (exists("p_second_umap", inherits = FALSE) &&
+        !is.null(p_second_umap)) {
+        panels2$H = patchwork::wrap_elements(
+            full = patchwork::patchworkGrob(p_second_umap))
+    }
+    ## Perf: two standalone ggplots so fig 2 gets separate tags I (time)
+    ## and J (memory) stacked on the right of the UMAP block. Tight
+    ## horizontal margins so the y-axis label sits next to the plot.
     if (!is.null(pipe_time) && !is.null(pipe_mem)) {
         bar_theme2 = panel_theme2 +
             theme(legend.position = "none",
-                  plot.margin = grid::unit(c(2, 12, 2, 12), "pt"),
+                  plot.margin = grid::unit(c(2, 2, 2, 2), "pt"),
+                  axis.title.y = element_text(size = 9,
+                                              margin = margin(r = 2)),
                   axis.text.x = element_text(angle = 30, hjust = 1))
-        panels2$F = (ggplot(pipe_time, aes(pipeline, total_min,
-                                           fill = pipeline)) +
-                     geom_col(width = 0.55) +
-                     geom_text(aes(label = round(total_min, 1)),
-                               vjust = -0.3, size = 3) +
-                     scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-                     scale_fill_manual(values = aligner_colours) +
-                     bar_theme2 + labs(x = "pipeline",
-                                       y = "wall-clock (min)")) +
-            (ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
-             geom_col(width = 0.55) +
-             geom_text(aes(label = round(peak_rss_gb, 1)),
-                       vjust = -0.3, size = 3) +
-             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-             scale_fill_manual(values = aligner_colours) +
-             bar_theme2 + labs(x = "pipeline", y = "peak RSS (GB)")) +
-            patchwork::plot_layout(ncol = 2)
-    }
-    if (exists("p_bcor", inherits = FALSE)) {
-        panels2$G = p_bcor + panel_theme2 +
-            theme(axis.text.x = element_text(angle = 30, hjust = 1),
-                  aspect.ratio = 1)
+        panels2$I = ggplot(pipe_time, aes(pipeline, total_min,
+                                          fill = pipeline)) +
+            geom_col(width = 0.55) +
+            geom_text(aes(label = round(total_min, 1)),
+                      vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            scale_fill_manual(values = aligner_colours) +
+            bar_theme2 + labs(x = "pipeline", y = "wall-clock (min)")
+        panels2$J = ggplot(pipe_mem, aes(pipeline, peak_rss_gb,
+                                         fill = pipeline)) +
+            geom_col(width = 0.55) +
+            geom_text(aes(label = round(peak_rss_gb, 1)),
+                      vjust = -0.3, size = 3) +
+            scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
+            scale_fill_manual(values = aligner_colours) +
+            bar_theme2 + labs(x = "pipeline", y = "peak RSS (GB)")
     }
     blank2 = function() ggplot() + theme_void()
-    for (k in c("A", "B", "C", "D", "E", "F", "G")) {
+    required_panels = c("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+    for (k in required_panels) {
         if (is.null(panels2[[k]])) {
-            warning("fig2 panel ", k, " missing; rendering blank. wd=", wd)
+            warning(fig_stem, " panel ", k, " missing; rendering blank. wd=",
+                    wd)
             panels2[[k]] = blank2()
         }
     }
-    fig2_design = paste(
-        "AABBBBCCCC",
-        "AABBBBCCCC",
-        "DDDDDDDDDD",
-        "DDDDDDDDDD",
-        "EEEEEEEEEE",
-        "EEEEEEEEEE",
-        "FFFFFGGGGG",
-        "FFFFFGGGGG", sep = "\n")
-    fig2 = patchwork::wrap_plots(A = panels2$A, B = panels2$B, C = panels2$C,
-                                 D = panels2$D, E = panels2$E, F = panels2$F,
-                                 G = panels2$G,
-                                 design = fig2_design,
-                                 heights = c(0.8, 0.8, 1, 1, 1, 1, 0.8, 0.8)) +
+    ## Unified fig 2 (HeLa) / fig 3 (Sendoel) design: 18 cols x 14 rows,
+    ## A-J. HeLa has phase UMAPs + phase ARI as H/F; Sendoel has celltype
+    ## UMAPs + celltype ARI in the same slots. G spans 5 sub-rows (0.8
+    ## each → 4.0 total); I spans the first 4 → I = 3.2 = 80% of G. H
+    ## spans 5 sub-rows (0.72 each → 3.6); J spans first 4 → J = 2.88 =
+    ## 80% of H.
+    fig_design = paste(
+        "AAAAAABBBBBBCCCCCC",
+        "AAAAAABBBBBBCCCCCC",
+        "DDDDDDEEEEEEFFFFFF",
+        "DDDDDDEEEEEEFFFFFF",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGGII",
+        "GGGGGGGGGGGGGGGG##",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHHJJ",
+        "HHHHHHHHHHHHHHHH##", sep = "\n")
+    ## H sub-row height: Sendoel's celltype UMAPs need an extra row of
+    ## legend room below and the user asked for 20% less vertical space
+    ## on H vs HeLa. HeLa keeps 0.72, Sendoel runs at 0.576.
+    h_sub = if (is_hela) 0.72 else 0.576
+    fig = patchwork::wrap_plots(
+        A = panels2$A, B = panels2$B, C = panels2$C,
+        D = panels2$D, E = panels2$E, F = panels2$F,
+        G = panels2$G, H = panels2$H,
+        I = panels2$I, J = panels2$J,
+        design = fig_design,
+        heights = c(1.0, 1.0, 1.0, 1.0,
+                    0.8, 0.8, 0.8, 0.8, 0.8,
+                    h_sub, h_sub, h_sub, h_sub, h_sub)) +
         patchwork::plot_annotation(tag_levels = "A") &
         paper_shared_theme
-    pp_save_pdf(fig2, pdir, "fig2_sendoel", width = 10.5, height = 14)
+    pp_save_pdf(fig, pdir, fig_stem, width = 18, height = 12)
 
     message("biology materials written to ", pdir)
 }
@@ -1059,12 +1600,60 @@ load_pipeline_memory = function(bench_dir, aligners) {
        .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
 }
 
+## Per-sample linker error rate panel. Consumes the TSV written by the
+## rhapsodist linker_qc rule (scan_r1_linkers over the first 10,000 R1 reads)
+## and produces a one-panel PDF showing the Hamming-distance distribution
+## against both v1 and enhanced linker templates.
+run_linker_qc = function(opt) {
+    wd = opt$working_dir
+    samp = opt$sample
+    tsv = file.path(wd, "linker_qc", paste0(samp, "_linker_errors.tsv"))
+    stopifnot(file.exists(tsv))
+    pdir = setup_paper_dir(wd, samp)
+
+    raw = readLines(tsv)
+    body = raw[!grepl("^#", raw)]
+    dt = fread(text = paste(body, collapse = "\n"))
+    if (nrow(dt) == 0) {
+        warning("empty linker QC TSV, skipping: ", tsv)
+        return(invisible(NULL))
+    }
+
+    detected = NA_character_
+    hit = grep("^# detected_class\\t", raw, value = TRUE)
+    if (length(hit) > 0) detected = strsplit(hit[1], "\t")[[1]][2]
+    subtitle = sprintf("Auto-detected chemistry: %s", detected)
+
+    max_err = min(max(dt$n_errors), 10)
+    pd = dt[n_errors <= max_err]
+    p = ggplot(pd, aes(x = factor(n_errors), y = frac, fill = class)) +
+        geom_col(position = position_dodge(width = 0.9)) +
+        geom_text(aes(label = scales::percent(frac, accuracy = 0.1)),
+                  position = position_dodge(width = 0.9),
+                  vjust = -0.3, size = 2.4) +
+        scale_fill_brewer(palette = "Set2") +
+        scale_y_continuous(labels = scales::percent,
+                           expand = expansion(mult = c(0.02, 0.12))) +
+        theme_bw(base_size = 10) +
+        theme(panel.grid = element_blank()) +
+        labs(title = paste0("Linker mismatches per read (", samp, ")"),
+             subtitle = subtitle,
+             x = "Linker mismatches per read (sum across both linkers)",
+             y = "Fraction of reads",
+             fill = "Candidate class")
+
+    pp_save_pdf(p, pdir, "bio_linker_errors", width = 7, height = 4.5)
+    pp_save_csv(dt, pdir, "bio_linker_errors")
+    message("linker QC figure written to ", pdir)
+}
+
 main = function() {
     opt = parse_args()
     switch(opt$kind,
         simulation = run_simulation(opt),
         biology    = run_biology(opt),
-        benchmarks = run_benchmarks(opt))
+        benchmarks = run_benchmarks(opt),
+        linker_qc  = run_linker_qc(opt))
 }
 
 if (!interactive()) main()

@@ -1,0 +1,58 @@
+## rhapsodist config for Moro and Mallona 2025 HeLa sample (SRR35038871)
+## Human HeLa cells (Kyoto line), unmodified BD Rhapsody WTA
+## 384 allowedlist + diversity insets (enhanced chemistry)
+## Downsampled to 10% of the total reads. Runs all aligners including SBG.
+
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+alevin_sketch: true
+
+## cb/umi linker trim tolerance (cutadapt -e); default 0
+cb_umi_max_errors: 0
+
+## keep 10% of paired reads before trimming; same seed for R1/R2
+downsample: 10
+
+working_dir: output/moro_mallona2025
+
+## Gencode GRCh38 v46 human reference
+reference_dir: data/reference/GRCh38_v46
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/GRCh38.p14.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.transcripts.fa.gz"
+
+## cDNA read length is 71; sjdbOverhang = readLength - 1
+sjdbOverhang: 70
+
+skip_sampletags: true
+
+## Use case selects the biology panels and the paper figure filename.
+## hela: no marker celltype, swap in an ARI heatmap and a cell-cycle UMAP.
+## Writes <wd>/paper/<sample>/fig2_hela.pdf.
+use_case: hela
+run_biology_report: true
+
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+has_sbg: true
+
+## SBG / BD Rhapsody official pipeline. Place the CWL under third_party/cwl/
+## (gitignored). Reference archive is built from the STAR index + GTF when
+## sbg_reference_url or sbg_reference_archive are not set.
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+# sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
+
+samples:
+  - name: hela_unmod
+    uses:
+      sra_run: "SRR35038871"
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: no

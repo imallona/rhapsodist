@@ -64,6 +64,8 @@ except OSError as e:
 
 print(get_sample_names())
 
+validate_sampletag_config()
+
 _extra_targets = (
     [op.join(config['working_dir'], 'simulation_validation.html')]
     if config.get('use_simulated', False) else []
@@ -72,7 +74,7 @@ _extra_targets = (
 _sampletag_reports = (
     [] if config.get('skip_sampletags', False) else
     expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html'),
-           sample = get_sample_names())
+           sample = samples_with_sampletags())
 )
 
 _has_sbg = 'sbg' in get_aligners()
@@ -116,6 +118,11 @@ _biology_reports = (
     if config.get('run_biology_report', False) else []
 )
 
+_linker_qc_reports = expand(
+    op.join(config['working_dir'], 'linker_qc', '{sample}_linker_qc.html'),
+    sample = get_sample_names()
+)
+
 rule all:
     input:
         expand(op.join(config['working_dir'], '{aligner}',  '{sample}', 'descriptive_report.html'),
@@ -126,7 +133,8 @@ rule all:
         _sbg_sce_targets,
         _comparison_reports,
         _benchmarks_report,
-        _biology_reports
+        _biology_reports,
+        _linker_qc_reports
         # op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin'),
         # expand(op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'quants_mat.gz'),
         #        sample = get_sample_names()),
@@ -545,7 +553,7 @@ rule render_descriptive_report:
                       sample = get_sample_names()),
         counts = ([] if config.get('skip_sampletags', False) else
                   expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
-                         sample = get_sample_names()))
+                         sample = samples_with_sampletags()))
     output:
         html = op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html')
         # cache = temp(op.join(config['repo_path'], 'process_sce_objects_cache')),
@@ -633,32 +641,70 @@ rule rustody_run:
         touch {output.flag}
         """
 
+rule downsample_fastqs:
+    conda:
+        op.join(workflow.basedir, 'envs', 'star.yaml')
+    input:
+        r1 = lambda wildcards: _raw_cbumi_path(wildcards.sample),
+        r2 = lambda wildcards: _raw_cdna_path(wildcards.sample)
+    output:
+        r1 = op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R1.fastq.gz'),
+        r2 = op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R2.fastq.gz')
+    params:
+        fraction = lambda wildcards: get_downsample_fraction(wildcards.sample),
+        seed = config.get('downsample_seed', 42),
+        outdir = op.join(config['working_dir'], 'data', 'fastq', 'downsampled')
+    threads:
+        min(4, workflow.cores)
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_downsample.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_downsample.txt')
+    shell:
+        """
+        mkdir -p {params.outdir}
+        seqtk sample -s {params.seed} {input.r1} {params.fraction} \
+            | pigz -p {threads} > {output.r1} 2> {log}
+        seqtk sample -s {params.seed} {input.r2} {params.fraction} \
+            | pigz -p {threads} > {output.r2} 2>> {log}
+        """
+
+
 rule validate_bead_version:
     input:
         cb_umi = lambda wildcards: get_cbumi_by_name(wildcards.sample)
     output:
-        flag = op.join(config['working_dir'], 'logs', '{sample}_bead_version_validated.flag')
+        flag = op.join(config['working_dir'], 'logs', '{sample}_bead_version_validated.flag'),
+        qc_tsv = op.join(config['working_dir'], 'linker_qc', '{sample}_linker_errors.tsv')
     params:
-        bead_version = lambda wildcards: get_bead_type_by_name(wildcards.sample)
+        bead_type = lambda wildcards: get_bead_type_by_name(wildcards.sample),
+        allowedlist = lambda wildcards: get_declared_allowedlist(wildcards.sample),
+        diversity_insets = lambda wildcards: get_declared_diversity_insets(wildcards.sample),
+        n_reads = config.get('bead_scan_n_reads', 10000)
     log:
         op.join(config['working_dir'], 'logs', '{sample}_bead_version_validation.log')
     run:
-        import sys
+        import os as _os, sys
 
-        detected = detect_bead_version(input.cb_umi)
-        reported = params.bead_version
-        reported_class = 'v1' if reported == 'v1' else 'enhanced'
+        stats = scan_r1_linkers(input.cb_umi, n_reads=params.n_reads)
+        detected = stats['class']
+        detected_insets = 'no' if detected == 'v1' else ('yes' if detected == 'enhanced' else 'unknown')
 
         lines = [
-            f"detected bead class: {detected}",
-            f"reported bead_version: {reported}",
+            f"reads scanned: {stats['n_reads']}",
+            f"detected bead linker class: {detected}",
+            f"detected diversity_insets: {detected_insets}",
+            f"declared allowedlist: {params.allowedlist if params.allowedlist else '(default)'}",
+            f"declared diversity_insets: {params.diversity_insets if params.diversity_insets else '(default)'}",
+            f"derived internal bead type: {params.bead_type}",
+            f"v1 exact-match fraction: {stats['v1_frac']:.4f}",
+            f"enhanced exact-match fraction: {stats['enh_frac']:.4f}",
         ]
-        if detected != 'unknown' and detected != reported_class:
+        if params.diversity_insets is not None and detected_insets != 'unknown' \
+           and params.diversity_insets != detected_insets:
             lines.append(
-                f"WARNING: reported bead_version '{reported}' does not match "
-                f"detected '{detected}'. Consider using "
-                + ("'v1'" if detected == 'v1' else "'enhanced' or 'enhanced_v2'")
-                + " in the config."
+                f"WARNING: declared diversity_insets '{params.diversity_insets}' does not match "
+                f"detected '{detected_insets}'. Check the allowedlist/diversity_insets config."
             )
 
         with open(log[0], 'w') as fh:
@@ -668,6 +714,17 @@ rule validate_bead_version:
 
         with open(output.flag, 'w') as fh:
             fh.write(detected + '\n')
+
+        _os.makedirs(op.dirname(output.qc_tsv), exist_ok=True)
+        with open(output.qc_tsv, 'w') as fh:
+            fh.write(f"# sample\t{wildcards.sample}\n")
+            fh.write(f"# detected_class\t{detected}\n")
+            fh.write(f"# n_reads\t{stats['n_reads']}\n")
+            fh.write('class\tn_errors\tn_reads\tfrac\n')
+            for klass, hist in (('v1', stats['v1_errors']), ('enhanced', stats['enh_errors'])):
+                for n_err in sorted(hist):
+                    frac = hist[n_err] / stats['n_reads'] if stats['n_reads'] else 0.0
+                    fh.write(f"{klass}\t{n_err}\t{hist[n_err]}\t{frac:.6f}\n")
 
 
 rule standardize_cb_umis_cutadapt:
@@ -686,7 +743,8 @@ rule standardize_cb_umis_cutadapt:
                                       "{sample}_standardized_cb_umi.fq.gz")
     params:
         path = op.join(config['working_dir'], 'data', 'fastq'),
-        bead_type = lambda wildcards: get_bead_type_by_name(wildcards.sample)
+        bead_type = lambda wildcards: get_bead_type_by_name(wildcards.sample),
+        max_errors = config.get('cb_umi_max_errors', 0)
     threads:
         workflow.cores
     log:
@@ -709,7 +767,7 @@ rule standardize_cb_umis_cutadapt:
            --action=crop \
            --discard-untrimmed \
            --cores {threads} \
-           -e 0 \
+           -e {params.max_errors} \
            --pair-filter=both \
            -o {output.temp_cb_umi} \
            -p {output.cdna} \
@@ -967,7 +1025,7 @@ rule extract_sampletagslooking_fastqs:
           -o {output.fq} &> {log}
         """
 
-for species in set(get_species_by_name(name=s) for s in get_sample_names()):
+for species in set(get_species_by_name(name=s) for s in samples_with_sampletags()):
     rule:
         name:
             f"{species}_star_index_sampletags"
@@ -1457,13 +1515,78 @@ for _sbg_sample in _sbg_samples:
                             'rhapsody_reference.tar.gz')
         _ref_input = [_ref_path]
 
+    ## BD Rhapsody's QualCLAlign Go binary rejects a fastq if its first read
+    ## header lacks the CASAVA 1.8 mate tag (' 1:N:0:X' for R1, ' 2:N:0:X' for
+    ## R2), reporting a misleading "R1/R2 file does not exist: <stem>" error.
+    ## fasterq-dump --split-files emits SRA-style headers like
+    ##   @SRR35038871.6 LH00289:...:1016 length=61
+    ## with no mate tag. This rule rewrites such headers into CASAVA 1.8 form
+    ## while leaving already-compliant headers untouched. It reads whatever
+    ## get_cbumi_by_name/get_cdna_by_name resolve to (raw or downsampled) so
+    ## upstream rules are not re-triggered.
+    _sbg_fq_dir = op.join(config['working_dir'], 'sbg', _sbg_sample, 'fastq')
+    _sbg_fq_r1 = op.join(_sbg_fq_dir, f'{_sbg_sample}_R1.fastq.gz')
+    _sbg_fq_r2 = op.join(_sbg_fq_dir, f'{_sbg_sample}_R2.fastq.gz')
+
+    rule:
+        name: f"rewrite_sbg_fastq_headers_{_sbg_sample}"
+        input:
+            r1 = get_cbumi_by_name(_sbg_sample),
+            r2 = get_cdna_by_name(_sbg_sample)
+        output:
+            r1 = _sbg_fq_r1,
+            r2 = _sbg_fq_r2
+        threads:
+            config['nthreads']
+        log:
+            op.join(config['working_dir'], 'logs',
+                    f'rewrite_sbg_fastq_headers_{_sbg_sample}.log')
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p $(dirname {output.r1})
+
+            ## split pigz workers across the two mate pipelines so they run in parallel
+            T=$(( {threads} / 2 ))
+            if [ "$T" -lt 1 ]; then T=1; fi
+
+            rewrite() {{
+                local src="$1" dst="$2" mate="$3" t="$4"
+                pigz -dc -p 1 "$src" | \
+                    awk -v MATE="$mate" '
+                        NR % 4 == 1 {{
+                            if ($0 ~ / [12]:[NY]:/) {{ print; next }}
+                            sub(/^@[SED]RR[0-9]+\.[0-9]+ /, "@")
+                            sub(/ length=.*$/, "")
+                            print $0 " " MATE ":N:0:0"
+                            next
+                        }}
+                        NR % 4 == 3 {{ print "+"; next }}
+                        {{ print }}
+                    ' | pigz -p "$t" > "$dst"
+            }}
+
+            rewrite {input.r1} {output.r1} 1 "$T" 2>> {log} &
+            PID1=$!
+            rewrite {input.r2} {output.r2} 2 "$T" 2>> {log} &
+            PID2=$!
+
+            S1=0; S2=0
+            wait "$PID1" || S1=$?
+            wait "$PID2" || S2=$?
+            if [ "$S1" -ne 0 ] || [ "$S2" -ne 0 ]; then
+                echo "rewrite failed: R1=$S1 R2=$S2" >> {log}
+                exit 1
+            fi
+            """
+
     rule:
         name: f"run_sbg_cwl_{_sbg_sample}"
         conda:
             op.join(workflow.basedir, 'envs', 'sbg.yaml')
         input:
-            r1 = get_cbumi_by_name(_sbg_sample),
-            r2 = get_cdna_by_name(_sbg_sample),
+            r1 = _sbg_fq_r1,
+            r2 = _sbg_fq_r2,
             ref = _ref_input
         output:
             matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
@@ -1474,9 +1597,11 @@ for _sbg_sample in _sbg_samples:
             cwl = (get_sbg_cwl_by_name(_sbg_sample) if op.isabs(get_sbg_cwl_by_name(_sbg_sample))
                    else op.join(_repo_root, get_sbg_cwl_by_name(_sbg_sample))),
             outdir = op.join(config['working_dir'], 'sbg', _sbg_sample),
-            sample_tags_version = get_sbg_sample_tags_version_by_name(_sbg_sample),
+            sample_tags_version = get_sbg_sample_tags_version_by_name(_sbg_sample) or '',
             ref_path = _ref_path,
             sif_cache = _repo_root
+        threads:
+            config['nthreads']
         log:
             op.join(config['working_dir'], 'logs', f'sbg_cwl_{_sbg_sample}.log')
         benchmark:
@@ -1504,12 +1629,19 @@ Sample_Tags_Version: PLACEHOLDER_STV
 ## switch to bwa-mem2 for long reads, which fails when the reference
 ## archive has no bwa-mem2 index (only a STAR index).
 Long_Reads: false
+
+## Cap internal parallelism to what the Snakemake rule was granted.
+Maximum_Threads: {threads}
 ENDOFYML
 
             sed -i "s|PLACEHOLDER_R1|$(realpath {input.r1})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_R2|$(realpath {input.r2})|" "$INPUT_YML"
             sed -i "s|PLACEHOLDER_REF|$(realpath {params.ref_path})|" "$INPUT_YML"
-            sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
+            if [ -n "{params.sample_tags_version}" ]; then
+              sed -i "s|PLACEHOLDER_STV|{params.sample_tags_version}|" "$INPUT_YML"
+            else
+              sed -i "/PLACEHOLDER_STV/d" "$INPUT_YML"
+            fi
 
             CWL_SINGULARITY_CACHE={params.sif_cache} \
             SINGULARITY_PULLFOLDER={params.sif_cache} \
@@ -1690,6 +1822,7 @@ rule render_biology_report:
         has_sbg = 'true' if _has_sbg else 'false',
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        use_case = config.get('use_case', 'sendoel'),
         guide_csv = lambda wildcards: (
             op.join(config['working_dir'], 'data', 'guides',
                     wildcards.sample + '_guides.csv.gz')
@@ -1713,6 +1846,7 @@ rule render_biology_report:
               aligners = "{params.aligners}",
               has_sbg = "{params.has_sbg}",
               markers_file = "{params.markers_file}",
+              use_case = "{params.use_case}",
               guide_csv = "{params.guide_csv}"))' &> {log}
         """
 
@@ -1748,6 +1882,32 @@ rule render_benchmarks_report:
             params = list(
               working_dir      = "{params.working_dir}",
               n_expected_cells = {params.n_expected_cells}))' &> {log}
+        """
+
+
+rule render_linker_qc_report:
+    conda:
+        op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
+    input:
+        tsv = op.join(config['working_dir'], 'linker_qc', '{sample}_linker_errors.tsv'),
+        doc = op.join(workflow.basedir, 'src', 'reports', '05_linker_qc.Rmd')
+    output:
+        html = op.join(config['working_dir'], 'linker_qc', '{sample}_linker_qc.html')
+    params:
+        sample = lambda wildcards: wildcards.sample
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_linker_qc_report.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_linker_qc_report.txt')
+    shell:
+        """
+        R --vanilla -e '
+          rmarkdown::render(
+            "{input.doc}",
+            output_file = "{output.html}",
+            params = list(
+              sample = "{params.sample}",
+              tsv    = "{input.tsv}"))' &> {log}
         """
 
 
