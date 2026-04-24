@@ -2,12 +2,20 @@
 
 ## Unreleased
 
+
+## v0.2.0 - 2026-04-24
+
 - Sample config vocabulary: replaced `bead_version` with `allowedlist` (96/384) and `diversity_insets` (yes/no). Both are optional; bead chemistry is auto-detected from R1 linkers and the declared fields are used as a QC check and for logging.
 - Added per-sample `use_sampletags` (yes/no). Sampletag demultiplexing is gated per-sample; `species` is only required when `use_sampletags` is yes.
 - Added `cb_umi_max_errors` config key (integer, default 0) exposing cutadapt `-e` for the R1 linker trim.
 - Added optional paired-fastq `downsample` (percentage in (0, 100], default 100) with `downsample_seed`. Uses seqtk; per-sample `uses.downsample` overrides the global value.
 - Added per-sample linker QC report (`{sample}_linker_qc.html` under `linker_qc/`). The existing bead-class scan is reused to emit a per-read hamming-distance histogram for both v1 and enhanced chemistries. Helps pick a value for `cb_umi_max_errors`.
 - Added cross-aligner per-cell correlation distribution plot in the per-sample comparison report (Pearson on log1p counts, one density per aligner pair, matched by cell barcode).
+- SBG SCE generator remaps rownames to Ensembl IDs against the STARsolo `features.tsv` and keeps the BD symbol in `rowData$name`. Marker-voting cell types are now assigned on SBG cells.
+- HeLa use case (`use_case: hela`) added; cell-cycle phase panels replace marker cell-type panels on clonal samples.
+- Paper figures: pairwise pseudobulk scatter matrices per dataset (`*_bio_pseudobulk_correlation.pdf`) replace the old Pearson-r heatmaps for HeLa and sendoel.
+- Paper figures: cluster confusion matrices reordered by Hungarian matching (`clue::solve_LSAP`), 3x2 panel grid, per-tile counts, `log1p` fill.
+- Per-cell cross-aligner Pearson r computed on sparse matrices; scales to the >40k-cell sendoel P60 sample.
 
 ## v0.1.0
 
