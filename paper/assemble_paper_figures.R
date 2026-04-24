@@ -830,19 +830,57 @@ run_biology = function(opt) {
             pipes = sort(unique(clusters_dt$pipeline))
             if (length(pipes) < 2) return(invisible(NULL))
             pairs = combn(pipes, 2, simplify = FALSE)
+            square_pad = function(ct) {
+                nr = nrow(ct); nc = ncol(ct)
+                if (nr == nc) return(ct)
+                if (nr > nc) {
+                    extra = matrix(0L, nrow = nr, ncol = nr - nc,
+                                   dimnames = list(rownames(ct),
+                                                   paste0("__pad",
+                                                          seq_len(nr - nc))))
+                    cbind(ct, extra)
+                } else {
+                    extra = matrix(0L, nrow = nc - nr, ncol = nc,
+                                   dimnames = list(paste0("__pad",
+                                                          seq_len(nc - nr)),
+                                                   colnames(ct)))
+                    rbind(ct, extra)
+                }
+            }
+            do_hungarian = (key == "cluster_prefixed") &&
+                           requireNamespace("clue", quietly = TRUE)
             panels = lapply(pairs, function(pair) {
                 d1 = clusters_dt[pipeline == pair[1], .(barcode, a = get(key))]
                 d2 = clusters_dt[pipeline == pair[2], .(barcode, b = get(key))]
                 sh = merge(d1, d2, by = "barcode")
                 if (nrow(sh) < 10) return(NULL)
-                tab = as.data.table(sh[, .N, by = .(a, b)])
+                ct = table(sh$a, sh$b)
+                if (do_hungarian) {
+                    ctm = square_pad(as.matrix(unclass(ct)))
+                    perm = as.integer(clue::solve_LSAP(ctm, maximum = TRUE))
+                    ctm = ctm[, perm]
+                    keep_r = rowSums(ctm) > 0
+                    keep_c = colSums(ctm) > 0
+                    ctm = ctm[keep_r, keep_c, drop = FALSE]
+                    tab = as.data.table(as.table(ctm))
+                } else {
+                    tab = as.data.table(as.table(ct))
+                }
+                setnames(tab, c("a", "b", "N"))
+                tab[, a := factor(a, levels = unique(a))]
+                tab[, b := factor(b, levels = unique(b))]
                 ggplot(tab, aes(a, b, fill = N)) +
                     geom_tile(colour = "white") +
-                    scale_fill_distiller(palette = "Blues", direction = 1) +
-                    theme_bw(base_size = 11) +
+                    geom_text(aes(label = ifelse(N > 0, N, "")), size = 2.0) +
+                    scale_fill_distiller(palette = "Blues", direction = 1,
+                                         trans = "log1p",
+                                         breaks = c(0, 10, 100, 1000, 10000)) +
+                    theme_bw(base_size = 10) +
                     theme(aspect.ratio = 1,
                           axis.text.x = element_text(angle = 45,
-                                                     hjust = 1, vjust = 1),
+                                                     hjust = 1, vjust = 1,
+                                                     size = 7),
+                          axis.text.y = element_text(size = 7),
                           legend.position = "right",
                           plot.margin = margin(4, 4, 4, 4)) +
                     labs(x = pair[1], y = pair[2], fill = "cells",
@@ -850,9 +888,8 @@ run_biology = function(opt) {
             })
             panels = Filter(Negate(is.null), panels)
             if (length(panels) == 0) return(invisible(NULL))
-            p = wrap_plots(panels, nrow = 1)
-            pp_save_pdf(p, pdir, name,
-                        width = 14, height = 14 / length(panels))
+            p = wrap_plots(panels, ncol = 3)
+            pp_save_pdf(p, pdir, name, width = 13, height = 9)
         }
         draw_confusion("cluster_prefixed", "bio_cluster_confusion", "cluster")
         draw_confusion("celltype",         "bio_celltype_confusion", "cell type")
