@@ -1,8 +1,5 @@
 # Changelog
 
-## Unreleased
-
-
 ## v0.2.0 - 2026-04-24
 
 - Sample config vocabulary: replaced `bead_version` with `allowedlist` (96/384) and `diversity_insets` (yes/no). Both are optional; bead chemistry is auto-detected from R1 linkers and the declared fields are used as a QC check and for logging.
