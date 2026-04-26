@@ -636,9 +636,11 @@ run_biology = function(opt) {
                          title = paste(pair[2], "vs", pair[1]))
             })
             pp_save_csv(rbindlist(cor_rows), pdir, "bio_pseudobulk_correlation")
-            pp_save_pdf(wrap_plots(scatter_plots, nrow = 1), pdir,
-                        "bio_pseudobulk_correlation",
-                        width = 3.2 * length(scatter_plots), height = 3.2)
+            pb_ncol = min(3L, length(scatter_plots))
+            pb_nrow = as.integer(ceiling(length(scatter_plots) / pb_ncol))
+            pp_save_pdf(wrap_plots(scatter_plots, ncol = pb_ncol, nrow = pb_nrow),
+                        pdir, "bio_pseudobulk_correlation",
+                        width = 3.2 * pb_ncol, height = 3.2 * pb_nrow)
 
             ## Symmetric Pearson r heatmap, mirroring the simulation panel.
             bcor_mat = cor(pb_mat, method = "pearson")
@@ -1521,29 +1523,75 @@ run_benchmarks = function(opt) {
     bm = load_benchmarks(bench_dir, aligners)
     pp_save_csv(bm, pdir, "bench_full")
 
-    pipe_time = bm[pipeline %in% aligners & !is_install_rule(file),
-                   .(total_min = sum(minutes)), by = pipeline]
+    ## Fairness: starsolo, kallisto, alevin all consume the cutadapt-standardized
+    ## CB/UMI fastqs produced by standardize_cb_umis_cutadapt; sbg's CWL ingests
+    ## raw fastqs and does its own demultiplexing internally. Stack the shared
+    ## cutadapt step under each non-sbg aligner so totals include the same
+    ## pre-alignment work that sbg already performs in its container.
+    nonsbg_aligners = setdiff(aligners, "sbg")
+    cutadapt_rows = bm[grepl("^standardize_cb_umis_", file) & !is_install_rule(file)]
+    cutadapt_minutes = if (nrow(cutadapt_rows) > 0) sum(cutadapt_rows$minutes) else 0
+    cutadapt_max_rss = if (nrow(cutadapt_rows) > 0)
+        max(cutadapt_rows$max_rss_gb, na.rm = TRUE) else NA_real_
+
+    aligner_time = bm[pipeline %in% aligners & !is_install_rule(file),
+                      .(minutes = sum(minutes)), by = pipeline]
+    time_segments = rbindlist(list(
+        aligner_time[, .(pipeline, segment = "aligner", minutes)],
+        if (length(nonsbg_aligners) > 0 && cutadapt_minutes > 0)
+            data.table(pipeline = nonsbg_aligners,
+                       segment = "cutadapt",
+                       minutes = cutadapt_minutes)
+    ), use.names = TRUE, fill = TRUE)
+    time_segments[, segment := factor(segment, levels = c("aligner", "cutadapt"))]
+    time_segments[, pipeline := order_pipelines(pipeline)]
+    pipe_time = time_segments[, .(total_min = sum(minutes)), by = pipeline]
+
     pipe_mem = bm[pipeline %in% aligners & !is_install_rule(file),
                   .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
+    if (!is.na(cutadapt_max_rss) && length(nonsbg_aligners) > 0) {
+        pipe_mem[pipeline %in% nonsbg_aligners,
+                 peak_rss_gb := pmax(peak_rss_gb, cutadapt_max_rss)]
+    }
+    pipe_mem[, pipeline := order_pipelines(pipeline)]
+
     pp_save_csv(pipe_time, pdir, "bench_total_time")
+    pp_save_csv(time_segments, pdir, "bench_total_time_segments")
     pp_save_csv(pipe_mem, pdir, "bench_peak_memory")
 
-    p_t = ggplot(pipe_time, aes(pipeline, total_min, fill = pipeline)) +
-        geom_col() + geom_text(aes(label = round(total_min, 1)),
-                               vjust = -0.3, size = 3) +
+    fill_palette = c(aligner_colours, cutadapt = "grey60")
+    time_segments[, fill_key := ifelse(segment == "cutadapt",
+                                       "cutadapt",
+                                       as.character(pipeline))]
+
+    p_t = ggplot(time_segments, aes(pipeline, minutes, fill = fill_key)) +
+        geom_col(width = 0.7) +
+        geom_text(data = time_segments[segment == "cutadapt"],
+                  aes(label = round(minutes, 1)),
+                  position = position_stack(vjust = 0.5),
+                  size = 2.8, colour = "white") +
+        geom_text(data = pipe_time,
+                  aes(pipeline, total_min, label = round(total_min, 1)),
+                  vjust = -0.3, size = 3, inherit.aes = FALSE) +
         scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-        scale_fill_manual(values = aligner_colours) +
-        theme_bw() + theme(legend.position = "none") +
+        scale_fill_manual(values = fill_palette,
+                          breaks = "cutadapt",
+                          labels = "cutadapt",
+                          name = NULL) +
+        theme_bw() +
+        theme(legend.position = "bottom",
+              legend.margin = margin(0, 0, 0, 0)) +
         labs(x = NULL, y = "total time (min)")
     p_m = ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
-        geom_col() + geom_text(aes(label = round(peak_rss_gb, 1)),
-                               vjust = -0.3, size = 3) +
+        geom_col(width = 0.7) +
+        geom_text(aes(label = round(peak_rss_gb, 1)),
+                  vjust = -0.3, size = 3) +
         scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
         scale_fill_manual(values = aligner_colours) +
         theme_bw() + theme(legend.position = "none") +
         labs(x = NULL, y = "peak RSS (GB)")
     pp_save_pdf(p_t + p_m, pdir, paste0(opt$bench_prefix, "_bench_total"),
-                width = 6, height = 3)
+                width = 6, height = 3.3)
 
     bm_steps = bm[pipeline %in% aligners]
     if (nrow(bm_steps) > 0) {
@@ -1588,16 +1636,34 @@ load_benchmarks = function(bench_dir, aligners) {
 ## first-invocation install cost.
 is_install_rule = function(file) grepl("_install\\.txt$", file)
 
+## Add the shared cutadapt CB/UMI standardization step to non-sbg aligner totals
+## so figures compare like-for-like against sbg, whose CWL ingests raw fastqs and
+## demultiplexes internally.
 load_pipeline_time = function(bench_dir, aligners) {
     bm = load_benchmarks(bench_dir, aligners)
-    bm[pipeline %in% aligners & !is_install_rule(file),
-       .(total_min = sum(minutes)), by = pipeline]
+    out = bm[pipeline %in% aligners & !is_install_rule(file),
+             .(total_min = sum(minutes)), by = pipeline]
+    cutadapt_minutes = bm[grepl("^standardize_cb_umis_", file) & !is_install_rule(file),
+                          sum(minutes)]
+    nonsbg = setdiff(aligners, "sbg")
+    if (length(nonsbg) > 0 && length(cutadapt_minutes) > 0 && cutadapt_minutes > 0) {
+        out[pipeline %in% nonsbg, total_min := total_min + cutadapt_minutes]
+    }
+    out
 }
 
 load_pipeline_memory = function(bench_dir, aligners) {
     bm = load_benchmarks(bench_dir, aligners)
-    bm[pipeline %in% aligners & !is_install_rule(file),
-       .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
+    out = bm[pipeline %in% aligners & !is_install_rule(file),
+             .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
+    cutadapt_max_rss = bm[grepl("^standardize_cb_umis_", file) & !is_install_rule(file),
+                          max(max_rss_gb, na.rm = TRUE)]
+    nonsbg = setdiff(aligners, "sbg")
+    if (length(nonsbg) > 0 && is.finite(cutadapt_max_rss)) {
+        out[pipeline %in% nonsbg,
+            peak_rss_gb := pmax(peak_rss_gb, cutadapt_max_rss)]
+    }
+    out
 }
 
 ## Per-sample linker error rate panel. Consumes the TSV written by the
