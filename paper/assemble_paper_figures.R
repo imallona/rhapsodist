@@ -253,7 +253,7 @@ run_simulation = function(opt) {
             geom_tile(colour = "white") +
             geom_text(aes(label = sprintf("%.3f", mard)), size = 3) +
             scale_fill_viridis_c(option = "viridis", direction = -1,
-                                 limits = c(0, NA),
+                                 limits = c(0, 1), oob = scales::squish,
                                  alpha = 0.75) +
             theme_bw() +
             theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
@@ -269,7 +269,7 @@ run_simulation = function(opt) {
             geom_tile(colour = "white") +
             geom_text(aes(label = sprintf("%.3f", pearson_r)), size = 3) +
             scale_fill_viridis_c(option = "viridis", direction = 1,
-                                 limits = c(min(cor_dt$pearson_r), 1),
+                                 limits = c(0, 1), oob = scales::squish,
                                  alpha = 0.75) +
             theme_bw() +
             theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
@@ -404,7 +404,8 @@ run_simulation = function(opt) {
     panel_theme = paper_theme(10)
     panels = list()
     if (exists("bc_lists", inherits = FALSE)) {
-        panels$B = upset_panel(bc_lists, width_in = 12, height_in = 6)
+        panels$B = upset_panel(bc_lists, width_in = 5, height_in = 3.5,
+                               title = "Cell-barcode overlap (simulated)")
     }
     if (exists("p_mard", inherits = FALSE)) {
         panels$D = p_mard + panel_theme +
@@ -424,26 +425,43 @@ run_simulation = function(opt) {
     }
     bench_dir = file.path(wd, "benchmarks")
     if (dir.exists(bench_dir)) {
-        bm = load_benchmarks(bench_dir, aligners)
-        if (nrow(bm) > 0) {
-            pipe_time = bm[pipeline %in% aligners & !is_install_rule(file),
-                           .(total_min = sum(minutes)), by = pipeline]
-            pipe_mem = bm[pipeline %in% aligners & !is_install_rule(file),
-                          .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)),
-                          by = pipeline]
+        pipe_time = load_pipeline_time(bench_dir, aligners)
+        pipe_mem = load_pipeline_memory(bench_dir, aligners)
+        time_segments = load_pipeline_time_segments(bench_dir, aligners)
+        if (!is.null(pipe_time) && nrow(pipe_time) > 0) {
+            time_segments[, fill_key := ifelse(segment == "cutadapt",
+                                               "cutadapt",
+                                               as.character(pipeline))]
+            fill_palette = c(aligner_colours, cutadapt = "grey60")
             bar_theme = panel_theme +
-                theme(legend.position = "none",
-                      plot.margin = grid::unit(c(2, 6, 2, 2), "pt"),
+                theme(plot.margin = grid::unit(c(2, 6, 2, 2), "pt"),
                       axis.title.y = element_text(margin = margin(r = 2)),
                       axis.text.x = element_text(angle = 30, hjust = 1))
-            panels$E = ggplot(pipe_time, aes(pipeline, total_min,
-                                             fill = pipeline)) +
+            time_segments[, segment := factor(segment,
+                                              levels = c("aligner", "cutadapt"))]
+            panels$E = ggplot(time_segments,
+                              aes(pipeline, minutes, fill = fill_key,
+                                  group = segment)) +
                 geom_col(width = 0.55) +
-                geom_text(aes(label = sprintf("%.2f", total_min)),
-                          vjust = -0.3, size = 3) +
+                geom_text(data = time_segments[segment == "cutadapt"],
+                          aes(label = sprintf("%.2f", minutes)),
+                          position = position_stack(vjust = 0.5),
+                          size = 2.6, colour = "white") +
+                geom_text(data = pipe_time,
+                          aes(pipeline, total_min,
+                              label = sprintf("%.2f", total_min)),
+                          vjust = -0.3, size = 3, inherit.aes = FALSE) +
                 scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-                scale_fill_manual(values = aligner_colours) +
-                bar_theme + labs(x = "pipeline", y = "total time (min)")
+                scale_fill_manual(values = fill_palette,
+                                  breaks = "cutadapt", labels = "cutadapt",
+                                  name = NULL) +
+                bar_theme +
+                theme(legend.position = "bottom",
+                      legend.margin = margin(0, 0, 0, 0),
+                      legend.box.spacing = grid::unit(2, "pt"),
+                      legend.key.size = grid::unit(0.35, "cm"),
+                      legend.text = element_text(size = 8)) +
+                labs(x = "pipeline", y = "total time (min)")
             panels$F = ggplot(pipe_mem, aes(pipeline, peak_rss_gb,
                                             fill = pipeline)) +
                 geom_col(width = 0.55) +
@@ -451,7 +469,8 @@ run_simulation = function(opt) {
                           vjust = -0.3, size = 3) +
                 scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                 scale_fill_manual(values = aligner_colours) +
-                bar_theme + labs(x = "pipeline", y = "peak RSS (GB)")
+                bar_theme + theme(legend.position = "none") +
+                labs(x = "pipeline", y = "peak RSS (GB)")
         }
     }
     blank = function() ggplot() + theme_void()
@@ -461,24 +480,24 @@ run_simulation = function(opt) {
             panels[[k]] = blank()
         }
     }
-    ## fig 1: narrative-ordered B-F (A = workflow schematic is overlaid
-    ## manually on the composed PDF). The simulated pseudobulk Pearson r
-    ## heatmap (panels$G) is kept as a standalone supplementary PDF and
-    ## not composed into fig 1, since MARD in panel D already conveys
-    ## pseudobulk agreement on the simulated data.
+    ## fig 1: narrative-ordered B-G (A = workflow schematic is overlaid
+    ## manually on the composed PDF). Top row = upset (B), sample-tag
+    ## confusion (C), pseudobulk MARD heatmap (D); bottom row = wall-clock
+    ## time (E), peak memory (F), pseudobulk Pearson r heatmap (G).
     fig1_design = paste("BBBCCCDDD",
                         "BBBCCCDDD",
                         "BBBCCCDDD",
-                        "EEEEEFFFF",
-                        "EEEEEFFFF", sep = "\n")
+                        "EEEFFFGGG",
+                        "EEEFFFGGG",
+                        "EEEFFFGGG", sep = "\n")
     fig1 = patchwork::wrap_plots(B = panels$B, C = panels$C, D = panels$D,
-                                 E = panels$E, F = panels$F,
+                                 E = panels$E, F = panels$F, G = panels$G,
                                  design = fig1_design) +
         patchwork::plot_annotation(tag_levels = list(c("B", "C", "D",
-                                                       "E", "F"))) &
+                                                       "E", "F", "G"))) &
         paper_shared_theme
     pp_save_pdf(fig1, pdir, "fig1_simulations_panels",
-                width = 10.5, height = 7)
+                width = 10.5, height = 8.5)
 
     message("simulation materials written to ", pdir)
 }
