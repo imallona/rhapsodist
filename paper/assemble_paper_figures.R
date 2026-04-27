@@ -894,7 +894,10 @@ run_biology = function(opt) {
             pp_save_pdf(p, pdir, name, width = 13, height = 9)
         }
         draw_confusion("cluster_prefixed", "bio_cluster_confusion", "cluster")
-        draw_confusion("celltype",         "bio_celltype_confusion", "cell type")
+        if ("celltype" %in% names(clusters_dt) &&
+            any(!is.na(clusters_dt$celltype))) {
+            draw_confusion("celltype", "bio_celltype_confusion", "cell type")
+        }
     }
 
     ## UMAP panels. For the sendoel use case, D is celltype UMAP and E is
@@ -1319,32 +1322,50 @@ run_biology = function(opt) {
     rm(sce_list); invisible(gc(verbose = FALSE))
 
     ## Per-pipeline runtime and peak RSS from benchmark files.
-    pipe_time = NULL; pipe_mem = NULL
+    pipe_time = NULL; pipe_mem = NULL; time_segments = NULL
     bench_dir = file.path(wd, "benchmarks")
     if (dir.exists(bench_dir)) {
         pipe_time = load_pipeline_time(bench_dir, aligners)
         pipe_mem = load_pipeline_memory(bench_dir, aligners)
+        time_segments = load_pipeline_time_segments(bench_dir, aligners)
         pp_save_csv(pipe_time, pdir, "bio_perf_time")
         pp_save_csv(pipe_mem, pdir, "bio_perf_memory")
+        pp_save_csv(time_segments, pdir, "bio_perf_time_segments")
         pipe_time[, pipeline := order_pipelines(pipeline, aligners)]
         pipe_mem[, pipeline := order_pipelines(pipeline, aligners)]
-        p_t = ggplot(pipe_time, aes(pipeline, total_min, fill = pipeline)) +
-            geom_col() +
-            geom_text(aes(label = round(total_min, 1)),
-                      vjust = -0.3, size = 3) +
+        time_segments[, pipeline := order_pipelines(pipeline, aligners)]
+        time_segments[, fill_key := ifelse(segment == "cutadapt",
+                                           "cutadapt",
+                                           as.character(pipeline))]
+        fill_palette = c(aligner_colours, cutadapt = "grey60")
+        p_t = ggplot(time_segments,
+                     aes(pipeline, minutes, fill = fill_key,
+                         group = segment)) +
+            geom_col(width = 0.7) +
+            geom_text(data = time_segments[segment == "cutadapt"],
+                      aes(label = round(minutes, 1)),
+                      position = position_stack(vjust = 0.5),
+                      size = 2.8, colour = "white") +
+            geom_text(data = pipe_time,
+                      aes(pipeline, total_min, label = round(total_min, 1)),
+                      vjust = -0.3, size = 3, inherit.aes = FALSE) +
             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-            scale_fill_manual(values = aligner_colours) +
-            theme_bw() + theme(legend.position = "none") +
+            scale_fill_manual(values = fill_palette,
+                              breaks = "cutadapt", labels = "cutadapt",
+                              name = NULL) +
+            theme_bw() +
+            theme(legend.position = "bottom",
+                  legend.margin = margin(0, 0, 0, 0)) +
             labs(x = NULL, y = "wall-clock (min)")
         p_m = ggplot(pipe_mem, aes(pipeline, peak_rss_gb, fill = pipeline)) +
-            geom_col() +
+            geom_col(width = 0.7) +
             geom_text(aes(label = round(peak_rss_gb, 1)),
                       vjust = -0.3, size = 3) +
             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
             scale_fill_manual(values = aligner_colours) +
             theme_bw() + theme(legend.position = "none") +
             labs(x = NULL, y = "peak RSS (GB)")
-        pp_save_pdf(p_t + p_m, pdir, "bio_perf", width = 6, height = 3)
+        pp_save_pdf(p_t + p_m, pdir, "bio_perf", width = 6, height = 3.3)
     }
 
     panel_theme2 = paper_theme(10)
@@ -1444,14 +1465,26 @@ run_biology = function(opt) {
                   axis.title.y = element_text(size = 9,
                                               margin = margin(r = 2)),
                   axis.text.x = element_text(angle = 30, hjust = 1))
-        panels2$I = ggplot(pipe_time, aes(pipeline, total_min,
-                                          fill = pipeline)) +
+        fill_palette = c(aligner_colours, cutadapt = "grey60")
+        panels2$I = ggplot(time_segments,
+                           aes(pipeline, minutes, fill = fill_key,
+                               group = segment)) +
             geom_col(width = 0.55) +
-            geom_text(aes(label = round(total_min, 1)),
-                      vjust = -0.3, size = 3) +
+            geom_text(data = time_segments[segment == "cutadapt"],
+                      aes(label = round(minutes, 1)),
+                      position = position_stack(vjust = 0.5),
+                      size = 2.6, colour = "white") +
+            geom_text(data = pipe_time,
+                      aes(pipeline, total_min, label = round(total_min, 1)),
+                      vjust = -0.3, size = 3, inherit.aes = FALSE) +
             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
-            scale_fill_manual(values = aligner_colours) +
-            bar_theme2 + labs(x = "pipeline", y = "wall-clock (min)")
+            scale_fill_manual(values = fill_palette,
+                              breaks = "cutadapt", labels = "cutadapt",
+                              name = NULL) +
+            bar_theme2 +
+            theme(legend.position = "bottom",
+                  legend.margin = margin(0, 0, 0, 0)) +
+            labs(x = "pipeline", y = "wall-clock (min)")
         panels2$J = ggplot(pipe_mem, aes(pipeline, peak_rss_gb,
                                          fill = pipeline)) +
             geom_col(width = 0.55) +
@@ -1564,7 +1597,9 @@ run_benchmarks = function(opt) {
                                        "cutadapt",
                                        as.character(pipeline))]
 
-    p_t = ggplot(time_segments, aes(pipeline, minutes, fill = fill_key)) +
+    p_t = ggplot(time_segments,
+                 aes(pipeline, minutes, fill = fill_key,
+                     group = segment)) +
         geom_col(width = 0.7) +
         geom_text(data = time_segments[segment == "cutadapt"],
                   aes(label = round(minutes, 1)),
@@ -1663,6 +1698,27 @@ load_pipeline_memory = function(bench_dir, aligners) {
         out[pipeline %in% nonsbg,
             peak_rss_gb := pmax(peak_rss_gb, cutadapt_max_rss)]
     }
+    out
+}
+
+## Same data as load_pipeline_time() but split into aligner / cutadapt rows so
+## the cutadapt fraction can be drawn as a stacked segment on the time bar.
+load_pipeline_time_segments = function(bench_dir, aligners) {
+    bm = load_benchmarks(bench_dir, aligners)
+    aligner_time = bm[pipeline %in% aligners & !is_install_rule(file),
+                      .(minutes = sum(minutes)), by = pipeline]
+    cutadapt_minutes = bm[grepl("^standardize_cb_umis_", file) & !is_install_rule(file),
+                          sum(minutes)]
+    nonsbg = setdiff(aligners, "sbg")
+    out = aligner_time[, .(pipeline, segment = "aligner", minutes)]
+    if (length(nonsbg) > 0 && length(cutadapt_minutes) > 0 &&
+        cutadapt_minutes > 0) {
+        out = rbindlist(list(out,
+            data.table(pipeline = nonsbg, segment = "cutadapt",
+                       minutes = cutadapt_minutes)),
+            use.names = TRUE)
+    }
+    out[, segment := factor(segment, levels = c("aligner", "cutadapt"))]
     out
 }
 
