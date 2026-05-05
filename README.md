@@ -8,6 +8,10 @@ For alevin, DropletUtils barcodeRanks is applied to the DeduplicatedReads column
 
 By default alevin uses graph-based EM deduplication. This distributes multi-mapping reads as fractional counts and raises per-cell UMI totals compared to unique-only aligners such as STARsolo with soloMultiMappers: Unique. Set `alevin_sketch: true` to use `--sketch` instead: sketch deduplication gives integer-like counts on the same scale as STARsolo Unique, making cross-aligner UMI comparison fair.
 
+# Preprint
+
+- [rhapsodist: a reproducible Snakemake workflow for BD~Rhapsody single-cell RNA-seq data](https://www.biorxiv.org/content/10.64898/2026.04.28.721304v1)
+  
 ## Workflow diagram
 
 ```mermaid
