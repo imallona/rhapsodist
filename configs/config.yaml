@@ -8,8 +8,10 @@ max_mem_mb: 20000
 soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
 
 # cell_filtering controls how cells are selected from raw count matrices.
-# native: each aligner uses its own method (STARsolo: soloCellFilter, kallisto: barcodeRanks, alevin: filterBarcodes, SBG: built-in)
+# native: each aligner uses its own method (STARsolo: soloCellFilter, kallisto: barcodeRanks, alevin: barcodeRanks knee, SBG: built-in)
 # emptydrops: apply DropletUtils::emptyDrops on raw/unfiltered counts for all aligners
+# none: no cell filtering; keep every observed barcode (filter downstream yourself).
+#       For STARsolo this overrides soloCellFilter to None.
 cell_filtering: "native"
 
 ## multimappers
@@ -21,6 +23,14 @@ soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 # graph-based EM deduplication, which produces fractional counts and inflates
 # per-cell UMI totals relative to unique-only aligners.
 alevin_sketch: false
+
+# alevin_usa: build a spliced+unspliced (spliceu) reference and run alevin-fry in
+# USA mode (cr-like-usa). The resulting SCE keeps the spliced counts as the main
+# 'counts' assay (spliced plus ambiguous) and adds 'spliced', 'unspliced' and
+# 'ambiguous' assays for RNA velocity. Requires alevin_sketch: true (USA counting
+# is an alevin-fry feature). Needs the genome (for intron sequences) and a plain
+# transcriptome is not used in this mode.
+alevin_usa: false
 
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
@@ -46,7 +56,7 @@ gtf: /path/to/annotation.gtf
 # caution: uncompressed
 genome: /path/to/genome.fa
 
-# can be gzipped
+# gzipped or plain fasta both work (not used when alevin_usa is true)
 transcriptome: /path/to/transcriptome.fa.gz
 
 # readLength - 1

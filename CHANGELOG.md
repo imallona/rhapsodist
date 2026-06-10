@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added `alevin_usa` config key. When true, a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF and alevin-fry quantifies in USA mode (`cr-like-usa`). The alevin SingleCellExperiment keeps spliced plus ambiguous as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays. Requires `alevin_sketch: true`.
+- Added `cell_filtering: none` to keep every observed barcode (no cell filter) across STARsolo, alevin and kallisto. For STARsolo it overrides `soloCellFilter` to None; for alevin and kallisto the knee filter is skipped.
+- The transcriptome input now accepts a plain `.fa` as well as `.fa.gz` (deversion uses `gzip -dcf`). The previous `zcat` failed on uncompressed fasta.
+- Documented that BD sample tags are extracted from the WTA reads (no separate sample tag FASTQ input); enable with `use_sampletags`/`skip_sampletags` and `species`.
+
 ## v0.2.0 - 2026-04-24
 
 - Sample config vocabulary: replaced `bead_version` with `allowedlist` (96/384) and `diversity_insets` (yes/no). Both are optional; bead chemistry is auto-detected from R1 linkers and the declared fields are used as a QC check and for logging.

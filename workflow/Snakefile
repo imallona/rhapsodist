@@ -66,6 +66,12 @@ print(get_sample_names())
 
 validate_sampletag_config()
 
+if config.get('alevin_usa', False) and not config.get('alevin_sketch', False):
+    raise ValueError(
+        "alevin_usa: true requires alevin_sketch: true; USA counting is an "
+        "alevin-fry feature and is only produced through the sketch/alevin-fry path"
+    )
+
 _extra_targets = (
     [op.join(config['working_dir'], 'simulation_validation.html')]
     if config.get('use_simulated', False) else []
@@ -286,7 +292,9 @@ rule starsolo:
         tmp = op.join(config['working_dir'], 'tmp_starsolo_{sample}'),
         maxmem = config['max_mem_mb'] * 1024 * 1024,
         sjdbOverhang = config['sjdbOverhang'],
-        soloCellFilter = config['soloCellFilter'],
+        # cell_filtering none overrides soloCellFilter to keep every barcode
+        soloCellFilter = ('None' if config.get('cell_filtering', 'native') == 'none'
+                          else config['soloCellFilter']),
         soloMultiMappers = config['soloMultiMappers'],
         soloUMIdedup = config.get('soloUMIdedup', '1MM_CR'),
         extraStarSoloArgs = config['extraStarSoloArgs'],
@@ -407,6 +415,7 @@ if config.get('alevin_sketch', False):
             knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
         params:
             fry_quant_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry_quant'),
+            cell_filtering = config.get('cell_filtering', 'native'),
             sim_barcodes = lambda wildcards: (
                 op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                 if config.get('use_simulated', False) else ''
@@ -419,6 +428,7 @@ if config.get('alevin_sketch', False):
             """
             Rscript {input.script} \
                 --fry_quant_dir {params.fry_quant_dir} \
+                --cell_filtering {params.cell_filtering} \
                 --output {output.knee_barcodes} \
                 $([ -n "{params.sim_barcodes}" ] && echo "--sim_barcodes {params.sim_barcodes}") \
                 &> {log}
@@ -438,6 +448,7 @@ if config.get('alevin_sketch', False):
         params:
             fry_quant_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry_quant'),
             cell_filtering = config.get('cell_filtering', 'native'),
+            usa_flag = '--usa' if config.get('alevin_usa', False) else '',
         log:
             op.join(config['working_dir'], 'logs', 'r_sce_generation_{sample}_alevin.log')
         benchmark:
@@ -453,6 +464,7 @@ if config.get('alevin_sketch', False):
                  --gtf {input.gtf} \
                  --cell_filtering {params.cell_filtering} \
                  --knee_barcodes {input.knee_barcodes} \
+                 {params.usa_flag} \
                  --output_fn {output.sce} &> {log}
             """
 
@@ -470,6 +482,7 @@ else:
         output:
             knee_barcodes = op.join(config['working_dir'], 'alevin', '{sample}', 'alevin', 'knee_barcodes.txt'),
         params:
+            cell_filtering = config.get('cell_filtering', 'native'),
             sim_barcodes = lambda wildcards: (
                 op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                 if config.get('use_simulated', False) else ''
@@ -482,6 +495,7 @@ else:
             """
             Rscript {input.script} \
                 --feature_dump {input.feature_dump} \
+                --cell_filtering {params.cell_filtering} \
                 --output {output.knee_barcodes} \
                 $([ -n "{params.sim_barcodes}" ] && echo "--sim_barcodes {params.sim_barcodes}") \
                 &> {log}
@@ -1139,6 +1153,50 @@ rule render_sampletag_report:
               assignments_path = "{params.assignments}"))' &> {log}
         """
 
+## salmon/alevin reference paths. In USA mode the index and t2g come from a
+## spliced+unspliced (spliceu) reference built by pyroe; otherwise from the plain
+## transcriptome (deversion_transcriptome) and a 2-column t2g (get_txp2gene).
+_salmon_dir = op.join(config['working_dir'], 'data', 'index', 'salmon')
+_alevin_usa = config.get('alevin_usa', False)
+salmon_index_fasta = (op.join(_salmon_dir, 'spliceu', 'transcriptome.fa') if _alevin_usa
+                      else op.join(_salmon_dir, 'transcriptome.fa'))
+## salmon alevin maps transcript to gene with a 2-column t2g; alevin-fry quant uses
+## the 3-column t2g (transcript, gene, S/U status) to trigger USA counting.
+alevin_align_t2g = (op.join(_salmon_dir, 'spliceu', 'txp2gene_2col') if _alevin_usa
+                    else op.join(_salmon_dir, 'txp2gene'))
+alevin_quant_t2g = (op.join(_salmon_dir, 'spliceu', 'txp2gene_3col') if _alevin_usa
+                    else op.join(_salmon_dir, 'txp2gene'))
+
+rule build_spliceu_reference:
+    conda:
+        op.join(workflow.basedir, 'envs', 'salmon.yaml')
+    input:
+        genome = config['genome'],
+        gtf = config['gtf'],
+    output:
+        fasta = op.join(_salmon_dir, 'spliceu', 'transcriptome.fa'),
+        t2g_3col = op.join(_salmon_dir, 'spliceu', 'txp2gene_3col'),
+        t2g_2col = op.join(_salmon_dir, 'spliceu', 'txp2gene_2col'),
+    params:
+        spliceu_dir = op.join(_salmon_dir, 'spliceu'),
+    threads: workflow.cores
+    log:
+        op.join(config['working_dir'], 'logs', 'build_spliceu_reference.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', 'build_spliceu_reference.txt')
+    shell:
+        """
+        mkdir -p {params.spliceu_dir}
+
+        # spliceu reference: spliced transcripts plus full unspliced (intron-containing)
+        # sequences, with a 3-column t2g (transcript, gene, S/U status) for USA counting
+        pyroe make-spliceu {input.genome} {input.gtf} {params.spliceu_dir} &> {log}
+
+        cp {params.spliceu_dir}/spliceu.fa {output.fasta}
+        cp {params.spliceu_dir}/spliceu_t2g_3col.tsv {output.t2g_3col}
+        cut -f1,2 {params.spliceu_dir}/spliceu_t2g_3col.tsv > {output.t2g_2col}
+        """
+
 rule deversion_transcriptome:
     conda:
         op.join(workflow.basedir, 'envs', 'star.yaml')
@@ -1164,13 +1222,14 @@ rule deversion_transcriptome:
 
             # no transcript versions
             #  e.g. ENST4654.1, the .1 needs to go because the matching GTF doesn't have it
-            zcat {input.transcriptome} | awk '/^>/ {{split($1, a, "."); $1=a[1]}} {{print}}' > {output.deversioned_fasta}
+            # gzip -dcf reads both gzipped and plain fasta (the -f passes uncompressed input through)
+            gzip -dcf {input.transcriptome} | awk '/^>/ {{split($1, a, "."); $1=a[1]}} {{print}}' > {output.deversioned_fasta}
 
          elif [[ {params.gtf_style} == 'gencode' ]]
          then
             echo "Gencode GTF"
             ## yes versions, nbo pipes
-            zcat {input.transcriptome} | sed 's/|/ /g' > {output.deversioned_fasta}
+            gzip -dcf {input.transcriptome} | sed 's/|/ /g' > {output.deversioned_fasta}
 
          else
            echo "gtf_origin is misspecified within the config file"
@@ -1181,7 +1240,7 @@ rule salmon_index:
     conda:
         op.join(workflow.basedir, 'envs', 'salmon.yaml')
     input:
-        transcriptome = op.join(config['working_dir'], 'data', 'index', 'salmon', 'transcriptome.fa')
+        transcriptome = salmon_index_fasta
     output:
         index_flag = op.join(config['working_dir'], 'data', 'index', 'salmon', 'seq.bin')
     params:
@@ -1239,7 +1298,7 @@ if config.get('alevin_sketch', False):
                                           "{sample}_standardized_cb_umi.fq.gz"),
             standardized_cdna = op.join(config['working_dir'], 'data', 'fastq',
                                         "{sample}_standardized_cdna.fq.gz"),
-            t2g = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
+            t2g = alevin_align_t2g,
             observed_whitelist = lambda wildcards: (
                 op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                 if config.get('use_simulated', False)
@@ -1278,7 +1337,7 @@ if config.get('alevin_sketch', False):
             op.join(workflow.basedir, 'envs', 'salmon.yaml')
         input:
             map_rad = op.join(config['working_dir'], 'alevin', '{sample}', 'map.rad'),
-            t2g = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
+            t2g = alevin_quant_t2g,
             observed_whitelist = lambda wildcards: (
                 op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                 if config.get('use_simulated', False)
@@ -1291,6 +1350,8 @@ if config.get('alevin_sketch', False):
             alevin_dir = op.join(config['working_dir'], 'alevin', '{sample}'),
             fry_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry'),
             quant_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry_quant'),
+            # cr-like-usa keeps spliced/unspliced/ambiguous counts separate (USA mode)
+            resolution = 'cr-like-usa' if config.get('alevin_usa', False) else 'cr-like',
         threads:
             workflow.cores
         log:
@@ -1313,7 +1374,7 @@ if config.get('alevin_sketch', False):
             alevin-fry quant \
                 --input-dir {params.fry_dir} \
                 --tg-map {input.t2g} \
-                --resolution cr-like \
+                --resolution {params.resolution} \
                 --threads {threads} \
                 --use-mtx \
                 --output-dir {params.quant_dir} \
@@ -1330,7 +1391,7 @@ else:
                                           "{sample}_standardized_cb_umi.fq.gz"),
             standardized_cdna = op.join(config['working_dir'], 'data', 'fastq',
                                         "{sample}_standardized_cdna.fq.gz"),
-            t2g = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
+            t2g = alevin_align_t2g,
             observed_whitelist = lambda wildcards: (
                 op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
                 if config.get('use_simulated', False)

@@ -147,7 +147,7 @@ Local paths:
 gtf_origin: "gencode"        # gencode or ensembl
 gtf: /path/to/annotation.gtf
 genome: /path/to/genome.fa
-transcriptome: /path/to/transcriptome.fa.gz
+transcriptome: /path/to/transcriptome.fa.gz   # gzipped or plain fasta both work
 sjdbOverhang: 70              # read length minus 1
 ```
 
@@ -186,6 +186,7 @@ cell_filtering: "native"
 
 - `native`: STARsolo uses its soloCellFilter; alevin and kallisto apply DropletUtils barcodeRanks.
 - `emptydrops`: apply DropletUtils emptyDrops across all aligners.
+- `none`: no cell filtering; every observed barcode is kept so you can filter downstream yourself. For STARsolo this overrides soloCellFilter to None; for alevin and kallisto the knee filter is skipped.
 
 ### Alevin UMI counting
 
@@ -195,6 +196,16 @@ alevin_sketch: true
 
 - `false` (default): alevin uses graph-based EM deduplication, giving fractional multi-mapper counts. Not directly comparable to STARsolo Unique.
 - `true`: salmon runs in RAD mapping mode and alevin-fry quantifies with cr-like resolution, giving integer counts comparable to STARsolo Unique.
+
+### Alevin USA mode (spliced/unspliced/ambiguous)
+
+```yaml
+alevin_usa: true
+alevin_sketch: true
+```
+
+- `alevin_usa: false` (default): alevin quantifies against the plain transcriptome.
+- `alevin_usa: true`: a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF, and alevin-fry quantifies in USA mode (`cr-like-usa`). The resulting SingleCellExperiment keeps the spliced plus ambiguous counts as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays for RNA velocity. USA counting is an alevin-fry feature, so it requires `alevin_sketch: true`; the pipeline stops with an error otherwise.
 
 ### Samples
 
@@ -239,6 +250,23 @@ The R1 linker trim step runs cutadapt with `-e` set by `cb_umi_max_errors` (inte
 ```yaml
 cb_umi_max_errors: 1
 ```
+
+### Sample tags
+
+BD Rhapsody sample tags (sample multiplexing) ride in the same WTA library as the cDNA reads, so there is no separate sample tag FASTQ to point at. The pipeline extracts sample tag reads from the WTA reads that do not map to the transcriptome, aligns them to the bundled tag sequences in `workflow/data/sampletags/{species}_sampletags.fa`, and demultiplexes. You only need to enable it and set the species:
+
+```yaml
+skip_sampletags: false     # global switch; true (default) skips tag demultiplexing
+samples:
+  - name: my_sample
+    uses:
+      cb_umi_fq: /path/to/R1.fastq.gz
+      cdna_fq: /path/to/R2.fastq.gz
+      use_sampletags: yes      # per-sample override of skip_sampletags
+      species: human           # human or mouse; required when use_sampletags is yes
+```
+
+Only human and mouse tag sets are bundled. A separately sequenced sample tag library is not currently supported as a distinct input.
 
 To pick a sensible value, use the per-sample linker QC report (`linker_qc/{sample}_linker_qc.html`). It scans the first 10000 R1 reads, computes the hamming distance of each read to the expected fixed linker sequences (for both v1 and enhanced chemistries), and reports the fraction of reads at each error count. The cumulative table maps a given `cb_umi_max_errors` value to the fraction of reads that would survive the cutadapt trim at that tolerance.
 
