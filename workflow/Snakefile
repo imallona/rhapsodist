@@ -328,6 +328,17 @@ rule starsolo:
         --limitBAMsortRAM {params.maxmem} \
         --soloMultiMappers {params.soloMultiMappers} {params.extraStarSoloArgs} 2> {log}
 
+        ## soloCellFilter None (cell_filtering none) only writes raw/, not filtered/.
+        ## Mirror raw into filtered so the rule output contract holds and the SCE
+        ## reads every barcode.
+        if [ ! -f {params.gene_solo_path}/filtered/matrix.mtx ]; then
+            mkdir -p {params.gene_solo_path}/filtered
+            cp {params.gene_solo_path}/raw/matrix.mtx \
+               {params.gene_solo_path}/raw/barcodes.tsv \
+               {params.gene_solo_path}/raw/features.tsv \
+               {params.gene_solo_path}/filtered/
+        fi
+
         rm -rf {params.tmp}
         """
 

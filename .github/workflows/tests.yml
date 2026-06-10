@@ -37,6 +37,7 @@ jobs:
           create-args: >-
             r-base
             bioconductor-s4vectors
+            r-matrix
           condarc: |
             channels:
               - conda-forge
@@ -44,6 +45,9 @@ jobs:
 
       - name: run gtf_utils R tests
         run: Rscript workflow/tests/test_gtf_utils.R
+
+      - name: run USA assay collapse R tests
+        run: Rscript workflow/tests/test_usa_collapse.R
 
   integration-dry-run:
     runs-on: ubuntu-latest
@@ -68,6 +72,25 @@ jobs:
             --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
             --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      - name: dry-run with cell_filtering none
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" cell_filtering=none \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      - name: dry-run alevin USA mode
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_usa_config.yaml \
             --dry-run \
             --nolock \
             --cores 2
@@ -152,6 +175,21 @@ jobs:
             --use-conda \
             --nolock \
             --rerun-incomplete
+
+      - name: run simulation with cell_filtering none
+        run: |
+          ## guards the no-filter path end to end; STARsolo with soloCellFilter
+          ## None only writes raw/, so the rule must mirror it into filtered/
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" cell_filtering=none \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul/starsolo/simulated/simulated_starsolo_sce.rds" \
+            "$PWD/output/simul/alevin/simulated/simulated_alevin_sce.rds"
 
       - name: upload logs and reports
         if: always()
