@@ -1169,7 +1169,7 @@ alevin_quant_t2g = (op.join(_salmon_dir, 'spliceu', 'txp2gene_3col') if _alevin_
 
 rule build_spliceu_reference:
     conda:
-        op.join(workflow.basedir, 'envs', 'salmon.yaml')
+        op.join(workflow.basedir, 'envs', 'pyroe.yaml')
     input:
         genome = config['genome'],
         gtf = config['gtf'],
@@ -1194,7 +1194,7 @@ rule build_spliceu_reference:
 
         cp {params.spliceu_dir}/spliceu.fa {output.fasta}
         cp {params.spliceu_dir}/spliceu_t2g_3col.tsv {output.t2g_3col}
-        cut -f1,2 {params.spliceu_dir}/spliceu_t2g_3col.tsv > {output.t2g_2col}
+        cp {params.spliceu_dir}/spliceu_t2g.tsv {output.t2g_2col}
         """
 
 rule deversion_transcriptome:
@@ -1350,8 +1350,9 @@ if config.get('alevin_sketch', False):
             alevin_dir = op.join(config['working_dir'], 'alevin', '{sample}'),
             fry_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry'),
             quant_dir = op.join(config['working_dir'], 'alevin', '{sample}', 'fry_quant'),
-            # cr-like-usa keeps spliced/unspliced/ambiguous counts separate (USA mode)
-            resolution = 'cr-like-usa' if config.get('alevin_usa', False) else 'cr-like',
+            # USA mode (spliced/unspliced/ambiguous) is triggered by the 3-column
+            # t2g passed below, not by the resolution; cr-like works for both
+            resolution = 'cr-like',
         threads:
             workflow.cores
         log:

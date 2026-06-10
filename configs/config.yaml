@@ -25,7 +25,7 @@ soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 alevin_sketch: false
 
 # alevin_usa: build a spliced+unspliced (spliceu) reference and run alevin-fry in
-# USA mode (cr-like-usa). The resulting SCE keeps the spliced counts as the main
+# USA mode (3-column t2g, cr-like). The resulting SCE keeps the spliced counts as the main
 # 'counts' assay (spliced plus ambiguous) and adds 'spliced', 'unspliced' and
 # 'ambiguous' assays for RNA velocity. Requires alevin_sketch: true (USA counting
 # is an alevin-fry feature). Needs the genome (for intron sequences) and a plain

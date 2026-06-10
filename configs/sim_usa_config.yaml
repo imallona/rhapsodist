@@ -1,0 +1,47 @@
+## Simulated dataset for testing alevin USA mode (spliced/unspliced/ambiguous).
+## Alevin only, so the run stays fast: no kallisto build, no STAR, no SBG.
+## USA needs the genome (for intron sequences) and alevin-fry, hence alevin_sketch.
+
+repo_path: '.'
+
+nthreads: 20
+max_mem_mb: 14000
+
+cell_filtering: "native"
+soloMultiMappers: "Unique"
+
+alevin_sketch: true
+alevin_usa: true
+
+working_dir: output/simul_usa
+
+gtf_origin: "ensembl"
+
+## Simulated genome: 100 chrom x 2000 bp = 200 kbp total.
+genomeSAindexNbases: 7
+
+## Simulated reads are 100 bp; sjdbOverhang = readLength - 1
+sjdbOverhang: 99
+
+skip_sampletags: true
+use_simulated: true
+
+sim_n_cells: 1000
+sim_n_genes: 100
+sim_n_umis: 100
+sim_seed: 42
+sim_chr_len: 2000
+sim_gene_pos: 1000
+sim_read_len: 100
+
+## Empty droplets: needed for alevin's knee-finder (bimodal count distribution)
+sim_n_empty_droplets: 50000
+
+aligner:
+  - alevin
+
+samples:
+  - name: simulated
+    uses:
+      allowedlist: 384
+      diversity_insets: yes

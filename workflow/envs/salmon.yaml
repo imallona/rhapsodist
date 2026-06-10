@@ -6,5 +6,3 @@ channels:
 dependencies:
   - bioconda::salmon=1.10.3
   - bioconda::alevin-fry
-  # pyroe builds the spliced+unspliced (spliceu) reference used in alevin USA mode
-  - bioconda::pyroe

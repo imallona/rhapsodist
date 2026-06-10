@@ -117,27 +117,31 @@ if (nchar(args$fry_quant_dir) > 0) {
     mat <- read_alevin_filtered(matrix_file, gene_names, all_barcodes, knee_barcodes)
 }
 
-## USA mode: alevin-fry returns one row per gene and status, named <gene_id>-S,
-## <gene_id>-U, <gene_id>-A. Collapse to one row per gene with separate assays:
-## the main 'counts' is spliced plus ambiguous (the standard gene count), and
-## spliced, unspliced and ambiguous are kept for RNA velocity.
+## USA mode: alevin-fry names the gene columns by splicing status: the spliced
+## column is the bare gene_id, the unspliced column is <gene_id>-U and the
+## ambiguous column is <gene_id>-A (there is no -S suffix). Collapse to one row
+## per gene with separate assays: the main 'counts' is spliced plus ambiguous
+## (the standard gene count), and spliced, unspliced and ambiguous are kept for
+## RNA velocity.
 collapse_usa_assays <- function(mat) {
-    status <- sub('^.*-([SUA])$', '\\1', rownames(mat))
-    base_id <- sub('-[SUA]$', '', rownames(mat))
+    rn <- rownames(mat)
+    is_unspliced <- grepl('-U$', rn)
+    is_ambiguous <- grepl('-A$', rn)
+    is_spliced <- !is_unspliced & !is_ambiguous
+    base_id <- sub('-[UA]$', '', rn)
     genes <- sort(unique(base_id))
     cells <- colnames(mat)
-    per_status <- function(st) {
+    per_status <- function(sel) {
         out <- Matrix(0, nrow = length(genes), ncol = length(cells), sparse = TRUE,
                       dimnames = list(genes, cells))
-        sel <- status == st
         if (any(sel)) {
             out[match(base_id[sel], genes), ] <- mat[sel, , drop = FALSE]
         }
         out
     }
-    spliced <- per_status('S')
-    unspliced <- per_status('U')
-    ambiguous <- per_status('A')
+    spliced <- per_status(is_spliced)
+    unspliced <- per_status(is_unspliced)
+    ambiguous <- per_status(is_ambiguous)
     list(counts = spliced + ambiguous, spliced = spliced,
          unspliced = unspliced, ambiguous = ambiguous)
 }

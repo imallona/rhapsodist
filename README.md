@@ -205,7 +205,7 @@ alevin_sketch: true
 ```
 
 - `alevin_usa: false` (default): alevin quantifies against the plain transcriptome.
-- `alevin_usa: true`: a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF, and alevin-fry quantifies in USA mode (`cr-like-usa`). The resulting SingleCellExperiment keeps the spliced plus ambiguous counts as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays for RNA velocity. USA counting is an alevin-fry feature, so it requires `alevin_sketch: true`; the pipeline stops with an error otherwise.
+- `alevin_usa: true`: a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF, and alevin-fry quantifies in USA mode (triggered automatically by the 3-column t2g). The resulting SingleCellExperiment keeps the spliced plus ambiguous counts as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays for RNA velocity. USA counting is an alevin-fry feature, so it requires `alevin_sketch: true`; the pipeline stops with an error otherwise.
 
 ### Samples
 
