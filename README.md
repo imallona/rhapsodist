@@ -282,6 +282,13 @@ samples:
 
 Only human and mouse tag sets are bundled. A separately sequenced sample tag library is not currently supported as a distinct input.
 
+Two methods produce the tag counts, chosen automatically from the aligner list:
+
+- When `starsolo` is among the aligners, sample tags are called by the starsolo path: extract the WTA reads that STARsolo leaves unmapped (with their corrected cell barcode and UMI), align them to the tag sequences, and count. This is the published method and is unchanged.
+- When `starsolo` is not run (for example an alevin-only or kallisto-only configuration), sample tags are called by an alignment-free search instead (`workflow/src/search_sampletags.py`). It scans the standardized reads directly for the fixed tag prefix, assigns each match to the closest tag by hamming distance, and corrects the cell barcode segments against the BD whitelists with the same one-mismatch tolerance STARsolo applies. Both methods write the same count table, so the demultiplexing and report steps are identical.
+
+The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs only when starsolo is absent. On the simulated data it assigned every cell to its true tag.
+
 To pick a sensible value, use the per-sample linker QC report (`linker_qc/{sample}_linker_qc.html`). It scans the first 10000 R1 reads, computes the hamming distance of each read to the expected fixed linker sequences (for both v1 and enhanced chemistries), and reports the fraction of reads at each error count. The cumulative table maps a given `cb_umi_max_errors` value to the fraction of reads that would survive the cutadapt trim at that tolerance.
 
 ### Downsampling

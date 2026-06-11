@@ -271,6 +271,32 @@ def test_validate_sampletag_config_catches_missing_species():
         wf.validate_sampletag_config()
 
 
+## sampletag method selection -------------------------------------------------
+
+def test_sampletag_method_is_starsolo_when_starsolo_configured():
+    wf.config['aligner'] = ['starsolo', 'kallisto']
+    assert wf.get_sampletag_method() == 'starsolo'
+
+
+def test_sampletag_method_is_search_without_starsolo():
+    wf.config['aligner'] = ['alevin', 'kallisto']
+    assert wf.get_sampletag_method() == 'search'
+
+
+def test_sampletag_counts_path_starsolo(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['aligner'] = ['starsolo']
+    p = wf.sampletag_counts_by_name('sampleA')
+    assert p.endswith(op.join('sampletags', 'sampleA', 'sampletag_counts.tsv.gz'))
+
+
+def test_sampletag_counts_path_search(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['aligner'] = ['alevin']
+    p = wf.sampletag_counts_by_name('sampleA')
+    assert p.endswith(op.join('sampletags', 'sampleA', 'sampletag_counts_search.tsv.gz'))
+
+
 ## downsample -----------------------------------------------------------------
 
 def test_get_downsample_fraction_default_is_one():

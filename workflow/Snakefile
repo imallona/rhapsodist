@@ -579,8 +579,7 @@ rule render_descriptive_report:
         sces = expand(op.join(config['working_dir'], '{{aligner}}', '{sample}', '{sample}_{{aligner}}_sce.rds'),
                       sample = get_sample_names()),
         counts = ([] if config.get('skip_sampletags', False) else
-                  expand(op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
-                         sample = samples_with_sampletags()))
+                  [sampletag_counts_by_name(s) for s in samples_with_sampletags()])
     output:
         html = op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html')
         # cache = temp(op.join(config['repo_path'], 'process_sce_objects_cache')),
@@ -1158,11 +1157,41 @@ rule count_sampletags:
             pigz -p {threads} -c > {output.counts} 2> {log}
         """
 
+rule search_sampletags:
+    conda:
+        op.join(workflow.basedir, 'envs', 'star.yaml')
+    input:
+        cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
+        cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
+        tags = lambda wildcards: op.join(workflow.basedir, 'data', 'sampletags',
+                                         get_species_by_name(wildcards.sample) + '_sampletags.fa')
+    output:
+        counts = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts_search.tsv.gz')
+    params:
+        script = op.join(workflow.basedir, 'src', 'search_sampletags.py'),
+        whitelist_dir = lambda wildcards: op.join(workflow.basedir, 'data',
+                            'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_search_sampletags.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_search_sampletags.txt')
+    shell:
+        """
+        mkdir -p $(dirname {output.counts})
+        python {params.script} \
+          --r1 {input.cb_umi} \
+          --r2 {input.cdna} \
+          --tags {input.tags} \
+          --whitelists {params.whitelist_dir}/BD_CLS1.txt {params.whitelist_dir}/BD_CLS2.txt {params.whitelist_dir}/BD_CLS3.txt \
+          --out {output.counts} \
+          --log {log}
+        """
+
 rule render_sampletag_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
-        counts   = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_counts.tsv.gz'),
+        counts   = lambda wildcards: sampletag_counts_by_name(wildcards.sample),
         script   = op.join(workflow.basedir, 'src', 'generate_sampletag_report.Rmd'),
     output:
         html = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html')
