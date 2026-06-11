@@ -224,6 +224,20 @@ samples:
       downsample: 100              # percentage in (0, 100]; default 100
 ```
 
+`cb_umi_fq` and `cdna_fq` each accept either a single path or a list of paths. When a sample was sequenced across several files, list them and the pipeline concatenates each read into one fastq before processing. List R1 and R2 in the same order so mates stay paired; the two lists must have the same length.
+
+```yaml
+samples:
+  - name: my_sample
+    uses:
+      cb_umi_fq:
+        - /path/to/lane1_R1.fastq.gz
+        - /path/to/lane2_R1.fastq.gz
+      cdna_fq:
+        - /path/to/lane1_R2.fastq.gz
+        - /path/to/lane2_R2.fastq.gz
+```
+
 Vocabulary cheat sheet (maps to legacy BD bead classes):
 
 | allowedlist | diversity_insets | legacy name   |

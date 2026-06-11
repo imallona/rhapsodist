@@ -75,6 +75,15 @@ samples:
     uses:
       cb_umi_fq: /path/to/R1.fastq.gz
       cdna_fq: /path/to/R2.fastq.gz
+      # each fastq field also accepts a list when one sample is split across
+      # several files; they are concatenated before processing. List R1 and R2
+      # in the same order so mates stay paired, for example:
+      #   cb_umi_fq:
+      #     - /path/to/lane1_R1.fastq.gz
+      #     - /path/to/lane2_R1.fastq.gz
+      #   cdna_fq:
+      #     - /path/to/lane1_R2.fastq.gz
+      #     - /path/to/lane2_R2.fastq.gz
       # optional; all fields below default when absent. Bead chemistry is
       # auto-detected from R1 linkers; allowedlist/diversity_insets are used
       # as a QC check against the detection and for printing.

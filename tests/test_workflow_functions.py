@@ -325,6 +325,49 @@ def test_get_cbumi_uses_raw_path_when_downsample_full():
     assert wf.get_cbumi_by_name('sampleA') == '/data/sampleA_R1.fq.gz'
 
 
+## multiple input fastqs per sample ------------------------------------------
+
+def test_single_fastq_as_list_returns_the_path():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/sampleA_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/sampleA_R2.fq.gz']
+    assert wf.get_cbumi_by_name('sampleA') == '/data/sampleA_R1.fq.gz'
+    assert wf.get_cdna_by_name('sampleA') == '/data/sampleA_R2.fq.gz'
+
+
+def test_multiple_fastqs_return_combined_path(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz', '/data/b_R2.fq.gz']
+    r1 = wf.get_cbumi_by_name('sampleA')
+    r2 = wf.get_cdna_by_name('sampleA')
+    assert 'combined' in r1 and r1.endswith('sampleA_R1.fastq.gz')
+    assert 'combined' in r2 and r2.endswith('sampleA_R2.fastq.gz')
+
+
+def test_get_fastq_inputs_return_lists():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    assert wf.get_cbumi_inputs('sampleA') == ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    assert wf.get_cdna_inputs('sampleA') == ['/data/sampleA_R2.fq.gz']
+
+
+def test_get_fastq_inputs_none_for_sra():
+    wf.config['samples'][0]['uses'].pop('cb_umi_fq')
+    assert wf.get_cbumi_inputs('sampleA') is None
+
+
+def test_validate_fastq_lists_passes_on_matching_lengths():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz', '/data/b_R2.fq.gz']
+    wf.validate_fastq_lists()  # should not raise
+
+
+def test_validate_fastq_lists_catches_length_mismatch():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz']
+    with pytest.raises(ValueError):
+        wf.validate_fastq_lists()
+
+
 ## guide URL, SBG, etc. -------------------------------------------------------
 
 def test_get_guide_url_returns_none_when_no_gsm():

@@ -66,6 +66,8 @@ print(get_sample_names())
 
 validate_sampletag_config()
 
+validate_fastq_lists()
+
 if config.get('alevin_usa', False) and not config.get('alevin_sketch', False):
     raise ValueError(
         "alevin_usa: true requires alevin_sketch: true; USA counting is an "
@@ -665,6 +667,25 @@ rule rustody_run:
 
         touch {output.flag}
         """
+
+rule concat_fastqs:
+    input:
+        r1 = lambda wildcards: get_cbumi_inputs(wildcards.sample),
+        r2 = lambda wildcards: get_cdna_inputs(wildcards.sample)
+    output:
+        r1 = op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R1.fastq.gz'),
+        r2 = op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R2.fastq.gz')
+    params:
+        outdir = op.join(config['working_dir'], 'data', 'fastq', 'combined')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_concat_fastqs.log')
+    shell:
+        """
+        mkdir -p {params.outdir}
+        cat {input.r1} > {output.r1} 2> {log}
+        cat {input.r2} > {output.r2} 2>> {log}
+        """
+
 
 rule downsample_fastqs:
     conda:

@@ -14,11 +14,42 @@ def get_aligners():
     return(config['aligner'])
 
 ## name means sample name, everywhere
+def _as_fastq_list(value):
+    """Normalize a fastq config value to a list of paths. A single value may be
+    given as a string or as a one-element list; several fastqs for the same
+    sample are given as a list. Returns None when value is None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+def _combined_fastq(name, mate):
+    """Path to the fastq produced by concatenating a sample's input fastqs.
+    mate is 'R1' (cb/umi) or 'R2' (cdna)."""
+    return op.join(config['working_dir'], 'data', 'fastq', 'combined',
+                   f'{name}_{mate}.fastq.gz')
+
+def get_cbumi_inputs(name):
+    """Return the list of raw cb/umi fastqs declared for a sample, or None when
+    the sample is fetched from SRA instead. Used as the input to concat_fastqs."""
+    uses = _sample_uses(name) or {}
+    return _as_fastq_list(uses.get('cb_umi_fq'))
+
+def get_cdna_inputs(name):
+    """Return the list of raw cdna fastqs declared for a sample, or None when
+    the sample is fetched from SRA instead. Used as the input to concat_fastqs."""
+    uses = _sample_uses(name) or {}
+    return _as_fastq_list(uses.get('cdna_fq'))
+
 def _raw_cbumi_path(name):
     for s in config['samples']:
         if s['name'] == name:
             if 'cb_umi_fq' in s['uses']:
-                return s['uses']['cb_umi_fq']
+                files = _as_fastq_list(s['uses']['cb_umi_fq'])
+                if len(files) > 1:
+                    return _combined_fastq(name, 'R1')
+                return files[0]
             elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
@@ -26,9 +57,29 @@ def _raw_cdna_path(name):
     for s in config['samples']:
         if s['name'] == name:
             if 'cdna_fq' in s['uses']:
-                return s['uses']['cdna_fq']
+                files = _as_fastq_list(s['uses']['cdna_fq'])
+                if len(files) > 1:
+                    return _combined_fastq(name, 'R2')
+                return files[0]
             elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R2.fastq.gz')
+
+def validate_fastq_lists():
+    """Raise early if a sample declares cb_umi_fq and cdna_fq with a different
+    number of files. Mates are concatenated in the given order and must pair up,
+    so the two lists must be the same length."""
+    for s in config['samples']:
+        uses = s['uses']
+        if 'cb_umi_fq' not in uses or 'cdna_fq' not in uses:
+            continue
+        r1 = _as_fastq_list(uses['cb_umi_fq'])
+        r2 = _as_fastq_list(uses['cdna_fq'])
+        if len(r1) != len(r2):
+            raise ValueError(
+                f"Sample '{s['name']}': cb_umi_fq has {len(r1)} file(s) but "
+                f"cdna_fq has {len(r2)}. Both must list the same number of "
+                f"fastqs in matching order."
+            )
 
 def get_downsample_fraction(name):
     """Return the downsample fraction in [0, 1]. Per-sample 'downsample' overrides
