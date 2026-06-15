@@ -111,9 +111,13 @@ _sbg_sce_targets = (
     if _has_sbg else []
 )
 
-_comparison_reports = expand(
-    op.join(config['working_dir'], '{sample}_comparison.html'),
-    sample = get_sample_names()
+# the comparison report contrasts aligners, so it needs at least two
+_comparison_reports = (
+    expand(
+        op.join(config['working_dir'], '{sample}_comparison.html'),
+        sample = get_sample_names()
+    )
+    if len(get_aligners()) >= 2 else []
 )
 
 _benchmarks_report = [op.join(config['working_dir'], 'benchmarks_report.html')]

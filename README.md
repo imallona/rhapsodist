@@ -168,7 +168,7 @@ sjdbOverhang: 70
 aligner: ['starsolo', 'kallisto', 'alevin']
 ```
 
-Any combination of starsolo, kallisto, alevin, sbg. When sbg is included, set `sbg_cwl` to the path of the BD Rhapsody CWL file.
+Any combination of starsolo, kallisto, alevin, sbg. When sbg is included, set `sbg_cwl` to the path of the BD Rhapsody CWL file. The cross-pipeline comparison report is only produced when two or more aligners are listed; a single-aligner run skips it.
 
 ### STARsolo options
 
