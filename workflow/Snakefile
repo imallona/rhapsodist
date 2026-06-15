@@ -1326,27 +1326,16 @@ rule get_txp2gene:
         genes_gtf = config['gtf']
     output:
         op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene')
-    params:
-        gtf_style = config['gtf_origin']
     log:
         op.join(config['working_dir'], 'logs', 'get_txp2gene.log')
     benchmark:
         op.join(config['working_dir'], 'benchmarks', 'get_txp2gene.txt')
     shell:
          """
-         if [[ {params.gtf_style} == 'ensembl' ]]
-         then
-            echo "Ensembl GTF"
-            grep transcript {input.genes_gtf} | \
-                 awk '{{OFS="\t"; print $14,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
-         elif [[ {params.gtf_style} == 'gencode' ]]
-         then
-            echo "Gencode GTF"
-            grep transcript {input.genes_gtf} | \
-                 awk '{{OFS="\t"; print $12,$10}}' | sed -e 's|"||g' -e 's|;||g' | uniq > {output}
-         else
-           echo "gtf_origin is misspecified within the config file"
-         fi         
+         gawk -F '\\t' '$3 == "transcript" {{
+             if (match($9, /transcript_id "([^"]+)"/, tx) && match($9, /gene_id "([^"]+)"/, gn))
+                 print tx[1] "\\t" gn[1]
+         }}' {input.genes_gtf} | uniq > {output} 2> {log}
          """
          
 if config.get('alevin_sketch', False):

@@ -6,3 +6,4 @@ channels:
 dependencies:
   - bioconda::salmon=1.10.3
   - bioconda::alevin-fry
+  - conda-forge::gawk

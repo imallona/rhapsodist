@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `get_txp2gene` now reads the `transcript_id` and `gene_id` GTF attributes by name with gawk rather than by fixed column position, so GTFs with a different attribute order work. `gtf_origin` no longer affects this rule; it still sets the transcriptome fasta header convention. Added gawk to the salmon conda env.
 - Added `alevin_usa` config key. When true, a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF and alevin-fry quantifies in USA mode (triggered by the 3-column t2g). The alevin SingleCellExperiment keeps spliced plus ambiguous as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays. Requires `alevin_sketch: true`.
 - Added `cell_filtering: none` to keep every observed barcode (no cell filter) across STARsolo, alevin and kallisto. For STARsolo it overrides `soloCellFilter` to None; for alevin and kallisto the knee filter is skipped.
 - The transcriptome input now accepts a plain `.fa` as well as `.fa.gz` (deversion uses `gzip -dcf`). The previous `zcat` failed on uncompressed fasta.

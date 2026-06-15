@@ -144,8 +144,8 @@ References can be given as local paths or as URLs. When URLs are provided, the p
 Local paths:
 
 ```yaml
-gtf_origin: "gencode"        # gencode or ensembl
-gtf: /path/to/annotation.gtf
+gtf_origin: "gencode"        # gencode or ensembl; only sets the transcriptome fasta header convention
+gtf: /path/to/annotation.gtf # any GTF with standard transcript_id and gene_id attributes works, regardless of column order
 genome: /path/to/genome.fa
 transcriptome: /path/to/transcriptome.fa.gz   # gzipped or plain fasta both work
 sjdbOverhang: 70              # read length minus 1
