@@ -33,6 +33,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         chr_len       = config.get('sim_chr_len',   2000),
         gene_pos      = config.get('sim_gene_pos',  1000),
         read_len      = config.get('sim_read_len',   100),
+        gtf_style     = config.get('gtf_origin', 'ensembl'),
         n_sampletags    = config.get('sim_n_sampletags', 3),
         n_st_reads      = config.get('sim_n_st_reads',  100),
         n_empty_droplets = config.get('sim_n_empty_droplets', 0),
@@ -58,6 +59,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
             --chr_len       {params.chr_len}       \
             --gene_pos      {params.gene_pos}      \
             --read_len      {params.read_len}      \
+            --gtf_style     {params.gtf_style}     \
             --n_empty_droplets {params.n_empty_droplets} \
             {params.sampletag_arg} &> {log}
         [ -f {output.st_assignments} ] || touch {output.st_assignments}

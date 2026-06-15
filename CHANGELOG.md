@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed sample tag alignment rejecting every read as too short. Only the 70 bp tag matches within the full-length read, so the STAR step now filters on an absolute matched-base count instead of the default read-length fraction.
 - The cross-pipeline comparison report is now built only with two or more aligners; single-aligner runs skip it (the barcode-overlap UpSet plot needs at least two sets).
 - `get_txp2gene` now reads the `transcript_id` and `gene_id` GTF attributes by name with gawk rather than by fixed column position, so GTFs with a different attribute order work. `gtf_origin` no longer affects this rule; it still sets the transcriptome fasta header convention. Added gawk to the salmon conda env.
 - Added `alevin_usa` config key. When true, a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF and alevin-fry quantifies in USA mode (triggered by the 3-column t2g). The alevin SingleCellExperiment keeps spliced plus ambiguous as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays. Requires `alevin_sketch: true`.

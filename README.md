@@ -284,7 +284,7 @@ Only human and mouse tag sets are bundled. A separately sequenced sample tag lib
 
 Two methods produce the tag counts, chosen automatically from the aligner list:
 
-- When `starsolo` is among the aligners, sample tags are called by the starsolo path: extract the WTA reads that STARsolo leaves unmapped (with their corrected cell barcode and UMI), align them to the tag sequences, and count. This is the published method and is unchanged.
+- When `starsolo` is among the aligners, sample tags are called by the starsolo mode: extract the WTA reads that STARsolo leaves unmapped (with their corrected cell barcode and UMI), align them to the tag sequences, and count. Only the 70 bp tag matches within the full-length read, so the STAR step filters on an absolute matched-base count rather than the default read-length fraction.
 - When `starsolo` is not run (for example an alevin-only or kallisto-only configuration), sample tags are called by an alignment-free search instead (`workflow/src/search_sampletags.py`). It scans the standardized reads directly for the fixed tag prefix, assigns each match to the closest tag by hamming distance, and corrects the cell barcode segments against the BD whitelists with the same one-mismatch tolerance STARsolo applies. Both methods write the same count table, so the demultiplexing and report steps are identical.
 
 The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs only when starsolo is absent. On the simulated data it assigned every cell to its true tag.

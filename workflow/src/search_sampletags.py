@@ -3,9 +3,9 @@
 ## Alignment-free sampletag calling by direct sequence search.
 ##
 ## Used only when starsolo is not among the configured aligners. When starsolo
-## runs, sampletags are called by the published starsolo path instead (see the
+## runs, sampletags are called by the published starsolo mode instead (see the
 ## extract_unmapped_startsolo_wta_tagged_fastqs ... count_sampletags rules), so
-## that path and its figures stay reproducible.
+## that mode and its figures stay reproducible.
 ##
 ## A BD sampletag read carries a fixed prefix shared by all tags followed by a
 ## tag-specific region. We anchor on the prefix (allowing a few mismatches),
@@ -14,7 +14,7 @@
 ## segments are corrected against the BD whitelists with the same one-mismatch
 ## tolerance starsolo applies, so the barcodes match the cells the aligner calls.
 ##
-## Output is the same four-column table the starsolo path emits via
+## Output is the same four-column table the starsolo mode emits via
 ## match_sampletags (cb, umi, sampletag, n_mismatches), so the downstream demux
 ## and report are shared and unchanged.
 ##

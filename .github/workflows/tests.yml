@@ -95,6 +95,27 @@ jobs:
             --nolock \
             --cores 2
 
+      # single-aligner run: the cross-pipeline comparison report must be skipped.
+      # Add a dry-run step here for every new simulation config that ships a fix.
+      - name: dry-run single-aligner search config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config_search.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # gencode-ordered GTF: checks get_txp2gene parses attributes by name
+      - name: dry-run gencode gtf config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config_gencode.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
   sbg-singularity-guard:
     runs-on: ubuntu-latest
     defaults:
@@ -178,7 +199,7 @@ jobs:
 
       - name: run simulation with cell_filtering none
         run: |
-          ## guards the no-filter path end to end; STARsolo with soloCellFilter
+          ## guards the whole no-filter run; STARsolo with soloCellFilter
           ## None only writes raw/, so the rule must mirror it into filtered/
           snakemake \
             --snakefile workflow/Snakefile \

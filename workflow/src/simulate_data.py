@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Generates a minimal synthetic dataset for end-to-end testing of the BD Rhapsody WTA pipeline.
+Generates a minimal synthetic dataset for testing the full BD Rhapsody WTA pipeline.
 
 Outputs (all written to --out_dir):
   genome.fa                 100-chromosome genome; each chromosome contains one unique gene
                             sequence embedded at --gene_pos (1-based); flanking regions are random.
-  genes.gtf                 Ensembl-style annotation; one gene / transcript / exon per chromosome.
+  genes.gtf                 Ensembl- or gencode-style annotation (--gtf_style); one gene / transcript / exon per chromosome.
   transcriptome.fa.gz       Gzipped FASTA of simulated transcript sequences.
   cell_barcodes.txt         Whitelist-sampled CB1+CB2+CB3 concatenations, one per simulated cell.
   sampletag_assignments.txt CB (concatenated) TAB sampletag_name, one per cell (if --sampletag_fa).
@@ -61,6 +61,8 @@ def parse_args():
                    help='Sampletag reads per cell')
     p.add_argument('--n_empty_droplets', type=int, default=0,
                    help='Number of empty-droplet barcodes to simulate (low-count noise for alevin knee finder)')
+    p.add_argument('--gtf_style', default='ensembl', choices=('ensembl', 'gencode'),
+                   help='Attribute order in the GTF; gencode and ensembl place transcript_id differently')
     return p.parse_args()
 
 
@@ -149,7 +151,11 @@ def write_fasta(seqs_dict, path, line_width=60):
                 fh.write(seq[i:i + line_width] + '\n')
 
 
-def write_gtf(n_genes, gene_pos, read_len, path):
+def write_gtf(n_genes, gene_pos, read_len, path, gtf_style='ensembl'):
+    """Write a minimal annotation. The two styles put transcript_id in a
+    different position (ensembl after gene_version, gencode right after
+    gene_id), so steps that parse by attribute name, such as txp2gene, are
+    tested on both orders."""
     width = len(str(n_genes))
     with open(path, 'w') as fh:
         for i in range(n_genes):
@@ -158,10 +164,17 @@ def write_gtf(n_genes, gene_pos, read_len, path):
             tid   = f'{gid}_tx'
             start = gene_pos
             end   = gene_pos + read_len - 1
-            gene_attr = f'gene_id "{gid}"; gene_version "1";'
-            tx_attr   = f'{gene_attr} transcript_id "{tid}"; transcript_version "1";'
-            exon_attr = (f'{tx_attr} exon_number "1";'
-                         f' exon_id "{gid}_exon1"; exon_version "1";')
+            if gtf_style == 'gencode':
+                gene_attr = f'gene_id "{gid}"; gene_type "protein_coding"; gene_name "{gid}";'
+                tx_attr   = (f'gene_id "{gid}"; transcript_id "{tid}"; '
+                             f'gene_type "protein_coding"; gene_name "{gid}"; '
+                             f'transcript_type "protein_coding"; transcript_name "{tid}";')
+                exon_attr = f'{tx_attr} exon_number 1; exon_id "{gid}_exon1";'
+            else:
+                gene_attr = f'gene_id "{gid}"; gene_version "1";'
+                tx_attr   = f'{gene_attr} transcript_id "{tid}"; transcript_version "1";'
+                exon_attr = (f'{tx_attr} exon_number "1";'
+                             f' exon_id "{gid}_exon1"; exon_version "1";')
             for feat, attr in (('gene', gene_attr),
                                 ('transcript', tx_attr),
                                 ('exon', exon_attr)):
@@ -329,7 +342,7 @@ def main():
 
     write_fasta(chroms,   os.path.join(args.out_dir, 'genome.fa'))
     write_gtf(args.n_genes, args.gene_pos, args.read_len,
-              os.path.join(args.out_dir, 'genes.gtf'))
+              os.path.join(args.out_dir, 'genes.gtf'), gtf_style=args.gtf_style)
     write_transcriptome_gz(gene_seqs, os.path.join(args.out_dir, 'transcriptome.fa.gz'))
 
     cell_barcodes = sample_cell_barcodes(args.whitelist_dir, args.n_cells, rng)

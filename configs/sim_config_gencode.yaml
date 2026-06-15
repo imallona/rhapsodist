@@ -9,9 +9,12 @@ soloMultiMappers: "Unique"
 soloUMIdedup: "Exact"
 extraStarSoloArgs: ""
 
-working_dir: output/simul_search
+working_dir: output/simul_gencode
 
-gtf_origin: "ensembl"
+## gencode-style GTF: the simulator places transcript_id right after gene_id,
+## a different attribute order than the ensembl configs. Checks that get_txp2gene
+## parses by attribute name rather than by fixed column position.
+gtf_origin: "gencode"
 
 genomeSAindexNbases: 7
 sjdbOverhang: 99
@@ -33,9 +36,7 @@ sampletag_fa: "data/sampletags/mouse_sampletags.fa"
 sim_n_sampletags: 3
 sim_n_st_reads: 100
 
-## No starsolo here, so get_sampletag_method() resolves to the alignment-free
-## search mode. This config exists to exercise and validate that mode against
-## the simulated sampletag ground truth.
+## get_txp2gene only runs in alevin mode, so alevin is the aligner that triggers it
 aligner:
   - alevin
 

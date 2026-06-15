@@ -308,15 +308,15 @@ def samples_with_sampletags():
 def get_sampletag_method():
     """Return 'starsolo' when starsolo is among the configured aligners, else
     'search'. starsolo always wins, so runs that reproduce the published figures
-    keep using the starsolo sampletag path; the alignment-free search path is
+    keep using the starsolo sampletag mode; the alignment-free search mode is
     reached only when starsolo is not run. The choice is not user-overridable, so
     a published config cannot regenerate a figure with the search method."""
     return 'starsolo' if 'starsolo' in get_aligners() else 'search'
 
 def sampletag_counts_by_name(name):
     """Path to the sampletag count table for a sample, routed to the producer
-    chosen by get_sampletag_method. The starsolo path keeps the published
-    filename; the search path uses a distinct filename so the two rules never
+    chosen by get_sampletag_method. The starsolo mode keeps the published
+    filename; the search mode uses a distinct filename so the two rules never
     collide on the same output."""
     if get_sampletag_method() == 'starsolo':
         return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts.tsv.gz')

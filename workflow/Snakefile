@@ -1126,6 +1126,8 @@ rule align_star_sampletags:
         rm -rf {params.tmp} {params.output_dir}
         mkdir -p {params.output_dir}
 
+        # only the 70 bp tag matches within the full-length read, so filter on an
+        # absolute matched-base count instead of STAR's default read-length fraction
         STAR --runThreadN {threads} \
           --genomeDir {params.sampletags_genome_dir} \
           --outTmpDir {params.tmp} \
@@ -1134,6 +1136,10 @@ rule align_star_sampletags:
           --readFilesIn {input.fastq}  \
           --outSAMtype BAM Unsorted \
           --outFilterMismatchNmax 5 \
+          --outFilterScoreMinOverLread 0 \
+          --outFilterMatchNminOverLread 0 \
+          --outFilterMatchNmin 40 \
+          --seedSearchStartLmax 25 \
           --scoreInsOpen  -8 \
           --scoreDelBase -8 \
           --alignIntronMax 1 &> {log}
