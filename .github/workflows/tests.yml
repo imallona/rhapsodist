@@ -386,6 +386,27 @@ jobs:
           free -h || true
           ulimit -a || true
           ./output/simul_kallisto/software/kallisto/build/src/kallisto version || true
+          ## bustools is in the kallisto conda env; print the bus header to check it
+          bt=$(find .snakemake/conda -path '*/bin/bustools' 2>/dev/null | head -1)
+          bus=output/simul_kallisto/kallisto/simulated/output.sorted.bus
+          echo "bustools: $bt"; [ -n "$bt" ] && "$bt" version || true
+          ## raw bus header (magic, version, then barcode/umi/text lengths) in case inspect crashes
+          [ -f "$bus" ] && od -A d -t x1 -N 32 "$bus" || true
+          [ -n "$bt" ] && [ -f "$bus" ] && "$bt" inspect "$bus" || true
           for f in $(find output/simul_kallisto -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
             [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
           done
+
+      - name: upload logs and bus files on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kallisto-debug
+          path: |
+            output/simul_kallisto/logs/
+            output/simul_kallisto/kallisto/simulated/*.bus
+            output/simul_kallisto/kallisto/simulated/matrix.ec
+            output/simul_kallisto/kallisto/simulated/transcripts.txt
+            output/simul_kallisto/simulate/cell_barcodes.txt
+            .snakemake/log/
+          if-no-files-found: ignore
