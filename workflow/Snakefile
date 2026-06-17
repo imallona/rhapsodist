@@ -48,10 +48,12 @@ include: op.join('src', 'simulate.snmk')
 
 include: op.join('src', 'fetch_data.snmk')
 
-## kallisto and bustools from bioconda are not reliable, so we compile them
+## kallisto is self-compiled and put on PATH: the bioconda kallisto hits Illegal
+## instruction on CPUs without AVX, while a local build matches the host CPU.
+## bustools is from the kallisto.yaml conda env: the self-compiled one hit
+## std::bad_alloc in bustools correct on the CI runner.
 kallisto = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src')
-bustools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src')
-shell.prefix('export PATH=' + kallisto + ':' + bustools + ":$PATH;")
+shell.prefix('export PATH=' + kallisto + ":$PATH;")
 
 try:
     os.makedirs(op.join(config['working_dir'], 'logs'), exist_ok=True)
@@ -190,39 +192,9 @@ rule compile_kallisto:
         cd {params.soft}
 
         rm -rf kallisto
-        ## pin to a tagged release for reproducible builds (see compile_bustools)
+        ## pinned tag for reproducible builds. bustools is not compiled (from conda instead)
         git clone --branch v0.52.0 --depth 1 https://github.com/pachterlab/kallisto.git
         cd kallisto
-        git log | head &> {log}
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_INSTALL_PREFIX:PATH=$HOME &>> {log}
-        make -j {threads} &>> {log}
-        """
-
-rule compile_bustools:
-    conda:
-        op.join(workflow.basedir, 'envs', 'build.yaml')
-    output:
-        op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
-    log:
-        op.join(config['working_dir'], 'logs', 'bustools_install.log')
-    benchmark:
-        op.join(config['working_dir'], 'benchmarks', 'bustools_install.txt')
-    params:
-        soft = op.join(config['working_dir'], 'software')
-    threads:
-        min(5, workflow.cores)
-    shell:
-        """
-        mkdir -p {params.soft}
-        cd {params.soft}
-        rm -rf bustools
-
-        ## pin to a tagged release: an unpinned master clone is not reproducible
-        ## and a regression there threw std::bad_alloc in bustools correct on CI.
-        git clone --branch v0.45.1 --depth 1 https://github.com/BUStools/bustools.git
-        cd bustools
         git log | head &> {log}
         mkdir build
         cd build
@@ -845,7 +817,6 @@ rule kallisto_index:
     input:
         transcriptome = config['transcriptome'],
         kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
     params:
         index_name = 'kallisto.index',
         output_dir= op.join(config['working_dir'], 'data', 'index', 'kallisto')        
@@ -876,7 +847,6 @@ rule kallisto_bus:
         standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
         kallisto_index = op.join(config['working_dir'], 'data', 'index', 'kallisto', 'kallisto.index'),
         kal = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        bus = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
     output:
         matrix_ec = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
@@ -918,8 +888,7 @@ rule bustools_sort:
     conda:
         op.join(workflow.basedir, 'envs', 'kallisto.yaml')
     input:
-        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus'),
-        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
+        bus    = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.bus')
     output:
         sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus')
     threads: workflow.cores
@@ -987,7 +956,6 @@ rule bustools_correct:
         op.join(workflow.basedir, 'envs', 'kallisto.yaml')
     input:
         bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.sorted.bus'),
-        btools = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools'),
         whitelist = (
             op.join(config['working_dir'], 'simulate', 'cell_barcodes.txt')
             if config.get('use_simulated', False)
@@ -1014,7 +982,6 @@ rule bustools_count:
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
         bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus'),
         kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
-        btools     = op.join(config['working_dir'], 'software', 'bustools', 'build', 'src', 'bustools')
     output:
         op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx')
     params:

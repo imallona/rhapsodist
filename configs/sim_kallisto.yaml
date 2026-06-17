@@ -16,8 +16,8 @@ gtf_origin: "ensembl"
 genomeSAindexNbases: 7
 sjdbOverhang: 99
 
-## sampletags off: this config isolates the kallisto mode (kallisto bus plus the
-## self-compiled bustools sort/correct/count) so the bustools build can be tested
+## sampletags off: this config isolates the kallisto mode (self-compiled kallisto
+## bus plus the bioconda bustools sort/correct/count) so that path can be tested
 ## and debugged on its own.
 skip_sampletags: true
 use_simulated: true
