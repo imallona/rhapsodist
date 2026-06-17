@@ -104,7 +104,7 @@ The repository includes several config files under `configs/`:
 The `sim_*` configs are small synthetic scenarios that exercise specific features in CI:
 
 - `sim_config_search.yaml`: alevin only, so sampletags are called by the alignment-free search instead of starsolo.
-- `sim_search_sampletags.yaml` and `sim_starsolo_sampletags.yaml`: declare a per-sample `sampletags` set, so they test restricting the matched tags and splitting each aligner's counts into one file per tag. The first uses the mapping form (search path); the second uses the list form across three aligners (starsolo path).
+- `sim_search_sampletags.yaml` and `sim_starsolo_sampletags.yaml`: declare a per-sample `sampletags` set, so they test restricting the matched tags and splitting each aligner's counts into one file per tag. The first uses the mapping form (search mode); the second uses the list form across two aligners (starsolo mode).
 
 Both sampletag scenarios run end to end in the `integration-sampletags` CI job, which checks that the expected per-tag split files exist. The job is opt-in because it builds conda envs: add the `integration` label to a pull request to start it, or run it from the Actions tab once the workflow is on the default branch.
 

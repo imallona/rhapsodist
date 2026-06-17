@@ -4,7 +4,7 @@
 ## sampletag, extra), builds a cell by tag matrix and runs the BD algorithm:
 ## high-quality singlets (>75% of reads from one tag), a linear noise estimate,
 ## then per-tag minimum-count thresholds for the rest. allowed_tags restricts the
-## candidate tags first (covers both the starsolo and search paths). Sourced by
+## candidate tags first (covers both the starsolo and search modes). Sourced by
 ## generate_sampletag_report.Rmd and the splitting rule so the assignment is shared.
 ##
 ## GPLv3

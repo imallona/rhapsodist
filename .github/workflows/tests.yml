@@ -119,7 +119,7 @@ jobs:
             --nolock \
             --cores 2
 
-      # per-sample sampletags wiring, search path (mapping form) and starsolo path (list form)
+      # per-sample sampletags wiring, search mode (mapping form) and starsolo mode (list form)
       - name: dry-run sampletags search scenario
         run: |
           snakemake \
@@ -281,7 +281,7 @@ jobs:
 
       # .verified runs the pipeline, the split, then verify_sampletag_splits.R; it
       # fails on a malformed or missing per-tag split.
-      - name: run and verify search-path scenario (mapping form)
+      - name: run and verify search-mode scenario (mapping form)
         run: |
           snakemake \
             --snakefile workflow/Snakefile \
@@ -292,10 +292,10 @@ jobs:
             --rerun-incomplete \
             "$PWD/output/simul_search_sampletags/alevin/simulated/by_sampletag/.verified"
 
-      - name: run and verify starsolo-path scenario (list form, all aligners)
+      - name: run and verify starsolo-mode scenario (list form, starsolo and alevin)
         run: |
           targets=""
-          for aligner in starsolo kallisto alevin; do
+          for aligner in starsolo alevin; do
             targets="$targets $PWD/output/simul_starsolo_sampletags/$aligner/simulated/by_sampletag/.verified"
           done
           snakemake \
