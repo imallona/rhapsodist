@@ -119,6 +119,16 @@ jobs:
             --nolock \
             --cores 2
 
+      # kallisto-only config, used by the integration-kallisto job
+      - name: dry-run kallisto-only config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_kallisto.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
       # per-sample sampletags wiring, search mode (mapping form) and starsolo mode (list form)
       - name: dry-run sampletags search scenario
         run: |
@@ -325,3 +335,52 @@ jobs:
             output/**/*sampletag*.html
             output/**/by_sampletag/**/split_summary.rds
           if-no-files-found: ignore
+
+  # Isolated kallisto mode run. kallisto and bustools are compiled from a pinned
+  # tag; this job exists to catch breakage in that build (a prior unpinned bustools
+  # threw std::bad_alloc in bustools correct). Opt-in via the 'integration' label.
+  integration-kallisto:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: cache conda environments created by snakemake
+        uses: actions/cache@v4
+        with:
+          path: .snakemake/conda
+          key: snakemake-conda-${{ hashFiles('workflow/envs/all_in_one.yaml') }}
+
+      - name: run kallisto-only simulation
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_kallisto.yaml \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul_kallisto/kallisto/simulated/simulated_kallisto_sce.rds"
+
+      - name: diagnostics on failure
+        if: failure()
+        run: |
+          free -h || true
+          ulimit -a || true
+          ./output/simul_kallisto/software/bustools/build/src/bustools version || true
+          ./output/simul_kallisto/software/kallisto/build/src/kallisto version || true
+          for f in $(find output/simul_kallisto -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done

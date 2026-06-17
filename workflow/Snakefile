@@ -190,7 +190,8 @@ rule compile_kallisto:
         cd {params.soft}
 
         rm -rf kallisto
-        git clone https://github.com/pachterlab/kallisto.git --depth 1
+        ## pin to a tagged release for reproducible builds (see compile_bustools)
+        git clone --branch v0.52.0 --depth 1 https://github.com/pachterlab/kallisto.git
         cd kallisto
         git log | head &> {log}
         mkdir build
@@ -218,7 +219,9 @@ rule compile_bustools:
         cd {params.soft}
         rm -rf bustools
 
-        git clone https://github.com/BUStools/bustools.git --depth 1
+        ## pin to a tagged release: an unpinned master clone is not reproducible
+        ## and a regression there threw std::bad_alloc in bustools correct on CI.
+        git clone --branch v0.45.1 --depth 1 https://github.com/BUStools/bustools.git
         cd bustools
         git log | head &> {log}
         mkdir build

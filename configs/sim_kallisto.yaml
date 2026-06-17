@@ -1,0 +1,44 @@
+repo_path: '.'
+
+nthreads: 20
+max_mem_mb: 14000
+
+soloCellFilter: "EmptyDrops_CR"
+cell_filtering: "emptydrops"
+soloMultiMappers: "Unique"
+soloUMIdedup: "Exact"
+extraStarSoloArgs: ""
+
+working_dir: output/simul_kallisto
+
+gtf_origin: "ensembl"
+
+genomeSAindexNbases: 7
+sjdbOverhang: 99
+
+## sampletags off: this config isolates the kallisto mode (kallisto bus plus the
+## self-compiled bustools sort/correct/count) so the bustools build can be tested
+## and debugged on its own.
+skip_sampletags: true
+use_simulated: true
+
+sim_n_cells: 1000
+sim_n_genes: 100
+sim_n_umis: 100
+sim_seed: 42
+sim_chr_len: 2000
+sim_gene_pos: 1000
+sim_read_len: 100
+
+sim_n_empty_droplets: 50000
+
+aligner:
+  - kallisto
+
+samples:
+  - name: simulated
+    uses:
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: no
+      species: 'mouse'
