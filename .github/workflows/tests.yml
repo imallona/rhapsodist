@@ -7,11 +7,14 @@ on:
     # (the dispatch button only shows on the default branch).
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [main]
+    # 'kallisto' is temporary: this branch checks only the integration-kallisto job
+    # (every other job is gated off on it below). Drop 'kallisto' when merging.
+    branches: [main, kallisto]
   workflow_dispatch:
 
 jobs:
   unit-tests:
+    if: github.ref_name != 'kallisto'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +30,7 @@ jobs:
         run: pytest
 
   r-unit-tests:
+    if: github.ref_name != 'kallisto'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,6 +57,7 @@ jobs:
         run: Rscript workflow/tests/test_usa_collapse.R
 
   integration-dry-run:
+    if: github.ref_name != 'kallisto'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -149,6 +154,7 @@ jobs:
             --cores 2
 
   sbg-singularity-guard:
+    if: github.ref_name != 'kallisto'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -195,7 +201,7 @@ jobs:
           fi
 
   integration-run:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    if: github.ref_name != 'kallisto' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration')))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -266,7 +272,7 @@ jobs:
   # Builds conda envs, so it is opt-in: add the 'integration' label to a PR, or use
   # the Actions tab on the default branch.
   integration-sampletags:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    if: github.ref_name != 'kallisto' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration')))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -336,11 +342,11 @@ jobs:
             output/**/by_sampletag/**/split_summary.rds
           if-no-files-found: ignore
 
-  # Isolated kallisto mode run. kallisto and bustools are compiled from a pinned
-  # tag; this job exists to catch breakage in that build (a prior unpinned bustools
-  # threw std::bad_alloc in bustools correct). Opt-in via the 'integration' label.
+  # kallisto-only run. kallisto is self-compiled (bioconda kallisto hits Illegal
+  # instruction on CPUs without AVX); bustools is from bioconda (the self-compiled
+  # one hit std::bad_alloc on the runner). Opt-in via the 'integration' label.
   integration-kallisto:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    if: github.ref_name == 'kallisto' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -379,7 +385,6 @@ jobs:
         run: |
           free -h || true
           ulimit -a || true
-          ./output/simul_kallisto/software/bustools/build/src/bustools version || true
           ./output/simul_kallisto/software/kallisto/build/src/kallisto version || true
           for f in $(find output/simul_kallisto -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
             [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
