@@ -185,7 +185,7 @@ jobs:
           fi
 
   integration-run:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -218,6 +218,13 @@ jobs:
             --use-conda \
             --nolock \
             --rerun-incomplete
+
+      - name: cat logs on failure
+        if: failure()
+        run: |
+          for f in $(find output/simul -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
 
       - name: run simulation with cell_filtering none
         run: |
@@ -299,6 +306,13 @@ jobs:
             --nolock \
             --rerun-incomplete \
             $targets
+
+      - name: cat logs on failure
+        if: failure()
+        run: |
+          for f in $(find output/simul_search_sampletags output/simul_starsolo_sampletags -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
 
       - name: upload logs and reports
         if: always()

@@ -20,6 +20,10 @@ demux_sampletags <- function(counts_path, allowed_tags = NULL) {
         sep = "\t", header = FALSE,
         col.names = c("cb", "umi", "sampletag", "extra")
     )
+    if (nrow(counts_raw) == 0) {
+        stop("no sampletag reads in ", counts_path,
+             "; nothing to demultiplex (check that sampletag reads were produced upstream)")
+    }
 
     agg <- counts_raw[, .N, by = .(cb, sampletag)]
     cb_f  <- factor(agg$cb)

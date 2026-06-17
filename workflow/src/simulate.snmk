@@ -5,7 +5,14 @@
 
 _SIM_DIR       = op.join(config['working_dir'], 'simulate')
 _WHITELIST_DIR = op.join(workflow.basedir, 'data', 'whitelist_384x3')
-_ST_FA         = config.get('sampletag_fa', '')
+
+## sampletag_fa in the sim configs is relative to workflow/ (where the bundled
+## tag fastas live); resolve it against workflow.basedir when not found from cwd.
+_ST_FA = config.get('sampletag_fa', '')
+if _ST_FA and not op.isabs(_ST_FA) and not op.exists(_ST_FA):
+    _candidate = op.join(workflow.basedir, _ST_FA)
+    if op.exists(_candidate):
+        _ST_FA = _candidate
 
 
 rule simulate_genome_gtf_transcriptome_fastqs:
@@ -49,7 +56,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         op.join(config['working_dir'], 'benchmarks', 'simulate_data.txt')
     shell:
         """
-        python {input.script} \
+        if ! python {input.script} \
             --whitelist_dir {params.whitelist_dir} \
             --out_dir       {params.out_dir}       \
             --n_cells       {params.n_cells}       \
@@ -61,7 +68,11 @@ rule simulate_genome_gtf_transcriptome_fastqs:
             --read_len      {params.read_len}      \
             --gtf_style     {params.gtf_style}     \
             --n_empty_droplets {params.n_empty_droplets} \
-            {params.sampletag_arg} &> {log}
+            {params.sampletag_arg} &> {log}; then
+            cat {log} >&2
+            exit 1
+        fi
+        ## only reached on success; the touch covers runs with no sampletags
         [ -f {output.st_assignments} ] || touch {output.st_assignments}
         """
 
