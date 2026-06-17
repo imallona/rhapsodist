@@ -87,11 +87,22 @@ def _fastq_seqs(path):
 
 
 def search(r1_path, r2_path, tags_path, whitelist_paths, out_path,
-           segment_len=9, umi_len=8, max_anchor_dist=2, max_tag_dist=2):
+           segment_len=9, umi_len=8, max_anchor_dist=2, max_tag_dist=2,
+           allowed_tags=None):
     """Stream the paired standardized reads, call sampletags by search, and write
     the cb/umi/sampletag/n_mismatches table. r1 carries the cell barcode (segments
-    of segment_len) followed by the UMI; r2 carries the tag read."""
+    of segment_len) followed by the UMI; r2 carries the tag read. allowed_tags
+    optionally restricts the candidate tags, so reads are never assigned to a tag
+    known to be absent from the sample."""
     tag_vars = load_tag_variable_regions(tags_path)
+    if allowed_tags:
+        allowed = set(allowed_tags)
+        missing = allowed - set(tag_vars)
+        if missing:
+            raise SystemExit(
+                "allowed tags not present in the fasta: " + ", ".join(sorted(missing))
+            )
+        tag_vars = {t: v for t, v in tag_vars.items() if t in allowed}
     correctors = [build_whitelist_corrector(_read_lines(p)) for p in whitelist_paths]
     cb_len = segment_len * len(correctors)
     anchor_len = len(common_prefix)
@@ -137,12 +148,15 @@ def main():
     p.add_argument('--umi-len', type=int, default=8)
     p.add_argument('--max-anchor-dist', type=int, default=2)
     p.add_argument('--max-tag-dist', type=int, default=2)
+    p.add_argument('--allowed-tags', nargs='+', default=None,
+                   help='restrict candidate tags to these names (default: all tags in the fasta)')
     p.add_argument('--log', default=None)
     args = p.parse_args()
 
     stats = search(args.r1, args.r2, args.tags, args.whitelists, args.out,
                    segment_len=args.segment_len, umi_len=args.umi_len,
-                   max_anchor_dist=args.max_anchor_dist, max_tag_dist=args.max_tag_dist)
+                   max_anchor_dist=args.max_anchor_dist, max_tag_dist=args.max_tag_dist,
+                   allowed_tags=args.allowed_tags)
 
     summary = (
         f"reads scanned:               {stats['reads']:>10}\n"

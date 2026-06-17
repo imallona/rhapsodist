@@ -305,6 +305,63 @@ def get_species_by_name(name):
 def samples_with_sampletags():
     return [s for s in get_sample_names() if get_use_sampletags(s)]
 
+def _sampletag_fasta_names(species):
+    """Return the set of tag names declared in the species sampletag fasta."""
+    fa = op.join(workflow.basedir, 'data', 'sampletags', species + '_sampletags.fa')
+    names = set()
+    with open(fa) as fh:
+        for line in fh:
+            if line.startswith('>'):
+                names.add(line[1:].strip())
+    return names
+
+def _resolve_sampletag_key(key, species, known):
+    """Resolve a user-declared sampletag key to a full fasta tag name. A key may be
+    the full name (human_sampletag_3) or just the suffix (3, '3'), resolved as
+    {species}_sampletag_{key}. Raise when the resolved name is not in the fasta."""
+    s = str(key)
+    candidates = [s, f'{species}_sampletag_{s}']
+    for c in candidates:
+        if c in known:
+            return c
+    raise ValueError(
+        f"sampletag '{key}' is not a known {species} tag. Expected one of: "
+        + ', '.join(sorted(known))
+    )
+
+def get_sampletags_by_name(name):
+    """Return an ordered dict {full_tag_name: label} for the sampletags declared in
+    use for a sample, or None when the 'sampletags' field is absent. The field may be
+    a list (labels default to the tag name) or a mapping of tag to a cosmetic sample
+    label. Keys are resolved and validated against the species fasta."""
+    uses = _sample_uses(name) or {}
+    raw = uses.get('sampletags')
+    if raw is None:
+        return None
+    species = get_species_by_name(name)
+    if species is None:
+        raise ValueError(
+            f"Sample '{name}': species is required when sampletags is set"
+        )
+    known = _sampletag_fasta_names(species)
+    resolved = {}
+    if isinstance(raw, dict):
+        for key, label in raw.items():
+            resolved[_resolve_sampletag_key(key, species, known)] = str(label)
+    else:
+        for key in raw:
+            tag = _resolve_sampletag_key(key, species, known)
+            resolved[tag] = tag
+    if not resolved:
+        raise ValueError(f"Sample '{name}': sampletags is empty")
+    return resolved
+
+def get_sampletag_labels_by_name(name):
+    """Return the list of full tag names declared in use for a sample, or None when
+    the 'sampletags' field is absent (all species tags are then candidates)."""
+    tags = get_sampletags_by_name(name)
+    return list(tags.keys()) if tags is not None else None
+
 def get_sampletag_method():
     """Return 'starsolo' when starsolo is among the configured aligners, else
     'search'. starsolo always wins, so runs that reproduce the published figures
@@ -323,10 +380,12 @@ def sampletag_counts_by_name(name):
     return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts_search.tsv.gz')
 
 def validate_sampletag_config():
-    """Raise early if any sample has use_sampletags=yes without species."""
+    """Raise early if any sample has use_sampletags=yes without species, or declares
+    a sampletags set with unknown tag names."""
     for name in get_sample_names():
         if get_use_sampletags(name):
             get_species_by_name(name)
+            get_sampletags_by_name(name)
             
              
 def get_chromosomes(wildcards):

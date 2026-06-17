@@ -92,3 +92,16 @@ samples:
       # use_sampletags: no        # yes or no (default: follows global skip_sampletags)
       # species: human            # human or mouse; required when use_sampletags is yes
       # downsample: 100           # percentage in (0, 100]; default 100
+      # sampletags: declare which tags this sample carries. Reads are matched only
+      # against these tags, so a read is never assigned to a tag the sample does not
+      # contain, and each aligner's count matrix is split into one HDF5-backed
+      # SingleCellExperiment per tag under {aligner}/{sample}/by_sampletag/.
+      # Keys are the tag number or full name ({species}_sampletag_N). The restriction
+      # applies per sample (multiple fastqs are concatenated first). Without the field,
+      # all species tags are matched and the split uses the tags seen in the data.
+      # List form (output dirs named by tag):
+      #   sampletags: [1, 2, 3, 4]
+      # Mapping form (renames each tag's output dir to a label):
+      #   sampletags:
+      #     1: pbmc_donorA
+      #     2: pbmc_donorB

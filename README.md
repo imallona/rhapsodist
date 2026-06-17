@@ -95,11 +95,18 @@ snakemake --use-conda --cores 10 --configfile configs/config.yaml
 
 ## Example configs
 
-The repository includes three config files under `configs/`:
+The repository includes several config files under `configs/`:
 
 - `config.yaml`: base template with all available options and comments. Copy this as a starting point for new datasets.
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
+
+The `sim_*` configs are small synthetic scenarios that exercise specific features in CI:
+
+- `sim_config_search.yaml`: alevin only, so sampletags are called by the alignment-free search instead of starsolo.
+- `sim_search_sampletags.yaml` and `sim_starsolo_sampletags.yaml`: declare a per-sample `sampletags` set, so they test restricting the matched tags and splitting each aligner's counts into one file per tag. The first uses the mapping form (search path); the second uses the list form across three aligners (starsolo path).
+
+Both sampletag scenarios run end to end in the `integration-sampletags` CI job, which checks that the expected per-tag split files exist. The job is opt-in because it builds conda envs: add the `integration` label to a pull request to start it, or run it from the Actions tab once the workflow is on the default branch.
 
 ## Repository layout
 
@@ -288,6 +295,31 @@ Two methods produce the tag counts, chosen automatically from the aligner list:
 - When `starsolo` is not run (for example an alevin-only or kallisto-only configuration), sample tags are called by an alignment-free search instead (`workflow/src/search_sampletags.py`). It scans the standardized reads directly for the fixed tag prefix, assigns each match to the closest tag by hamming distance, and corrects the cell barcode segments against the BD whitelists with the same one-mismatch tolerance STARsolo applies. Both methods write the same count table, so the demultiplexing and report steps are identical.
 
 The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs only when starsolo is absent. On the simulated data it assigned every cell to its true tag.
+
+#### Restricting tags and splitting counts per tag
+
+Declare the tags a sample carries with the per-sample `sampletags` field. Reads are then matched only against those tags, so a read is never assigned to a tag the sample does not contain.
+
+```yaml
+samples:
+  - name: my_sample
+    uses:
+      use_sampletags: yes
+      species: human
+      sampletags: [1, 2, 3, 4]     # only tags 1-4 are matched
+```
+
+Use a mapping to rename each tag's output to a sample label:
+
+```yaml
+      sampletags:
+        1: pbmc_donorA
+        2: pbmc_donorB
+```
+
+Keys are the tag number or the full name (`{species}_sampletag_N`). `workflow/src/demux_sampletags.R` assigns each cell to a tag once and writes one table; the QC report and the splitting step both read it. For each tag, the singlet cells (high-quality and called) are saved as an HDF5-backed `SingleCellExperiment` under `{aligner}/{sample}/by_sampletag/{label}/`. Load one with `HDF5Array::loadHDF5SummarizedExperiment()`.
+
+The restriction applies per sample. Several fastqs for one sample are concatenated before processing, so it covers the whole sample rather than individual files. Without the field, all species tags are matched and the split uses the tags seen in the data.
 
 To pick a sensible value, use the per-sample linker QC report (`linker_qc/{sample}_linker_qc.html`). It scans the first 10000 R1 reads, computes the hamming distance of each read to the expected fixed linker sequences (for both v1 and enhanced chemistries), and reports the fraction of reads at each error count. The cumulative table maps a given `cb_umi_max_errors` value to the fraction of reads that would survive the cutadapt trim at that tolerance.
 

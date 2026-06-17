@@ -107,3 +107,46 @@ def test_search_end_to_end(tmp_path):
         assert r[0] == cb           # both barcodes corrected to the canonical
         assert r[1] == umi
         assert r[2] == tag1
+
+
+def _tag1_inputs(tmp_path):
+    tag_vars = load_tag_variable_regions(HUMAN_FA)
+    tag1_region = tag_vars["human_sampletag_1"]
+    cb_seg = "AAAAAAAAA"
+    cb = cb_seg * 3
+    umi = "ACGTACGT"
+    r1 = tmp_path / "r1.fq.gz"
+    r2 = tmp_path / "r2.fq.gz"
+    _write_fastq(r1, [("r1", cb + umi)])
+    _write_fastq(r2, [("r1", common_prefix + tag1_region)])
+    whitelist = tmp_path / "BD_CLS1.txt"
+    whitelist.write_text(cb_seg + "\n")
+    out = tmp_path / "counts.tsv.gz"
+    return str(r1), str(r2), [str(whitelist)] * 3, str(out)
+
+
+def test_allowed_tags_keeps_present_tag(tmp_path):
+    r1, r2, whitelists, out = _tag1_inputs(tmp_path)
+    stats = search(r1, r2, HUMAN_FA, whitelists, out,
+                   allowed_tags=["human_sampletag_1"])
+    assert stats["assigned"] == 1
+    with gzip.open(out, "rt") as fh:
+        rows = [line.strip().split("\t") for line in fh]
+    assert rows[0][2] == "human_sampletag_1"
+
+
+def test_allowed_tags_drops_absent_tag(tmp_path):
+    # a tag1 read is not assigned when only tag2 is allowed: its variable region is
+    # far beyond the 2-mismatch threshold from tag2.
+    r1, r2, whitelists, out = _tag1_inputs(tmp_path)
+    stats = search(r1, r2, HUMAN_FA, whitelists, out,
+                   allowed_tags=["human_sampletag_2"])
+    assert stats["assigned"] == 0
+    assert stats["written"] == 0
+
+
+def test_allowed_tags_unknown_raises(tmp_path):
+    r1, r2, whitelists, out = _tag1_inputs(tmp_path)
+    with pytest.raises(SystemExit):
+        search(r1, r2, HUMAN_FA, whitelists, out,
+               allowed_tags=["human_sampletag_999"])

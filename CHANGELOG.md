@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added per-sample `sampletags` to declare which tags a sample carries. Reads are matched only against those tags, so a read is never assigned to a tag the sample does not contain. The field is a list (`[1, 2, 3]`) or a tag-to-label mapping. Each aligner's count matrix is then split into one HDF5-backed `SingleCellExperiment` per tag under `{aligner}/{sample}/by_sampletag/`. Without the field, all species tags are matched and the split uses the tags seen in the data.
+- Moved the sampletag demultiplexing out of `generate_sampletag_report.Rmd` into `demux_sampletags.R`. The QC report and the per-tag split now read the same assignment table instead of each computing it.
 - Fixed sample tag alignment rejecting every read as too short. Only the 70 bp tag matches within the full-length read, so the STAR step now filters on an absolute matched-base count instead of the default read-length fraction.
 - The cross-pipeline comparison report is now built only with two or more aligners; single-aligner runs skip it (the barcode-overlap UpSet plot needs at least two sets).
 - `get_txp2gene` now reads the `transcript_id` and `gene_id` GTF attributes by name with gawk rather than by fixed column position, so GTFs with a different attribute order work. `gtf_origin` no longer affects this rule; it still sets the transcriptome fasta header convention. Added gawk to the salmon conda env.

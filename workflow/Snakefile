@@ -85,6 +85,15 @@ _sampletag_reports = (
            sample = samples_with_sampletags())
 )
 
+## per-tag split count matrices; one sentinel per (aligner, sample) since the
+## tag set can be data-dependent.
+_sampletag_splits = (
+    [] if config.get('skip_sampletags', False) else
+    [op.join(config['working_dir'], aligner, s, 'by_sampletag', '.split_done')
+     for s in samples_with_sampletags()
+     for aligner in get_aligners()]
+)
+
 _has_sbg = 'sbg' in get_aligners()
 _sbg_samples = get_sample_names() if _has_sbg else []
 
@@ -141,6 +150,7 @@ rule all:
                aligner = get_aligners(),
                sample = get_sample_names()),
         _sampletag_reports,
+        _sampletag_splits,
         _extra_targets,
         _sbg_sce_targets,
         _comparison_reports,
@@ -1180,7 +1190,11 @@ rule search_sampletags:
     params:
         script = op.join(workflow.basedir, 'src', 'search_sampletags.py'),
         whitelist_dir = lambda wildcards: op.join(workflow.basedir, 'data',
-                            'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample))
+                            'whitelist_' + get_barcode_whitelist_by_name(wildcards.sample)),
+        allowed_flag = lambda wildcards: (
+            '--allowed-tags ' + ' '.join(get_sampletag_labels_by_name(wildcards.sample))
+            if get_sampletag_labels_by_name(wildcards.sample) else ''
+        )
     log:
         op.join(config['working_dir'], 'logs', '{sample}_search_sampletags.log')
     benchmark:
@@ -1194,14 +1208,43 @@ rule search_sampletags:
           --tags {input.tags} \
           --whitelists {params.whitelist_dir}/BD_CLS1.txt {params.whitelist_dir}/BD_CLS2.txt {params.whitelist_dir}/BD_CLS3.txt \
           --out {output.counts} \
+          {params.allowed_flag} \
           --log {log}
+        """
+
+rule demux_sampletags:
+    conda:
+        op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
+    input:
+        counts = lambda wildcards: sampletag_counts_by_name(wildcards.sample),
+        script = op.join(workflow.basedir, 'src', 'demux_sampletags.R')
+    output:
+        demux = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_demux.tsv.gz')
+    params:
+        rds = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_demux.rds'),
+        allowed_flag = lambda wildcards: (
+            '--allowed_tags ' + ','.join(get_sampletag_labels_by_name(wildcards.sample))
+            if get_sampletag_labels_by_name(wildcards.sample) else ''
+        )
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_demux_sampletags.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_demux_sampletags.txt')
+    shell:
+        """
+        R -q --no-save --no-restore --slave \
+          -f {input.script} --args \
+          --counts {input.counts} \
+          --out {output.demux} \
+          --rds {params.rds} \
+          {params.allowed_flag} &> {log}
         """
 
 rule render_sampletag_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
-        counts   = lambda wildcards: sampletag_counts_by_name(wildcards.sample),
+        demux    = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_demux.tsv.gz'),
         script   = op.join(workflow.basedir, 'src', 'generate_sampletag_report.Rmd'),
     output:
         html = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_report.html')
@@ -1220,8 +1263,72 @@ rule render_sampletag_report:
           'rmarkdown::render("{input.script}",
             output_file = "{output.html}",
             params = list(
-              counts_path      = "{input.counts}",
+              demux_path       = "{input.demux}",
               assignments_path = "{params.assignments}"))' &> {log}
+        """
+
+rule split_sce_by_sampletag:
+    conda:
+        op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
+    input:
+        sce   = op.join(config['working_dir'], '{aligner}', '{sample}', '{sample}_{aligner}_sce.rds'),
+        demux = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_demux.tsv.gz'),
+        script = op.join(workflow.basedir, 'src', 'split_sce_by_sampletag.R')
+    output:
+        done = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag', '.split_done')
+    params:
+        out_base = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag'),
+        summary_rds = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag', 'split_summary.rds'),
+        tags_flag = lambda wildcards: (
+            '--tags ' + ','.join(get_sampletags_by_name(wildcards.sample).keys())
+            + ' --labels ' + ','.join(get_sampletags_by_name(wildcards.sample).values())
+            if get_sampletags_by_name(wildcards.sample) else ''
+        )
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_{aligner}_split_sampletags.log')
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_{aligner}_split_sampletags.txt')
+    shell:
+        """
+        R -q --no-save --no-restore --slave \
+          -f {input.script} --args \
+          --sce {input.sce} \
+          --demux {input.demux} \
+          --out_base {params.out_base} \
+          --summary_rds {params.summary_rds} \
+          {params.tags_flag} \
+          --done {output.done} &> {log}
+        """
+
+## Opt-in check (build the .verified target): each split is a well-formed SCE
+## whose cells partition the demux singlets.
+rule verify_sampletag_splits:
+    conda:
+        op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
+    input:
+        done   = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag', '.split_done'),
+        sce    = op.join(config['working_dir'], '{aligner}', '{sample}', '{sample}_{aligner}_sce.rds'),
+        demux  = op.join(config['working_dir'], 'sampletags', '{sample}', 'sampletag_demux.tsv.gz'),
+        script = op.join(workflow.basedir, 'src', 'verify_sampletag_splits.R')
+    output:
+        flag = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag', '.verified')
+    params:
+        by_dir = op.join(config['working_dir'], '{aligner}', '{sample}', 'by_sampletag'),
+        labels_flag = lambda wildcards: (
+            '--expected_labels ' + ','.join(get_sampletags_by_name(wildcards.sample).values())
+            if get_sampletags_by_name(wildcards.sample) else ''
+        )
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_{aligner}_verify_sampletags.log')
+    shell:
+        """
+        R -q --no-save --no-restore --slave \
+          -f {input.script} --args \
+          --by_dir {params.by_dir} \
+          --sce {input.sce} \
+          --demux {input.demux} \
+          {params.labels_flag} \
+          --out {output.flag} &> {log}
         """
 
 ## salmon/alevin reference paths. In USA mode the index and t2g come from a
