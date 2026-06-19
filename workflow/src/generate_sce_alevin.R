@@ -36,7 +36,9 @@ parser$add_argument('--output_fn', type = 'character', help = 'Output SCE RDS pa
 parser$add_argument('--knee_barcodes', type = 'character',
                     help = 'Path to knee-filtered barcode list')
 parser$add_argument('--cell_filtering', type = 'character', default = 'native',
-                    help = 'native: use knee barcodes directly; emptydrops: apply DropletUtils emptyDrops')
+                    help = 'native: use knee barcodes directly; emptydrops: apply DropletUtils emptyDrops; none: keep all barcodes')
+parser$add_argument('--usa', action = 'store_true', default = FALSE,
+                    help = 'alevin-fry USA mode: split spliced/unspliced/ambiguous counts into separate assays')
 
 args <- parser$parse_args()
 
@@ -115,6 +117,44 @@ if (nchar(args$fry_quant_dir) > 0) {
     mat <- read_alevin_filtered(matrix_file, gene_names, all_barcodes, knee_barcodes)
 }
 
+## USA mode: alevin-fry names the gene columns by splicing status: the spliced
+## column is the bare gene_id, the unspliced column is <gene_id>-U and the
+## ambiguous column is <gene_id>-A (there is no -S suffix). Collapse to one row
+## per gene with separate assays: the main 'counts' is spliced plus ambiguous
+## (the standard gene count), and spliced, unspliced and ambiguous are kept for
+## RNA velocity.
+collapse_usa_assays <- function(mat) {
+    rn <- rownames(mat)
+    is_unspliced <- grepl('-U$', rn)
+    is_ambiguous <- grepl('-A$', rn)
+    is_spliced <- !is_unspliced & !is_ambiguous
+    base_id <- sub('-[UA]$', '', rn)
+    genes <- sort(unique(base_id))
+    cells <- colnames(mat)
+    per_status <- function(sel) {
+        out <- Matrix(0, nrow = length(genes), ncol = length(cells), sparse = TRUE,
+                      dimnames = list(genes, cells))
+        if (any(sel)) {
+            out[match(base_id[sel], genes), ] <- mat[sel, , drop = FALSE]
+        }
+        out
+    }
+    spliced <- per_status(is_spliced)
+    unspliced <- per_status(is_unspliced)
+    ambiguous <- per_status(is_ambiguous)
+    list(counts = spliced + ambiguous, spliced = spliced,
+         unspliced = unspliced, ambiguous = ambiguous)
+}
+
+if (isTRUE(args$usa)) {
+    assays_list <- collapse_usa_assays(mat)
+    mat <- assays_list$counts
+    cat(sprintf('USA mode: collapsed to %d genes; assays counts(=S+A), spliced, unspliced, ambiguous\n',
+                nrow(mat)))
+} else {
+    assays_list <- list(counts = mat)
+}
+
 alevin_gene_ids <- rownames(mat)
 gtf_genes <- parse_gtf_genes(args$gtf)
 stopifnot(nrow(gtf_genes) > 0)
@@ -128,7 +168,7 @@ if (matched == 0L) {
     warning('no alevin gene_ids matched any GTF gene_name; check --gtf and ID version suffixes')
 }
 
-sce <- SingleCellExperiment(list(counts = mat),
+sce <- SingleCellExperiment(assays_list,
                             rowData = row_data,
                             mainExpName = id)
 

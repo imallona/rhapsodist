@@ -8,8 +8,10 @@ max_mem_mb: 20000
 soloCellFilter: "EmptyDrops_CR" # None, TopCells, CellRanger2.2
 
 # cell_filtering controls how cells are selected from raw count matrices.
-# native: each aligner uses its own method (STARsolo: soloCellFilter, kallisto: barcodeRanks, alevin: filterBarcodes, SBG: built-in)
+# native: each aligner uses its own method (STARsolo: soloCellFilter, kallisto: barcodeRanks, alevin: barcodeRanks knee, SBG: built-in)
 # emptydrops: apply DropletUtils::emptyDrops on raw/unfiltered counts for all aligners
+# none: no cell filtering; keep every observed barcode (filter downstream yourself).
+#       For STARsolo this overrides soloCellFilter to None.
 cell_filtering: "native"
 
 ## multimappers
@@ -21,6 +23,14 @@ soloMultiMappers: "Unique" # Uniform, Rescue, PropUnique, EM
 # graph-based EM deduplication, which produces fractional counts and inflates
 # per-cell UMI totals relative to unique-only aligners.
 alevin_sketch: false
+
+# alevin_usa: build a spliced+unspliced (spliceu) reference and run alevin-fry in
+# USA mode (3-column t2g, cr-like). The resulting SCE keeps the spliced counts as the main
+# 'counts' assay (spliced plus ambiguous) and adds 'spliced', 'unspliced' and
+# 'ambiguous' assays for RNA velocity. Requires alevin_sketch: true (USA counting
+# is an alevin-fry feature). Needs the genome (for intron sequences) and a plain
+# transcriptome is not used in this mode.
+alevin_usa: false
 
 ## extra STARsolo arguments
 extraStarSoloArgs: ""
@@ -46,7 +56,7 @@ gtf: /path/to/annotation.gtf
 # caution: uncompressed
 genome: /path/to/genome.fa
 
-# can be gzipped
+# gzipped or plain fasta both work (not used when alevin_usa is true)
 transcriptome: /path/to/transcriptome.fa.gz
 
 # readLength - 1
@@ -65,6 +75,15 @@ samples:
     uses:
       cb_umi_fq: /path/to/R1.fastq.gz
       cdna_fq: /path/to/R2.fastq.gz
+      # each fastq field also accepts a list when one sample is split across
+      # several files; they are concatenated before processing. List R1 and R2
+      # in the same order so mates stay paired, for example:
+      #   cb_umi_fq:
+      #     - /path/to/lane1_R1.fastq.gz
+      #     - /path/to/lane2_R1.fastq.gz
+      #   cdna_fq:
+      #     - /path/to/lane1_R2.fastq.gz
+      #     - /path/to/lane2_R2.fastq.gz
       # optional; all fields below default when absent. Bead chemistry is
       # auto-detected from R1 linkers; allowedlist/diversity_insets are used
       # as a QC check against the detection and for printing.
@@ -73,3 +92,16 @@ samples:
       # use_sampletags: no        # yes or no (default: follows global skip_sampletags)
       # species: human            # human or mouse; required when use_sampletags is yes
       # downsample: 100           # percentage in (0, 100]; default 100
+      # sampletags: declare which tags this sample carries. Reads are matched only
+      # against these tags, so a read is never assigned to a tag the sample does not
+      # contain, and each aligner's count matrix is split into one HDF5-backed
+      # SingleCellExperiment per tag under {aligner}/{sample}/by_sampletag/.
+      # Keys are the tag number or full name ({species}_sampletag_N). The restriction
+      # applies per sample (multiple fastqs are concatenated first). Without the field,
+      # all species tags are matched and the split uses the tags seen in the data.
+      # List form (output dirs named by tag):
+      #   sampletags: [1, 2, 3, 4]
+      # Mapping form (renames each tag's output dir to a label):
+      #   sampletags:
+      #     1: pbmc_donorA
+      #     2: pbmc_donorB

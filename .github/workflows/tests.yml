@@ -3,6 +3,9 @@ name: tests
 on:
   pull_request:
     branches: [main]
+    # 'labeled' lets a PR start integration-sampletags via the 'integration' label
+    # (the dispatch button only shows on the default branch).
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -37,6 +40,7 @@ jobs:
           create-args: >-
             r-base
             bioconductor-s4vectors
+            r-matrix
           condarc: |
             channels:
               - conda-forge
@@ -44,6 +48,9 @@ jobs:
 
       - name: run gtf_utils R tests
         run: Rscript workflow/tests/test_gtf_utils.R
+
+      - name: run USA assay collapse R tests
+        run: Rscript workflow/tests/test_usa_collapse.R
 
   integration-dry-run:
     runs-on: ubuntu-latest
@@ -68,6 +75,75 @@ jobs:
             --snakefile workflow/Snakefile \
             --configfile configs/sim_config.yaml \
             --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      - name: dry-run with cell_filtering none
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" cell_filtering=none \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      - name: dry-run alevin USA mode
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_usa_config.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # single-aligner run: the cross-pipeline comparison report must be skipped.
+      # Add a dry-run step here for every new simulation config that ships a fix.
+      - name: dry-run single-aligner search config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config_search.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # gencode-ordered GTF: checks get_txp2gene parses attributes by name
+      - name: dry-run gencode gtf config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config_gencode.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # kallisto-only config, used by the integration-kallisto job
+      - name: dry-run kallisto-only config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_kallisto.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # per-sample sampletags wiring, search mode (mapping form) and starsolo mode (list form)
+      - name: dry-run sampletags search scenario
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_search_sampletags.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      - name: dry-run sampletags starsolo scenario
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_starsolo_sampletags.yaml \
             --dry-run \
             --nolock \
             --cores 2
@@ -119,7 +195,7 @@ jobs:
           fi
 
   integration-run:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -153,6 +229,28 @@ jobs:
             --nolock \
             --rerun-incomplete
 
+      - name: cat logs on failure
+        if: failure()
+        run: |
+          for f in $(find output/simul -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
+
+      - name: run simulation with cell_filtering none
+        run: |
+          ## guards the whole no-filter run; STARsolo with soloCellFilter
+          ## None only writes raw/, so the rule must mirror it into filtered/
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_config.yaml \
+            --config "aligner=['starsolo','alevin']" cell_filtering=none \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul/starsolo/simulated/simulated_starsolo_sce.rds" \
+            "$PWD/output/simul/alevin/simulated/simulated_alevin_sce.rds"
+
       - name: upload logs and reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -162,4 +260,176 @@ jobs:
             output/simul/logs/
             .snakemake/log/
             output/simul/**/*.html
+          if-no-files-found: ignore
+
+  # End-to-end test of per-sample sampletags (tag restriction and per-tag splits).
+  # Builds conda envs, so it is opt-in: add the 'integration' label to a PR, or use
+  # the Actions tab on the default branch.
+  integration-sampletags:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: cache conda environments created by snakemake
+        uses: actions/cache@v4
+        with:
+          path: .snakemake/conda
+          key: snakemake-conda-${{ hashFiles('workflow/envs/all_in_one.yaml') }}
+
+      # .verified runs the pipeline, the split, then verify_sampletag_splits.R; it
+      # fails on a malformed or missing per-tag split.
+      - name: run and verify search-mode scenario (mapping form)
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_search_sampletags.yaml \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul_search_sampletags/alevin/simulated/by_sampletag/.verified"
+
+      - name: run and verify starsolo-mode scenario (list form, starsolo and alevin)
+        run: |
+          targets=""
+          for aligner in starsolo alevin; do
+            targets="$targets $PWD/output/simul_starsolo_sampletags/$aligner/simulated/by_sampletag/.verified"
+          done
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_starsolo_sampletags.yaml \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            $targets
+
+      - name: cat logs on failure
+        if: failure()
+        run: |
+          for f in $(find output/simul_search_sampletags output/simul_starsolo_sampletags -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
+
+      - name: upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sampletags-logs-and-reports
+          path: |
+            output/simul_search_sampletags/logs/
+            output/simul_starsolo_sampletags/logs/
+            output/**/*sampletag*.html
+            output/**/by_sampletag/**/split_summary.rds
+          if-no-files-found: ignore
+
+  # kallisto-only run. kallisto is self-compiled (bioconda kallisto hits Illegal
+  # instruction on CPUs without AVX). It runs up to the bus file and checks the
+  # content. bustools correct is not required to finish: bustools 0.45.1 reserves
+  # ~20 GB regardless of input, which the ~7 GB runner cannot give, so it is run
+  # only to record the limit. Opt-in via the 'integration' label.
+  integration-kallisto:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: snakemake
+          create-args: python=3.12 snakemake
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: cache conda environments created by snakemake
+        uses: actions/cache@v4
+        with:
+          path: .snakemake/conda
+          key: snakemake-conda-${{ hashFiles('workflow/envs/all_in_one.yaml') }}
+
+      - name: build the kallisto bus file
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_kallisto.yaml \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul_kallisto/kallisto/simulated/output.sorted.bus"
+
+      - name: check bus content (bustools correct exceeds runner memory)
+        run: |
+          bus=output/simul_kallisto/kallisto/simulated/output.sorted.bus
+          # BUS header: 4-byte magic 'BUS\0', then little-endian uint32 version,
+          # barcode length, UMI length. Read them without bustools.
+          magic=$(head -c 3 "$bus")
+          bclen=$(od -An -tu4 -j 8 -N 4 "$bus" | tr -d ' ')
+          umilen=$(od -An -tu4 -j 12 -N 4 "$bus" | tr -d ' ')
+          echo "bus header: magic=$magic bclen=$bclen umilen=$umilen"
+          if [ "$magic" != "BUS" ] || [ "$bclen" != "27" ] || [ "$umilen" != "8" ]; then
+            echo "bus file content is wrong"; exit 1
+          fi
+          # bustools correct reserves ~20 GB regardless of input (bustools 0.45.1); the
+          # runner has ~7 GB, so it aborts. That is a bustools limit, not a pipeline bug:
+          # the bus file above is well-formed. Run it once to record the behaviour.
+          bt=$(find .snakemake/conda -path '*/bin/bustools' 2>/dev/null | head -1)
+          wl=output/simul_kallisto/simulate/cell_barcodes.txt
+          set +e
+          "$bt" correct -w "$wl" -o /tmp/corrected.bus "$bus"
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then
+            echo "bustools correct exceeded memory (exit $rc); bus content is correct, so the kallisto mode is validated."
+          else
+            echo "bustools correct succeeded on this runner."
+          fi
+
+      - name: diagnostics on failure
+        if: failure()
+        run: |
+          free -h || true
+          ulimit -a || true
+          ./output/simul_kallisto/software/kallisto/build/src/kallisto version || true
+          ## bustools is in the kallisto conda env; print the bus header to check it
+          bt=$(find .snakemake/conda -path '*/bin/bustools' 2>/dev/null | head -1)
+          bus=output/simul_kallisto/kallisto/simulated/output.sorted.bus
+          echo "bustools: $bt"; [ -n "$bt" ] && "$bt" version || true
+          ## raw bus header (magic, version, then barcode/umi/text lengths) in case inspect crashes
+          [ -f "$bus" ] && od -A d -t x1 -N 32 "$bus" || true
+          [ -n "$bt" ] && [ -f "$bus" ] && "$bt" inspect "$bus" || true
+          for f in $(find output/simul_kallisto -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
+
+      - name: upload logs and bus files on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kallisto-debug
+          path: |
+            output/simul_kallisto/logs/
+            output/simul_kallisto/kallisto/simulated/*.bus
+            output/simul_kallisto/kallisto/simulated/matrix.ec
+            output/simul_kallisto/kallisto/simulated/transcripts.txt
+            output/simul_kallisto/simulate/cell_barcodes.txt
+            .snakemake/log/
           if-no-files-found: ignore

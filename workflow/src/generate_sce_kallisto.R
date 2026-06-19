@@ -42,7 +42,7 @@ parser$add_argument('--output_fn',
 
 parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
-                    help = 'native: barcodeRanks knee filter; emptydrops: apply DropletUtils emptyDrops')
+                    help = 'native: barcodeRanks knee filter; emptydrops: apply DropletUtils emptyDrops; none: keep all barcodes')
 
 args <- parser$parse_args()
 
@@ -107,6 +107,8 @@ if (args$cell_filtering == 'native') {
         cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
         sce <- sce[, keep]
     }
+} else if (args$cell_filtering == 'none') {
+    cat(sprintf('cell_filtering none: kept all %d barcodes (no filter)\n', ncol(sce)))
 }
 
 hdf5_dir <- sub('\\.rds$', '_hdf5', args$output_fn)

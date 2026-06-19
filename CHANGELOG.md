@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Added per-sample `sampletags` to declare which tags a sample carries. Reads are matched only against those tags, so a read is never assigned to a tag the sample does not contain. The field is a list (`[1, 2, 3]`) or a tag-to-label mapping. Each aligner's count matrix is then split into one HDF5-backed `SingleCellExperiment` per tag under `{aligner}/{sample}/by_sampletag/`. Without the field, all species tags are matched and the split uses the tags seen in the data.
+- Moved the sampletag demultiplexing out of `generate_sampletag_report.Rmd` into `demux_sampletags.R`. The QC report and the per-tag split now read the same assignment table instead of each computing it.
+- Fixed the simulated sampletag test data: `sampletag_fa` was resolved from the wrong directory, so the simulator silently produced no sampletag reads. The path now resolves against `workflow/`, and the simulate rule fails instead of masking the error.
+- Pinned the self-compiled kallisto to `v0.52.0` (was tracking upstream master, which is not reproducible). bustools is no longer compiled: it now comes from the kallisto conda env, which is locked to a reproducible build (bustools `0.45.1`) via the lock file. kallisto stays self-compiled because the bioconda kallisto needs CPU instructions (AVX) that some machines lack and aborts with "Illegal instruction".
+- bustools correct (0.45.1) reserves about 20 GB regardless of input size, so it cannot run on the ~7 GB CI runner. The `integration-kallisto` job therefore builds the kallisto bus file, checks its header content (barcode and UMI lengths), and records the bustools memory limit, rather than requiring bustools correct to finish.
+- Fixed sample tag alignment rejecting every read as too short. Only the 70 bp tag matches within the full-length read, so the STAR step now filters on an absolute matched-base count instead of the default read-length fraction.
+- The cross-pipeline comparison report is now built only with two or more aligners; single-aligner runs skip it (the barcode-overlap UpSet plot needs at least two sets).
+- `get_txp2gene` now reads the `transcript_id` and `gene_id` GTF attributes by name with gawk rather than by fixed column position, so GTFs with a different attribute order work. `gtf_origin` no longer affects this rule; it still sets the transcriptome fasta header convention. Added gawk to the salmon conda env.
+- Added `alevin_usa` config key. When true, a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF and alevin-fry quantifies in USA mode (triggered by the 3-column t2g). The alevin SingleCellExperiment keeps spliced plus ambiguous as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays. Requires `alevin_sketch: true`.
+- Added `cell_filtering: none` to keep every observed barcode (no cell filter) across STARsolo, alevin and kallisto. For STARsolo it overrides `soloCellFilter` to None; for alevin and kallisto the knee filter is skipped.
+- The transcriptome input now accepts a plain `.fa` as well as `.fa.gz` (deversion uses `gzip -dcf`). The previous `zcat` failed on uncompressed fasta.
+- Documented that BD sample tags are extracted from the WTA reads (no separate sample tag FASTQ input); enable with `use_sampletags`/`skip_sampletags` and `species`.
+
 ## v0.2.0 - 2026-04-24
 
 - Sample config vocabulary: replaced `bead_version` with `allowedlist` (96/384) and `diversity_insets` (yes/no). Both are optional; bead chemistry is auto-detected from R1 linkers and the declared fields are used as a QC check and for logging.
