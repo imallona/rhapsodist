@@ -386,6 +386,50 @@ def validate_sampletag_config():
         if get_use_sampletags(name):
             get_species_by_name(name)
             get_sampletags_by_name(name)
+
+
+def get_output_format():
+    """Return the SCE output format: 'sce', 'h5ad', or 'both'. Default 'sce' keeps the
+    original SCE-only behaviour. 'h5ad'/'both' write an anndataR h5ad next to each SCE
+    and each per-sampletag split."""
+    fmt = str(config.get('output_format', 'sce')).lower()
+    if fmt not in ('sce', 'h5ad', 'both'):
+        raise ValueError(
+            f"output_format must be sce, h5ad or both, got '{fmt}'"
+        )
+    return fmt
+
+
+def wants_h5ad():
+    return get_output_format() in ('h5ad', 'both')
+
+
+def get_sampletag_split_backend():
+    """Return the per-sampletag split backend: 'memory' (realize the source assays in
+    RAM once, then subset; fast) or 'delayed' (keep HDF5-backed assays, subset lazily;
+    low memory but re-reads the source once per tag). Default 'memory'."""
+    backend = str(config.get('sampletag_split_backend', 'memory')).lower()
+    if backend not in ('memory', 'delayed'):
+        raise ValueError(
+            f"sampletag_split_backend must be memory or delayed, got '{backend}'"
+        )
+    return backend
+
+
+def sampletag_split_flags():
+    """CLI flags for split_sce_by_sampletag.R derived from the backend and output
+    format config keys."""
+    return f"--backend {get_sampletag_split_backend()} --output_format {get_output_format()}"
+
+
+def h5ad_sce_targets():
+    """Main-SCE h5ad targets, one per (aligner, sample), when output_format requests
+    h5ad. Empty otherwise. SBG is included only when it is among the aligners."""
+    if not wants_h5ad():
+        return []
+    return [op.join(config['working_dir'], aligner, s, f'{s}_{aligner}.h5ad')
+            for s in get_sample_names()
+            for aligner in get_aligners()]
             
              
 def get_chromosomes(wildcards):

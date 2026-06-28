@@ -155,6 +155,7 @@ rule all:
         _sampletag_splits,
         _extra_targets,
         _sbg_sce_targets,
+        h5ad_sce_targets(),
         _comparison_reports,
         _benchmarks_report,
         _biology_reports,
@@ -1253,7 +1254,8 @@ rule split_sce_by_sampletag:
             '--tags ' + ','.join(get_sampletags_by_name(wildcards.sample).keys())
             + ' --labels ' + ','.join(get_sampletags_by_name(wildcards.sample).values())
             if get_sampletags_by_name(wildcards.sample) else ''
-        )
+        ),
+        split_flags = sampletag_split_flags()
     log:
         op.join(config['working_dir'], 'logs', '{sample}_{aligner}_split_sampletags.log')
     benchmark:
@@ -1266,6 +1268,7 @@ rule split_sce_by_sampletag:
           --demux {input.demux} \
           --out_base {params.out_base} \
           --summary_rds {params.summary_rds} \
+          {params.split_flags} \
           {params.tags_flag} \
           --done {output.done} &> {log}
         """
@@ -1299,6 +1302,26 @@ rule verify_sampletag_splits:
           --demux {input.demux} \
           {params.labels_flag} \
           --out {output.flag} &> {log}
+        """
+
+## Additive h5ad export of a main aligner SCE, built only when output_format requests
+## h5ad (see h5ad_sce_targets). The source rds and its _hdf5 dir are left in place.
+rule sce_to_h5ad:
+    conda:
+        op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
+    input:
+        sce    = op.join(config['working_dir'], '{aligner}', '{sample}', '{sample}_{aligner}_sce.rds'),
+        script = op.join(workflow.basedir, 'src', 'sce_to_h5ad.R')
+    output:
+        h5ad = op.join(config['working_dir'], '{aligner}', '{sample}', '{sample}_{aligner}.h5ad')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_{aligner}_sce_to_h5ad.log')
+    shell:
+        """
+        R -q --no-save --no-restore --slave \
+          -f {input.script} --args \
+          --sce {input.sce} \
+          --out {output.h5ad} &> {log}
         """
 
 ## salmon/alevin reference paths. In USA mode the index and t2g come from a
