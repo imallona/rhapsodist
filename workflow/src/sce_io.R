@@ -1,8 +1,7 @@
 #!/usr/bin/env R
 ##
-## Shared SCE input/output helpers used by the sampletag split and the h5ad export.
-## Kept free of side effects (no argument parsing, no file writes at source time) so
-## the functions can be unit tested in isolation.
+## Shared SCE input/output helpers for the sampletag split and the h5ad export.
+## No side effects at source time, so the functions can be unit tested.
 ##
 ## GPLv3
 
@@ -11,10 +10,9 @@ suppressPackageStartupMessages({
     library(Matrix)
 })
 
-## Coerce every assay of an SCE to an in-memory CsparseMatrix. When the SCE is
-## HDF5-backed this reads the source once (sequential block pass) instead of leaving
-## the assays as DelayedArrays that get re-read on every later subset. This is the
-## memory/time tradeoff behind the 'memory' split backend.
+## Coerce every assay to an in-memory CsparseMatrix. For an HDF5-backed SCE this reads
+## the source once, instead of leaving DelayedArrays that get re-read on each later
+## subset. This is the 'memory' split backend.
 realize_assays_in_memory <- function(sce) {
     for (a in assayNames(sce)) {
         assay(sce, a, withDimnames = FALSE) <- as(assay(sce, a, withDimnames = FALSE),
@@ -40,9 +38,8 @@ split_sce_singlets <- function(sce, singlets, tags, labels) {
     splits
 }
 
-## Write an SCE to an h5ad file via anndataR. anndataR needs in-memory matrices, so
-## assays are realized first; this also keeps a DelayedArray-backed source from being
-## streamed lazily during conversion.
+## Write an SCE to an h5ad file via anndataR, which needs in-memory matrices, so the
+## assays are realized first.
 write_sce_h5ad <- function(sce, path) {
     if (!requireNamespace("anndataR", quietly = TRUE)) {
         stop("anndataR is required to write h5ad output; add it to the r_bioc environment")

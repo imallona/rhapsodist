@@ -389,9 +389,8 @@ def validate_sampletag_config():
 
 
 def get_output_format():
-    """Return the SCE output format: 'sce', 'h5ad', or 'both'. Default 'sce' keeps the
-    original SCE-only behaviour. 'h5ad'/'both' write an anndataR h5ad next to each SCE
-    and each per-sampletag split."""
+    """Return the output format: 'sce', 'h5ad', or 'both'. Default 'sce'. 'h5ad' or
+    'both' also write an anndataR h5ad next to each SCE and each per-tag split."""
     fmt = str(config.get('output_format', 'sce')).lower()
     if fmt not in ('sce', 'h5ad', 'both'):
         raise ValueError(
@@ -405,9 +404,9 @@ def wants_h5ad():
 
 
 def get_sampletag_split_backend():
-    """Return the per-sampletag split backend: 'memory' (realize the source assays in
-    RAM once, then subset; fast) or 'delayed' (keep HDF5-backed assays, subset lazily;
-    low memory but re-reads the source once per tag). Default 'memory'."""
+    """Return the split backend: 'memory' (read the source into RAM once, then subset;
+    fast) or 'delayed' (subset on disk, re-reading the source once per tag; low memory).
+    Default 'memory'."""
     backend = str(config.get('sampletag_split_backend', 'memory')).lower()
     if backend not in ('memory', 'delayed'):
         raise ValueError(

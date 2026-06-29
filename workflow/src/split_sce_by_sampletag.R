@@ -4,10 +4,9 @@
 ## demux_sampletags.R assignment. For each tag in use, writes the singlet cells
 ## (high-quality and called).
 ##
-## --backend memory realizes the source assays into in-memory sparse matrices once,
-## then subsets in memory. --backend delayed keeps the HDF5-backed assays and subsets
-## them lazily, which re-reads the source once per tag (low memory, but slow when there
-## are many tags or large matrices).
+## --backend memory reads the source assays into memory once (sparse), then subsets in
+## memory. --backend delayed keeps the assays on disk and subsets them lazily, which
+## re-reads the source once per tag: low memory, but slow with many tags or large matrices.
 ##
 ## --output_format sce writes each split as an HDF5-backed SCE via
 ## saveHDF5SummarizedExperiment (se.rds marker; no top-level *_sce.rds, so the

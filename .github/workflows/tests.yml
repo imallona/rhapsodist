@@ -52,6 +52,36 @@ jobs:
       - name: run USA assay collapse R tests
         run: Rscript workflow/tests/test_usa_collapse.R
 
+  # Per-sampletag split tests. Needs the SCE/HDF5/anndataR stack (heavier than the
+  # light r-unit-tests job above), so it runs as its own job. Checks backend
+  # equivalence, the source-count match, the h5ad round-trip, and logs backend scaling.
+  r-split-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: r-split-tests
+          create-args: >-
+            r-base
+            bioconductor-singlecellexperiment
+            bioconductor-hdf5array
+            bioconductor-anndatar
+            r-matrix
+            r-data.table
+            r-argparse
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: run sampletag split R tests
+        run: cd workflow && Rscript tests/test_split_sce_by_sampletag.R
+
   integration-dry-run:
     runs-on: ubuntu-latest
     defaults:
@@ -144,6 +174,18 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_starsolo_sampletags.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # output_format both adds the sce_to_h5ad targets to the DAG; the delayed
+      # split backend keeps the original lazy path reachable.
+      - name: dry-run h5ad output and delayed split backend
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_starsolo_sampletags.yaml \
+            --config output_format=both sampletag_split_backend=delayed \
             --dry-run \
             --nolock \
             --cores 2
@@ -291,18 +333,25 @@ jobs:
 
       # .verified runs the pipeline, the split, then verify_sampletag_splits.R; it
       # fails on a malformed or missing per-tag split.
-      - name: run and verify search-mode scenario (mapping form)
+      # Memory backend, end to end. output_format=both also exercises the h5ad export:
+      # the split still writes the HDF5 SCE (so .verified runs) and the sce_to_h5ad rule
+      # produces the main h5ad via anndataR. Building the .h5ad target fails the job if
+      # the conversion breaks.
+      - name: run and verify search-mode scenario (memory backend, with h5ad output)
         run: |
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_search_sampletags.yaml \
+            --config output_format=both sampletag_split_backend=memory \
             --cores 2 \
             --use-conda \
             --nolock \
             --rerun-incomplete \
-            "$PWD/output/simul_search_sampletags/alevin/simulated/by_sampletag/.verified"
+            "$PWD/output/simul_search_sampletags/alevin/simulated/by_sampletag/.verified" \
+            "$PWD/output/simul_search_sampletags/alevin/simulated/simulated_alevin.h5ad"
 
-      - name: run and verify starsolo-mode scenario (list form, starsolo and alevin)
+      # Delayed backend, end to end, so both split backends are verified on simulated data.
+      - name: run and verify starsolo-mode scenario (delayed backend, starsolo and alevin)
         run: |
           targets=""
           for aligner in starsolo alevin; do
@@ -311,6 +360,7 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_starsolo_sampletags.yaml \
+            --config sampletag_split_backend=delayed \
             --cores 2 \
             --use-conda \
             --nolock \

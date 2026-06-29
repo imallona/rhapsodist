@@ -2,7 +2,7 @@
 
 Rhapsodist is a Snakemake workflow for processing BD Rhapsody WTA single-cell RNA-seq data. It supports v1, Enhanced, and Enhanced V2 beads.
 
-The pipeline takes raw FASTQ files (local or fetched from SRA), standardises barcodes with cutadapt, and builds a per-sample whitelist of observed cell barcodes from the BD bead barcode panels. That whitelist is passed to each aligner for barcode correction. Aligners run in parallel: STARsolo, kallisto/bustools, salmon/alevin, and optionally the official BD Rhapsody CWL pipeline. Each aligner produces an HDF5-backed SingleCellExperiment object. The pipeline also handles sample tag demultiplexing and generates four types of reports: per-aligner descriptive, cross-pipeline comparison, benchmarks, and biology.
+The pipeline takes raw FASTQ files (local or fetched from SRA), standardises barcodes with cutadapt, and builds a per-sample whitelist of observed cell barcodes from the BD bead barcode panels. That whitelist is passed to each aligner for barcode correction. Aligners run in parallel: STARsolo, kallisto/bustools, salmon/alevin, and optionally the official BD Rhapsody CWL pipeline. Each aligner produces an HDF5-backed SingleCellExperiment object, and optionally an h5ad/anndata file for Python users. The pipeline also handles sample tag demultiplexing and generates four types of reports: per-aligner descriptive, cross-pipeline comparison, benchmarks, and biology.
 
 For alevin, DropletUtils barcodeRanks is applied to the DeduplicatedReads column of featureDump.txt to select cell barcodes before loading counts into R, keeping memory use low. This uses the same algorithm as the kallisto step, making cell calling consistent across aligners.
 
@@ -215,6 +215,29 @@ alevin_sketch: true
 - `alevin_usa: false` (default): alevin quantifies against the plain transcriptome.
 - `alevin_usa: true`: a spliced+unspliced (spliceu) reference is built with pyroe from the genome and GTF, and alevin-fry quantifies in USA mode (triggered automatically by the 3-column t2g). The resulting SingleCellExperiment keeps the spliced plus ambiguous counts as the main `counts` assay and adds `spliced`, `unspliced` and `ambiguous` assays for RNA velocity. USA counting is an alevin-fry feature, so it requires `alevin_sketch: true`; the pipeline stops with an error otherwise.
 
+### Output format
+
+```yaml
+output_format: sce   # sce, h5ad, or both
+```
+
+- `sce` (default): each aligner SCE and each per-tag split is written as an HDF5-backed `SingleCellExperiment` only. This is the original behaviour.
+- `h5ad`: write an anndataR h5ad instead. The sample tag split verification and the SCE-based reports read an SCE, so use `sce` or `both` if you rely on them.
+- `both`: write the SCE and an h5ad next to it.
+
+The h5ad files are written with anndataR, which reads back into R with `anndataR::read_h5ad()` and into Python with `anndata.read_h5ad()`. Main SCEs go to `{aligner}/{sample}/{sample}_{aligner}.h5ad`; per-tag splits go to `{aligner}/{sample}/by_sampletag/{label}/adata.h5ad`.
+
+### Sample tag split backend
+
+```yaml
+sampletag_split_backend: memory   # memory or delayed
+```
+
+Controls how each aligner SCE is split into one object per sample tag.
+
+- `memory` (default): read the source counts into RAM once as a sparse matrix, then subset each tag in memory. The source is read a single time. This needs enough RAM to hold the full count matrix.
+- `delayed`: keep the counts on disk (HDF5-backed) and subset them lazily. This uses little memory, but the source is re-read once per tag, so it is slow when a sample carries many tags or the matrix is large.
+
 ### Samples
 
 FASTQs can be local files or fetched from SRA by accession. Per-sample fields are all optional; bead chemistry is auto-detected from R1 linkers and the config values below are used as a QC check and for logging.
@@ -318,7 +341,7 @@ Use a mapping to rename each tag's output to a sample label:
         2: pbmc_donorB
 ```
 
-Keys are the tag number or the full name (`{species}_sampletag_N`). `workflow/src/demux_sampletags.R` assigns each cell to a tag once and writes one table; the QC report and the splitting step both read it. For each tag, the singlet cells (high-quality and called) are saved as an HDF5-backed `SingleCellExperiment` under `{aligner}/{sample}/by_sampletag/{label}/`. Load one with `HDF5Array::loadHDF5SummarizedExperiment()`.
+Keys are the tag number or the full name (`{species}_sampletag_N`). `workflow/src/demux_sampletags.R` assigns each cell to a tag once and writes one table; the QC report and the splitting step both read it. For each tag, the singlet cells (high-quality and called) are saved under `{aligner}/{sample}/by_sampletag/{label}/`: an HDF5-backed `SingleCellExperiment` (load with `HDF5Array::loadHDF5SummarizedExperiment()`), an `adata.h5ad`, or both, set by `output_format`. The split speed is set by `sampletag_split_backend` (see the options above).
 
 The restriction applies per sample. Several fastqs for one sample are concatenated before processing, so it covers the whole sample rather than individual files. Without the field, all species tags are matched and the split uses the tags seen in the data.
 
