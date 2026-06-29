@@ -1,0 +1,52 @@
+repo_path: '.'
+
+nthreads: 20
+max_mem_mb: 14000
+
+soloCellFilter: "EmptyDrops_CR"
+cell_filtering: "emptydrops"
+soloMultiMappers: "Unique"
+soloUMIdedup: "Exact"
+extraStarSoloArgs: ""
+
+working_dir: output/simul_search_sampletags
+
+gtf_origin: "ensembl"
+
+genomeSAindexNbases: 7
+sjdbOverhang: 99
+
+skip_sampletags: false
+use_simulated: true
+
+sim_n_cells: 1000
+sim_n_genes: 100
+sim_n_umis: 100
+sim_seed: 42
+sim_chr_len: 2000
+sim_gene_pos: 1000
+sim_read_len: 100
+
+sim_n_empty_droplets: 50000
+
+sampletag_fa: "data/sampletags/mouse_sampletags.fa"
+sim_n_sampletags: 3
+sim_n_st_reads: 100
+
+## No starsolo, so sampletags are called by the alignment-free search. The mapping
+## form of sampletags restricts matching to tags 1-3 and renames each tag's split
+## output to a sample label.
+aligner:
+  - alevin
+
+samples:
+  - name: simulated
+    uses:
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: yes
+      species: 'mouse'
+      sampletags:
+        1: donor_alpha
+        2: donor_beta
+        3: donor_gamma

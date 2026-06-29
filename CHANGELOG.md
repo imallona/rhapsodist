@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.3.0 - 2026-06-29
+
+### Requests
+
+- Added `alevin_usa`: alevin-fry quantifies in USA mode and adds `spliced`, `unspliced` and `ambiguous` assays. Requires `alevin_sketch`.
+- Documented that BD sample tags come from the WTA reads, with no separate tag FASTQ input.
+- The transcriptome input now accepts a plain `.fa`, not only `.fa.gz`.
+- A sample can list several fastqs per mate; they are concatenated before processing, paired by order.
+- Sample tags can be called without starsolo, via an alignment-free search that writes the same count table.
+- The cross-pipeline comparison report is built only with two or more aligners; single-aligner runs skip it.
+- Fixed sample tag alignment that rejected every read as too short; STAR now filters on matched bases.
+- Added per-sample `sampletags` to declare which tags a sample carries, as a list or tag-to-label mapping.
+- Each aligner's counts are split into one HDF5 SCE per tag; demultiplexing moved from the report into `demux_sampletags.R`.
+- Downgraded the setuptools pin in the pyroe env to fix a `pkg_resources` `ModuleNotFoundError`.
+- Sped up the per-sampletag split with `sampletag_split_backend: memory | delayed` (default `memory`); memory reads the source once.
+- Added `output_format: sce | h5ad | both` (default `sce`); h5ad written via anndataR next to each SCE and split.
+
+### Extras
+
+- Extended the integration tests: memory and delayed sampletag scenarios, dry-run coverage, an `integration` PR label, and failure artifact uploads.
+- Fixed the simulated sampletag path: `sampletag_fa` resolved from the wrong directory, so no sampletag reads were produced.
+- Pinned the self-compiled kallisto to `v0.52.0` and bustools to `0.45.1` from the kallisto conda env.
+- `get_txp2gene` reads `transcript_id` and `gene_id` GTF attributes by name, so any attribute order works.
+- Added `cell_filtering: none` to keep every observed barcode across STARsolo, alevin and kallisto.
+
 ## v0.2.0 - 2026-04-24
 
 - Sample config vocabulary: replaced `bead_version` with `allowedlist` (96/384) and `diversity_insets` (yes/no). Both are optional; bead chemistry is auto-detected from R1 linkers and the declared fields are used as a QC check and for logging.

@@ -271,6 +271,32 @@ def test_validate_sampletag_config_catches_missing_species():
         wf.validate_sampletag_config()
 
 
+## sampletag method selection -------------------------------------------------
+
+def test_sampletag_method_is_starsolo_when_starsolo_configured():
+    wf.config['aligner'] = ['starsolo', 'kallisto']
+    assert wf.get_sampletag_method() == 'starsolo'
+
+
+def test_sampletag_method_is_search_without_starsolo():
+    wf.config['aligner'] = ['alevin', 'kallisto']
+    assert wf.get_sampletag_method() == 'search'
+
+
+def test_sampletag_counts_path_starsolo(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['aligner'] = ['starsolo']
+    p = wf.sampletag_counts_by_name('sampleA')
+    assert p.endswith(op.join('sampletags', 'sampleA', 'sampletag_counts.tsv.gz'))
+
+
+def test_sampletag_counts_path_search(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['aligner'] = ['alevin']
+    p = wf.sampletag_counts_by_name('sampleA')
+    assert p.endswith(op.join('sampletags', 'sampleA', 'sampletag_counts_search.tsv.gz'))
+
+
 ## downsample -----------------------------------------------------------------
 
 def test_get_downsample_fraction_default_is_one():
@@ -323,6 +349,49 @@ def test_get_cdna_uses_downsampled_path_when_downsample_enabled(tmp_path):
 
 def test_get_cbumi_uses_raw_path_when_downsample_full():
     assert wf.get_cbumi_by_name('sampleA') == '/data/sampleA_R1.fq.gz'
+
+
+## multiple input fastqs per sample ------------------------------------------
+
+def test_single_fastq_as_list_returns_the_path():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/sampleA_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/sampleA_R2.fq.gz']
+    assert wf.get_cbumi_by_name('sampleA') == '/data/sampleA_R1.fq.gz'
+    assert wf.get_cdna_by_name('sampleA') == '/data/sampleA_R2.fq.gz'
+
+
+def test_multiple_fastqs_return_combined_path(tmp_path):
+    wf.config['working_dir'] = str(tmp_path)
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz', '/data/b_R2.fq.gz']
+    r1 = wf.get_cbumi_by_name('sampleA')
+    r2 = wf.get_cdna_by_name('sampleA')
+    assert 'combined' in r1 and r1.endswith('sampleA_R1.fastq.gz')
+    assert 'combined' in r2 and r2.endswith('sampleA_R2.fastq.gz')
+
+
+def test_get_fastq_inputs_return_lists():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    assert wf.get_cbumi_inputs('sampleA') == ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    assert wf.get_cdna_inputs('sampleA') == ['/data/sampleA_R2.fq.gz']
+
+
+def test_get_fastq_inputs_none_for_sra():
+    wf.config['samples'][0]['uses'].pop('cb_umi_fq')
+    assert wf.get_cbumi_inputs('sampleA') is None
+
+
+def test_validate_fastq_lists_passes_on_matching_lengths():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz', '/data/b_R2.fq.gz']
+    wf.validate_fastq_lists()  # should not raise
+
+
+def test_validate_fastq_lists_catches_length_mismatch():
+    wf.config['samples'][0]['uses']['cb_umi_fq'] = ['/data/a_R1.fq.gz', '/data/b_R1.fq.gz']
+    wf.config['samples'][0]['uses']['cdna_fq'] = ['/data/a_R2.fq.gz']
+    with pytest.raises(ValueError):
+        wf.validate_fastq_lists()
 
 
 ## guide URL, SBG, etc. -------------------------------------------------------

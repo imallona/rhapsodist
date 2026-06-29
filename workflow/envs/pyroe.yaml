@@ -1,0 +1,8 @@
+name: noname
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  # pyroe make-spliceu builds the spliced+unspliced reference for alevin USA mode
+  - bioconda::pyroe

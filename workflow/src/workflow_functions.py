@@ -14,11 +14,42 @@ def get_aligners():
     return(config['aligner'])
 
 ## name means sample name, everywhere
+def _as_fastq_list(value):
+    """Normalize a fastq config value to a list of paths. A single value may be
+    given as a string or as a one-element list; several fastqs for the same
+    sample are given as a list. Returns None when value is None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+def _combined_fastq(name, mate):
+    """Path to the fastq produced by concatenating a sample's input fastqs.
+    mate is 'R1' (cb/umi) or 'R2' (cdna)."""
+    return op.join(config['working_dir'], 'data', 'fastq', 'combined',
+                   f'{name}_{mate}.fastq.gz')
+
+def get_cbumi_inputs(name):
+    """Return the list of raw cb/umi fastqs declared for a sample, or None when
+    the sample is fetched from SRA instead. Used as the input to concat_fastqs."""
+    uses = _sample_uses(name) or {}
+    return _as_fastq_list(uses.get('cb_umi_fq'))
+
+def get_cdna_inputs(name):
+    """Return the list of raw cdna fastqs declared for a sample, or None when
+    the sample is fetched from SRA instead. Used as the input to concat_fastqs."""
+    uses = _sample_uses(name) or {}
+    return _as_fastq_list(uses.get('cdna_fq'))
+
 def _raw_cbumi_path(name):
     for s in config['samples']:
         if s['name'] == name:
             if 'cb_umi_fq' in s['uses']:
-                return s['uses']['cb_umi_fq']
+                files = _as_fastq_list(s['uses']['cb_umi_fq'])
+                if len(files) > 1:
+                    return _combined_fastq(name, 'R1')
+                return files[0]
             elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
@@ -26,9 +57,29 @@ def _raw_cdna_path(name):
     for s in config['samples']:
         if s['name'] == name:
             if 'cdna_fq' in s['uses']:
-                return s['uses']['cdna_fq']
+                files = _as_fastq_list(s['uses']['cdna_fq'])
+                if len(files) > 1:
+                    return _combined_fastq(name, 'R2')
+                return files[0]
             elif s['uses'].get('sra_run'):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R2.fastq.gz')
+
+def validate_fastq_lists():
+    """Raise early if a sample declares cb_umi_fq and cdna_fq with a different
+    number of files. Mates are concatenated in the given order and must pair up,
+    so the two lists must be the same length."""
+    for s in config['samples']:
+        uses = s['uses']
+        if 'cb_umi_fq' not in uses or 'cdna_fq' not in uses:
+            continue
+        r1 = _as_fastq_list(uses['cb_umi_fq'])
+        r2 = _as_fastq_list(uses['cdna_fq'])
+        if len(r1) != len(r2):
+            raise ValueError(
+                f"Sample '{s['name']}': cb_umi_fq has {len(r1)} file(s) but "
+                f"cdna_fq has {len(r2)}. Both must list the same number of "
+                f"fastqs in matching order."
+            )
 
 def get_downsample_fraction(name):
     """Return the downsample fraction in [0, 1]. Per-sample 'downsample' overrides
@@ -254,11 +305,130 @@ def get_species_by_name(name):
 def samples_with_sampletags():
     return [s for s in get_sample_names() if get_use_sampletags(s)]
 
+def _sampletag_fasta_names(species):
+    """Return the set of tag names declared in the species sampletag fasta."""
+    fa = op.join(workflow.basedir, 'data', 'sampletags', species + '_sampletags.fa')
+    names = set()
+    with open(fa) as fh:
+        for line in fh:
+            if line.startswith('>'):
+                names.add(line[1:].strip())
+    return names
+
+def _resolve_sampletag_key(key, species, known):
+    """Resolve a user-declared sampletag key to a full fasta tag name. A key may be
+    the full name (human_sampletag_3) or just the suffix (3, '3'), resolved as
+    {species}_sampletag_{key}. Raise when the resolved name is not in the fasta."""
+    s = str(key)
+    candidates = [s, f'{species}_sampletag_{s}']
+    for c in candidates:
+        if c in known:
+            return c
+    raise ValueError(
+        f"sampletag '{key}' is not a known {species} tag. Expected one of: "
+        + ', '.join(sorted(known))
+    )
+
+def get_sampletags_by_name(name):
+    """Return an ordered dict {full_tag_name: label} for the sampletags declared in
+    use for a sample, or None when the 'sampletags' field is absent. The field may be
+    a list (labels default to the tag name) or a mapping of tag to a cosmetic sample
+    label. Keys are resolved and validated against the species fasta."""
+    uses = _sample_uses(name) or {}
+    raw = uses.get('sampletags')
+    if raw is None:
+        return None
+    species = get_species_by_name(name)
+    if species is None:
+        raise ValueError(
+            f"Sample '{name}': species is required when sampletags is set"
+        )
+    known = _sampletag_fasta_names(species)
+    resolved = {}
+    if isinstance(raw, dict):
+        for key, label in raw.items():
+            resolved[_resolve_sampletag_key(key, species, known)] = str(label)
+    else:
+        for key in raw:
+            tag = _resolve_sampletag_key(key, species, known)
+            resolved[tag] = tag
+    if not resolved:
+        raise ValueError(f"Sample '{name}': sampletags is empty")
+    return resolved
+
+def get_sampletag_labels_by_name(name):
+    """Return the list of full tag names declared in use for a sample, or None when
+    the 'sampletags' field is absent (all species tags are then candidates)."""
+    tags = get_sampletags_by_name(name)
+    return list(tags.keys()) if tags is not None else None
+
+def get_sampletag_method():
+    """Return 'starsolo' when starsolo is among the configured aligners, else
+    'search'. starsolo always wins, so runs that reproduce the published figures
+    keep using the starsolo sampletag mode; the alignment-free search mode is
+    reached only when starsolo is not run. The choice is not user-overridable, so
+    a published config cannot regenerate a figure with the search method."""
+    return 'starsolo' if 'starsolo' in get_aligners() else 'search'
+
+def sampletag_counts_by_name(name):
+    """Path to the sampletag count table for a sample, routed to the producer
+    chosen by get_sampletag_method. The starsolo mode keeps the published
+    filename; the search mode uses a distinct filename so the two rules never
+    collide on the same output."""
+    if get_sampletag_method() == 'starsolo':
+        return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts.tsv.gz')
+    return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts_search.tsv.gz')
+
 def validate_sampletag_config():
-    """Raise early if any sample has use_sampletags=yes without species."""
+    """Raise early if any sample has use_sampletags=yes without species, or declares
+    a sampletags set with unknown tag names."""
     for name in get_sample_names():
         if get_use_sampletags(name):
             get_species_by_name(name)
+            get_sampletags_by_name(name)
+
+
+def get_output_format():
+    """Return the output format: 'sce', 'h5ad', or 'both'. Default 'sce'. 'h5ad' or
+    'both' also write an anndataR h5ad next to each SCE and each per-tag split."""
+    fmt = str(config.get('output_format', 'sce')).lower()
+    if fmt not in ('sce', 'h5ad', 'both'):
+        raise ValueError(
+            f"output_format must be sce, h5ad or both, got '{fmt}'"
+        )
+    return fmt
+
+
+def wants_h5ad():
+    return get_output_format() in ('h5ad', 'both')
+
+
+def get_sampletag_split_backend():
+    """Return the split backend: 'memory' (read the source into RAM once, then subset;
+    fast) or 'delayed' (subset on disk, re-reading the source once per tag; low memory).
+    Default 'memory'."""
+    backend = str(config.get('sampletag_split_backend', 'memory')).lower()
+    if backend not in ('memory', 'delayed'):
+        raise ValueError(
+            f"sampletag_split_backend must be memory or delayed, got '{backend}'"
+        )
+    return backend
+
+
+def sampletag_split_flags():
+    """CLI flags for split_sce_by_sampletag.R derived from the backend and output
+    format config keys."""
+    return f"--backend {get_sampletag_split_backend()} --output_format {get_output_format()}"
+
+
+def h5ad_sce_targets():
+    """Main-SCE h5ad targets, one per (aligner, sample), when output_format requests
+    h5ad. Empty otherwise. SBG is included only when it is among the aligners."""
+    if not wants_h5ad():
+        return []
+    return [op.join(config['working_dir'], aligner, s, f'{s}_{aligner}.h5ad')
+            for s in get_sample_names()
+            for aligner in get_aligners()]
             
              
 def get_chromosomes(wildcards):
