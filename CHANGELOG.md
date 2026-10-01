@@ -5,7 +5,10 @@
 - Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
 - Comparison and biology reports add Spearman rho and MARD on counts per million.
 - MARD is computed by one helper, `workflow/src/agreement_metrics.R`.
-
+- `run_info.tsv` records CPU, memory, filesystem and Snakemake settings of a run.
+- The `rhapsodist` command passes `--benchmark-extended`, which records threads per rule.
+- The benchmarks report prints the machine record and the threads.
+- Requires Snakemake 8.12 or later.
 
 ## v0.3.0 - 2026-06-29
 

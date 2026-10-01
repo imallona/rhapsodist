@@ -57,7 +57,21 @@ PIPELINE_MAP <- list(
 )
 ```
 
+## Machine and run settings
+
+```{r run-info}
+run_info_file <- file.path(wd, "run_info.tsv")
+if (file.exists(run_info_file)) {
+    knitr::kable(fread(run_info_file, sep = "\t"))
+} else {
+    cat("run_info.tsv not found in", wd, "\n")
+}
+```
+
 ## Load benchmark data
+
+`threads` is filled when Snakemake runs with `--benchmark-extended`, which the
+`rhapsodist` command passes.
 
 ```{r load-benchmarks}
 bm_dir   <- file.path(wd, "benchmarks")
@@ -91,13 +105,15 @@ classify <- function(step_name) {
 
 bm[, pipeline := sapply(step, classify)]
 bm[, minutes  := s / 60]
+if (!"threads" %in% names(bm)) bm[, threads := NA_integer_]
 
 cat("Benchmark records loaded:", nrow(bm), "\n")
 knitr::kable(
     bm[order(pipeline, step), .(step, pipeline,
                                  seconds = round(s, 1),
                                  minutes = round(minutes, 2),
-                                 max_rss_MB = round(max_rss, 1))][1:min(nrow(bm), 30)],
+                                 max_rss_MB = round(max_rss, 1),
+                                 threads)][1:min(nrow(bm), 30)],
     caption = "First 30 benchmark entries"
 )
 ```
@@ -201,7 +217,8 @@ knitr::kable(
          seconds    = round(s, 1),
          minutes    = round(minutes, 2),
          max_rss_MB = round(max_rss, 1),
-         mean_load  = round(mean_load, 2))],
+         mean_load  = round(mean_load, 2),
+         threads)],
     caption = "Complete benchmark statistics for all workflow steps"
 )
 ```
