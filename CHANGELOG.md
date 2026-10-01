@@ -10,6 +10,10 @@
 - The benchmarks report prints the machine record and the threads.
 - Requires Snakemake 8.12 or later.
 - The BD CWL rule writes per-step times to `benchmarks/sbg_cwl_steps_{sample}.tsv`.
+- The benchmarks report adds time per stage and aligner.
+- BD CWL step times are split by stage.
+- Benchmark files are assigned from `workflow/data/benchmark_stages.tsv`.
+- Per-aligner totals change where steps were misassigned.
 
 ## v0.3.0 - 2026-06-29
 

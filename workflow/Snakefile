@@ -2106,6 +2106,9 @@ rule render_benchmarks_report:
         ),
         sbg_sce = _sbg_sce_targets,
         doc = op.join(workflow.basedir, 'src', 'reports', '03_benchmarks.Rmd'),
+        stages = [op.join(workflow.basedir, 'src', 'benchmark_stages.R'),
+                  op.join(workflow.basedir, 'data', 'benchmark_stages.tsv'),
+                  op.join(workflow.basedir, 'data', 'sbg_cwl_stages.tsv')],
     output:
         html = op.join(config['working_dir'], 'benchmarks_report.html')
     params:

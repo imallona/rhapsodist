@@ -55,6 +55,9 @@ jobs:
       - name: run agreement metrics R tests
         run: Rscript workflow/tests/test_agreement_metrics.R
 
+      - name: run benchmark stage R tests
+        run: Rscript workflow/tests/test_benchmark_stages.R
+
   # Per-sampletag split tests. Needs the SCE/HDF5/anndataR stack (heavier than the
   # light r-unit-tests job above), so it runs as its own job. Checks backend
   # equivalence, the source-count match, the h5ad round-trip, and logs backend scaling.

@@ -23,38 +23,11 @@ suppressPackageStartupMessages({
 wd    <- params$working_dir
 n_exp <- as.integer(params$n_expected_cells)
 
-## Map each benchmark filename stem to a pipeline group.
-## Steps shared across pipelines (preprocessing, indexing) are labelled "shared".
-PIPELINE_MAP <- list(
-    simulate_data              = "shared",
-    star_indexing              = "shared",
-    standardize_cb_umis        = "shared",
-    deversion_transcriptome    = "shared",
-    salmon_index               = "shared",
-    get_txp2gene               = "shared",
-    kallisto_install           = "shared",
-    bustools_install           = "shared",
-    r_install                  = "shared",
-    star                       = "starsolo",
-    r_sce_generation_star      = "starsolo",
-    starsolo_descriptive       = "starsolo",
-    kallisto_index             = "kallisto",
-    kallisto_bus               = "kallisto",
-    bustools_sort              = "kallisto",
-    bustools_count             = "kallisto",
-    r_sce_generation_kallisto  = "kallisto",
-    kallisto_descriptive       = "kallisto",
-    alevin                     = "alevin",
-    alevin_knee_filter         = "alevin",
-    r_sce_generation_alevin    = "alevin",
-    alevin_descriptive         = "alevin",
-    sbg_cwl                    = "sbg",
-    r_sce_generation_sbg       = "sbg",
-    sbg_descriptive            = "sbg",
-    comparison_report          = "report",
-    benchmarks_report          = "report",
-    validate_simulation        = "report"
-)
+src_dir <- file.path(dirname(knitr::current_input()), "..")
+source(file.path(src_dir, "benchmark_stages.R"))
+stage_table <- read_stage_table(file.path(src_dir, "..", "data", "benchmark_stages.tsv"))
+cwl_stage_table <- read.delim(file.path(src_dir, "..", "data", "sbg_cwl_stages.tsv"),
+                              stringsAsFactors = FALSE)
 ```
 
 ## Machine and run settings
@@ -87,29 +60,16 @@ read_bm <- function(fn) {
 }
 
 bm <- rbindlist(Filter(Negate(is.null), lapply(bm_files, read_bm)), fill = TRUE)
-bm[, step := gsub("\\.txt$", "", file)]
-## strip trailing _<samplename>
-bm[, step := sub("_[A-Za-z0-9]+$", "", step)]
-
-classify <- function(step_name) {
-    if (step_name %in% names(PIPELINE_MAP)) return(PIPELINE_MAP[[step_name]])
-    for (nm in names(PIPELINE_MAP)) {
-        if (startsWith(step_name, nm)) return(PIPELINE_MAP[[nm]])
-    }
-    if (grepl("starsolo|star_", step_name)) return("starsolo")
-    if (grepl("kallisto|bustools",  step_name)) return("kallisto")
-    if (grepl("alevin",             step_name)) return("alevin")
-    if (grepl("sbg",                step_name)) return("sbg")
-    return("shared")
-}
-
-bm[, pipeline := sapply(step, classify)]
+bm[, stem := gsub("\\.txt$", "", file)]
+classified <- classify_benchmarks(bm$stem, stage_table)
+bm[, c("step", "pipeline", "aligners", "stage") :=
+       classified[, c("step", "pipeline", "aligners", "stage")]]
 bm[, minutes  := s / 60]
 if (!"threads" %in% names(bm)) bm[, threads := NA_integer_]
 
 cat("Benchmark records loaded:", nrow(bm), "\n")
 knitr::kable(
-    bm[order(pipeline, step), .(step, pipeline,
+    bm[order(pipeline, step), .(step, pipeline, stage,
                                  seconds = round(s, 1),
                                  minutes = round(minutes, 2),
                                  max_rss_MB = round(max_rss, 1),
@@ -121,7 +81,7 @@ knitr::kable(
 ## Runtime per step
 
 ```{r runtime-per-step, fig.width=10, fig.height=5}
-bm_steps <- bm[pipeline != "report"]
+bm_steps <- bm[!(stage == "reporting" & pipeline == "shared")]
 
 ggplot(bm_steps, aes(x = reorder(step, minutes), y = minutes, fill = pipeline)) +
     geom_col(width = 0.7) +
@@ -149,6 +109,46 @@ ggplot(pipeline_sum, aes(x = pipeline, y = total_min, fill = pipeline)) +
     theme_bw() +
     labs(title = "Total wall-clock time per pipeline",
          x = NULL, y = "Time (minutes)")
+```
+
+## Runtime per stage
+
+Seconds per aligner and stage, from `workflow/data/benchmark_stages.tsv`. A step
+used by several aligners, such as the barcode standardization, is counted for
+each of them. Download, install, reference and simulation steps run once and
+are left out. When the BD CWL run wrote its step times, the CWL rule is split
+by step (`workflow/data/sbg_cwl_stages.tsv`); its first step,
+`QualCLAlign_RNA`, parses barcodes and aligns, so it holds work the other
+aligners do in preprocessing.
+
+```{r runtime-per-stage, fig.width=8, fig.height=4}
+aligners_run <- intersect(BENCHMARK_ALIGNERS, unique(bm$pipeline))
+cwl_files <- list.files(bm_dir, pattern = "^sbg_cwl_steps_.*\\.tsv$", full.names = TRUE)
+cwl_steps <- rbindlist(lapply(cwl_files, function(fn) {
+    steps <- fread(fn, sep = "\t")
+    steps[, sample := sub("^sbg_cwl_steps_(.*)\\.tsv$", "\\1", basename(fn))]
+    steps[!is.na(seconds), .(sample, step, seconds)]
+}))
+
+by_stage <- as.data.table(stage_times(
+    as.data.frame(bm[, .(step, aligners, stage)]), bm$s, aligners_run,
+    if (nrow(cwl_steps) > 0) as.data.frame(cwl_steps) else NULL, cwl_stage_table))
+by_stage <- by_stage[stage %in% c(COMPARED_STAGES, "CWL overhead", "other modalities")]
+by_stage[, stage := factor(stage, levels = c(COMPARED_STAGES, "other modalities", "CWL overhead"))]
+by_stage[, pipeline := factor(pipeline, levels = BENCHMARK_ALIGNERS)]
+
+ggplot(by_stage, aes(x = pipeline, y = seconds / 60, fill = stage)) +
+    geom_col(width = 0.6) +
+    scale_fill_brewer(palette = "Set2", drop = TRUE) +
+    theme_bw() +
+    labs(title = "Wall-clock time per stage",
+         x = NULL, y = "Time (minutes)", fill = "Stage")
+
+knitr::kable(
+    dcast(by_stage, stage ~ pipeline, value.var = "seconds",
+          fun.aggregate = function(x) round(sum(x) / 60, 2)),
+    caption = "Minutes per stage and aligner"
+)
 ```
 
 ## Memory usage (max RSS)
@@ -213,7 +213,7 @@ if (nrow(recovery) > 0) {
 ```{r full-table}
 knitr::kable(
     bm[order(pipeline, step),
-       .(step, pipeline,
+       .(step, pipeline, stage,
          seconds    = round(s, 1),
          minutes    = round(minutes, 2),
          max_rss_MB = round(max_rss, 1),
