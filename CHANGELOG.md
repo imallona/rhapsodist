@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
+- Comparison and biology reports add Spearman rho and MARD on counts per million.
+- MARD is computed by one helper, `workflow/src/agreement_metrics.R`.
+
 
 ## v0.3.0 - 2026-06-29
 

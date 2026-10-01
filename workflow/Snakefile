@@ -1972,6 +1972,7 @@ rule render_comparison_report:
             if config.get('use_simulated', False) else []
         ),
         doc = op.join(workflow.basedir, 'src', 'reports', '02_comparison.Rmd'),
+        agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
     output:
         html = op.join(config['working_dir'], '{sample}_comparison.html')
     params:
@@ -2028,6 +2029,7 @@ rule render_biology_report:
         ),
         doc = op.join(workflow.basedir, 'src', 'reports', '04_biology.Rmd'),
         ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
+        agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
         guide_csv = lambda wildcards: (
