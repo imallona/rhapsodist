@@ -9,6 +9,7 @@ from workflow.src.simulate_data import (
     append_sampletag_fastqs,
     make_chromosomes,
     make_r1,
+    parse_args,
     rand_seq,
     read_sampletag_fasta,
     sample_cell_barcodes,
@@ -325,3 +326,41 @@ def test_append_sampletag_fastqs_read_count(tmp_path, small_barcodes, rng):
         read_idx_start=0,
     )
     assert end_idx == len(small_barcodes) * n_st
+
+
+def test_sample_count_matrix_default_has_no_zeros(rng):
+    counts = sample_count_matrix(n_cells=20, n_genes=50, n_umis_mean=50, rng=rng)
+    assert min(v for row in counts for v in row) == 1
+
+
+def test_sample_count_matrix_min_count_zero_keeps_zeros():
+    kwargs = dict(n_cells=20, n_genes=50, n_umis_mean=50)
+    drawn = sample_count_matrix(rng=random.Random(7), min_count=0, **kwargs)
+    raised = sample_count_matrix(rng=random.Random(7), min_count=1, **kwargs)
+    assert any(v == 0 for row in drawn for v in row)
+    assert raised == [[max(1, v) for v in row] for row in drawn]
+
+
+def test_write_fastqs_zero_count_emits_no_read(tmp_path, small_barcodes, small_gene_seqs, rng):
+    r1 = str(tmp_path / 'R1.fq.gz')
+    r2 = str(tmp_path / 'R2.fq.gz')
+    ## the first gene has no UMI in any cell
+    count_matrix = [[0] + [2] * (len(small_gene_seqs) - 1) for _ in small_barcodes]
+    total = write_fastqs(small_barcodes, small_gene_seqs, count_matrix=count_matrix,
+                         rng=rng, r1_path=r1, r2_path=r2)
+    with gzip.open(r2, 'rt') as fh:
+        cdna = [line.strip() for i, line in enumerate(fh) if i % 4 == 1]
+    assert total == sum(v for row in count_matrix for v in row)
+    assert small_gene_seqs[0] not in cdna
+
+
+def test_parse_args_min_count_default(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['simulate_data.py', '--whitelist_dir', 'w', '--out_dir', 'o'])
+    assert parse_args().min_count == 1
+
+
+def test_parse_args_rejects_negative_min_count(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['simulate_data.py', '--whitelist_dir', 'w', '--out_dir', 'o',
+                                     '--min_count', '-1'])
+    with pytest.raises(SystemExit):
+        parse_args()
