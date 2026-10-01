@@ -2,12 +2,12 @@ name: tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     # 'labeled' lets a PR start integration-sampletags via the 'integration' label
     # (the dispatch button only shows on the default branch).
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -237,7 +237,7 @@ jobs:
           fi
 
   integration-run:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
     runs-on: ubuntu-latest
     defaults:
       run:
