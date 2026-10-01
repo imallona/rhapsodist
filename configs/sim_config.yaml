@@ -26,6 +26,8 @@ use_simulated: true
 sim_n_cells: 1000
 sim_n_genes: 100
 sim_n_umis: 100
+## lowest count per cell and gene; 0 allows zero counts
+sim_min_count: 1
 sim_seed: 42
 sim_chr_len: 2000
 sim_gene_pos: 1000

@@ -36,6 +36,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         n_cells       = config.get('sim_n_cells',    100),
         n_genes       = config.get('sim_n_genes',    100),
         n_umis        = config.get('sim_n_umis',     100),
+        min_count     = config.get('sim_min_count',    1),
         seed          = config.get('sim_seed',        42),
         chr_len       = config.get('sim_chr_len',   2000),
         gene_pos      = config.get('sim_gene_pos',  1000),
@@ -62,6 +63,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
             --n_cells       {params.n_cells}       \
             --n_genes       {params.n_genes}       \
             --n_umis        {params.n_umis}        \
+            --min_count     {params.min_count}     \
             --seed          {params.seed}          \
             --chr_len       {params.chr_len}       \
             --gene_pos      {params.gene_pos}      \

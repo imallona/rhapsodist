@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
+
 ## v0.3.0 - 2026-06-29
 
 ### Requests
