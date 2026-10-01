@@ -65,6 +65,7 @@ def main():
         "--configfile", args.configfile,
         "--cores", args.cores,
         "--use-conda",
+        "--benchmark-extended",
     ]
     if args.dry_run:
         cmd.append("--dry-run")

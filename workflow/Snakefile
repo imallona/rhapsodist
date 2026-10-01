@@ -48,6 +48,8 @@ include: op.join('src', 'simulate.snmk')
 
 include: op.join('src', 'fetch_data.snmk')
 
+include: op.join('src', 'run_info.py')
+
 ## kallisto is self-compiled and put on PATH: the bioconda kallisto hits Illegal
 ## instruction on CPUs without AVX, while a local build matches the host CPU.
 ## bustools is from the kallisto.yaml conda env: the self-compiled one hit
@@ -2075,10 +2077,22 @@ rule render_biology_report:
         """
 
 
+rule record_run_info:
+    output:
+        tsv = op.join(config['working_dir'], 'run_info.tsv')
+    run:
+        import snakemake
+        write_run_info(
+            collect_run_info(config['working_dir'], workflow.cores, config['nthreads'],
+                             config['max_mem_mb'], snakemake.__version__),
+            output.tsv)
+
+
 rule render_benchmarks_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
+        run_info = op.join(config['working_dir'], 'run_info.tsv'),
         ## depend on descriptive reports so all benchmark files have been written
         descriptive = expand(
             op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html'),
