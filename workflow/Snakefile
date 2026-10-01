@@ -1811,8 +1811,11 @@ for _sbg_sample in _sbg_samples:
         input:
             r1 = _sbg_fq_r1,
             r2 = _sbg_fq_r2,
-            ref = _ref_input
+            ref = _ref_input,
+            step_times_script = op.join(workflow.basedir, 'src', 'cwl_step_times.py')
         output:
+            step_times = op.join(config['working_dir'], 'benchmarks',
+                                 f'sbg_cwl_steps_{_sbg_sample}.tsv'),
             matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
                                         'unfiltered_MEX_output', 'matrix.mtx.gz'),
             matrix_filtered = op.join(config['working_dir'], 'sbg', _sbg_sample,
@@ -1870,9 +1873,11 @@ ENDOFYML
             CWL_SINGULARITY_CACHE={params.sif_cache} \
             SINGULARITY_PULLFOLDER={params.sif_cache} \
             APPTAINER_PULLFOLDER={params.sif_cache} \
-            cwl-runner --singularity \
+            cwl-runner --singularity --timestamps \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
+
+            python {input.step_times_script} --log {log} --out {output.step_times}
 
             ## cwl-runner places MEX outputs as zips in --outdir.
             ## Unzip both filtered and unfiltered into their respective subdirectories.

@@ -391,6 +391,8 @@ sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
 
 sbg requires `singularity` or `apptainer` on `PATH` (not installable via conda). The workflow refuses to start otherwise.
 
+The CWL run is one Snakemake rule. Its steps are timed from the cwltool log and written to `benchmarks/sbg_cwl_steps_{sample}.tsv` (step, start, end, seconds, status).
+
 ## Contributors
 
 - Izaskun Mallona

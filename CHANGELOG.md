@@ -9,6 +9,7 @@
 - The `rhapsodist` command passes `--benchmark-extended`, which records threads per rule.
 - The benchmarks report prints the machine record and the threads.
 - Requires Snakemake 8.12 or later.
+- The BD CWL rule writes per-step times to `benchmarks/sbg_cwl_steps_{sample}.tsv`.
 
 ## v0.3.0 - 2026-06-29
 
