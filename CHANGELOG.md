@@ -18,6 +18,8 @@
 - No rule needs a system `pigz` or `gawk`; the salmon pin file includes `gawk`.
 - `get_txp2gene` fails on an empty table.
 - The BD CWL rule no longer sets a pull folder, which broke pulls with apptainer 1.5.
+- Samples accept a separate sample tag library: `sampletag_cb_umi_fq`, `sampletag_cdna_fq` or `sampletag_sra_run`.
+- The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
 
 ## v0.3.0 - 2026-06-29
 

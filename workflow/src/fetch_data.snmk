@@ -11,10 +11,10 @@
 ## fetch_sra_metadata writes the NCBI SRA run-info CSV for all SRR accessions
 ## listed in the config to {working_dir}/data/sra_metadata.csv.
 
-_sra_samples = [s['name'] for s in config['samples'] if s['uses'].get('sra_run')]
+_sra_samples = [s['name'] for s in _library_entries() if s['uses'].get('sra_run')]
 
 def _sra_run_by_name(name):
-    for s in config['samples']:
+    for s in _library_entries():
         if s['name'] == name:
             return s['uses'].get('sra_run')
     return None
@@ -50,7 +50,7 @@ if _sra_samples:
                    {params.outdir}/{params.sra_run}_2.fastq
             """
 
-    _sra_accessions = [s['uses']['sra_run'] for s in config['samples']
+    _sra_accessions = [s['uses']['sra_run'] for s in _library_entries()
                        if s['uses'].get('sra_run')]
 
     rule fetch_sra_metadata:

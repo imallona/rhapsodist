@@ -13,6 +13,48 @@ def get_sample_names():
 def get_aligners():
     return(config['aligner'])
 
+SAMPLETAG_LIBRARY_SUFFIX = '_sampletags'
+
+def has_sampletag_library(name):
+    """True when a sample declares its sample tags as a separately sequenced
+    library (sampletag_cb_umi_fq and sampletag_cdna_fq, or sampletag_sra_run)."""
+    for s in config['samples']:
+        if s['name'] == name:
+            uses = s['uses']
+            return bool(uses.get('sampletag_cb_umi_fq') or uses.get('sampletag_sra_run'))
+    return False
+
+def sampletag_library_name(name):
+    """Name under which the tag library of a sample is fetched, checked and
+    standardized, by the same rules as a WTA library."""
+    return name + SAMPLETAG_LIBRARY_SUFFIX
+
+def sampletag_reads_name(name):
+    """Library whose standardized reads hold the sample tags of a sample: its
+    tag library when declared, else the sample itself."""
+    return sampletag_library_name(name) if has_sampletag_library(name) else name
+
+def _sampletag_library_entries():
+    """One sample-like entry per separately sequenced tag library. It carries the
+    bead fields of its sample and is never downsampled."""
+    entries = []
+    for s in config['samples']:
+        if not has_sampletag_library(s['name']):
+            continue
+        uses = {'downsample': 100, 'use_sampletags': 'no'}
+        for field in ('allowedlist', 'diversity_insets'):
+            if field in s['uses']:
+                uses[field] = s['uses'][field]
+        for field in ('cb_umi_fq', 'cdna_fq', 'sra_run'):
+            if s['uses'].get('sampletag_' + field):
+                uses[field] = s['uses']['sampletag_' + field]
+        entries.append({'name': sampletag_library_name(s['name']), 'uses': uses})
+    return entries
+
+def _library_entries():
+    """Samples plus their separately sequenced tag libraries."""
+    return config['samples'] + _sampletag_library_entries()
+
 ## name means sample name, everywhere
 def _as_fastq_list(value):
     """Normalize a fastq config value to a list of paths. A single value may be
@@ -43,7 +85,7 @@ def get_cdna_inputs(name):
     return _as_fastq_list(uses.get('cdna_fq'))
 
 def _raw_cbumi_path(name):
-    for s in config['samples']:
+    for s in _library_entries():
         if s['name'] == name:
             if 'cb_umi_fq' in s['uses']:
                 files = _as_fastq_list(s['uses']['cb_umi_fq'])
@@ -54,7 +96,7 @@ def _raw_cbumi_path(name):
                 return op.join(config['working_dir'], 'data', 'fastq', 'sra', name, name + '_R1.fastq.gz')
 
 def _raw_cdna_path(name):
-    for s in config['samples']:
+    for s in _library_entries():
         if s['name'] == name:
             if 'cdna_fq' in s['uses']:
                 files = _as_fastq_list(s['uses']['cdna_fq'])
@@ -68,7 +110,7 @@ def validate_fastq_lists():
     """Raise early if a sample declares cb_umi_fq and cdna_fq with a different
     number of files. Mates are concatenated in the given order and must pair up,
     so the two lists must be the same length."""
-    for s in config['samples']:
+    for s in _library_entries():
         uses = s['uses']
         if 'cb_umi_fq' not in uses or 'cdna_fq' not in uses:
             continue
@@ -195,7 +237,7 @@ def detect_bead_version(cb_umi_path, n_reads=10000):
     return scan_r1_linkers(cb_umi_path, n_reads)['class']
 
 def _sample_uses(name):
-    for s in config['samples']:
+    for s in _library_entries():
         if s['name'] == name:
             return s['uses']
     return None
@@ -374,8 +416,9 @@ def sampletag_counts_by_name(name):
     """Path to the sampletag count table for a sample, routed to the producer
     chosen by get_sampletag_method. The starsolo mode keeps the published
     filename; the search mode uses a distinct filename so the two rules never
-    collide on the same output."""
-    if get_sampletag_method() == 'starsolo':
+    collide on the same output. A sample with a separate tag library always
+    uses the search mode, because its WTA reads hold no tags."""
+    if get_sampletag_method() == 'starsolo' and not has_sampletag_library(name):
         return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts.tsv.gz')
     return op.join(config['working_dir'], 'sampletags', name, 'sampletag_counts_search.tsv.gz')
 
@@ -386,6 +429,28 @@ def validate_sampletag_config():
         if get_use_sampletags(name):
             get_species_by_name(name)
             get_sampletags_by_name(name)
+        validate_sampletag_library(name)
+
+def validate_sampletag_library(name):
+    """Raise if a sample declares an incomplete or ambiguous tag library, or if
+    the name of its tag library is taken by another sample."""
+    uses = _sample_uses(name) or {}
+    r1 = uses.get('sampletag_cb_umi_fq')
+    r2 = uses.get('sampletag_cdna_fq')
+    sra = uses.get('sampletag_sra_run')
+    if bool(r1) != bool(r2):
+        raise ValueError(
+            f"Sample '{name}': sampletag_cb_umi_fq and sampletag_cdna_fq must be given together"
+        )
+    if r1 and sra:
+        raise ValueError(
+            f"Sample '{name}': give either the sampletag fastq pair or sampletag_sra_run, not both"
+        )
+    if (r1 or sra) and sampletag_library_name(name) in get_sample_names():
+        raise ValueError(
+            f"Sample '{sampletag_library_name(name)}' clashes with the tag library of '{name}'; "
+            f"rename the sample"
+        )
 
 
 def get_output_format():
