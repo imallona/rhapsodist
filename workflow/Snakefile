@@ -919,7 +919,7 @@ rule derive_observed_whitelist:
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_derive_observed_whitelist.txt')
     run:
-        import subprocess
+        import gzip
 
         with open(input.cb1) as fh:
             cb1 = {line.strip() for line in fh if line.strip()}
@@ -929,23 +929,16 @@ rule derive_observed_whitelist:
             cb3 = {line.strip() for line in fh if line.strip()}
 
         observed_valid_barcodes = set()
-        proc = subprocess.Popen(
-            ['pigz', '-d', '-c', '-p', str(threads), input.cb_umi_fq],
-            stdout=subprocess.PIPE
-        )
-        for line_index, raw_line in enumerate(proc.stdout):
-            if line_index % 4 != 1:
-                continue
-            seq = raw_line.rstrip(b'\n').decode()
-            if len(seq) < 27:
-                continue
-            bc = seq[:27]
-            if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
-                observed_valid_barcodes.add(bc)
-        proc.stdout.close()
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"pigz decompression failed with exit code {proc.returncode}")
+        with gzip.open(input.cb_umi_fq, 'rb') as reads:
+            for line_index, raw_line in enumerate(reads):
+                if line_index % 4 != 1:
+                    continue
+                seq = raw_line.rstrip(b'\n').decode()
+                if len(seq) < 27:
+                    continue
+                bc = seq[:27]
+                if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
+                    observed_valid_barcodes.add(bc)
 
         with open(output.observed_whitelist, 'w') as out_fh:
             for barcode in sorted(observed_valid_barcodes):
@@ -1448,6 +1441,11 @@ rule get_txp2gene:
              if (match($9, /transcript_id "([^"]+)"/, tx) && match($9, /gene_id "([^"]+)"/, gn))
                  print tx[1] "\\t" gn[1]
          }}' {input.genes_gtf} | uniq > {output} 2> {log}
+
+         if [ ! -s {output} ]; then
+             echo "no transcript_id and gene_id pair found in {input.genes_gtf}" >> {log}
+             exit 1
+         fi
          """
          
 if config.get('alevin_sketch', False):
@@ -1754,6 +1752,8 @@ for _sbg_sample in _sbg_samples:
 
     rule:
         name: f"rewrite_sbg_fastq_headers_{_sbg_sample}"
+        conda:
+            op.join(workflow.basedir, 'envs', 'star.yaml')
         input:
             r1 = get_cbumi_by_name(_sbg_sample),
             r2 = get_cdna_by_name(_sbg_sample)
@@ -1871,8 +1871,6 @@ ENDOFYML
             fi
 
             CWL_SINGULARITY_CACHE={params.sif_cache} \
-            SINGULARITY_PULLFOLDER={params.sif_cache} \
-            APPTAINER_PULLFOLDER={params.sif_cache} \
             cwl-runner --singularity --timestamps \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
