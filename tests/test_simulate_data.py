@@ -8,6 +8,7 @@ from workflow.src.simulate_data import (
     append_empty_droplets,
     append_sampletag_fastqs,
     make_chromosomes,
+    main,
     make_r1,
     parse_args,
     rand_seq,
@@ -364,3 +365,36 @@ def test_parse_args_rejects_negative_min_count(monkeypatch):
                                      '--min_count', '-1'])
     with pytest.raises(SystemExit):
         parse_args()
+
+
+def _fastq_headers(path):
+    with gzip.open(path, 'rt') as fh:
+        return [line.split()[0] for i, line in enumerate(fh) if i % 4 == 0]
+
+
+def _run_main(monkeypatch, out_dir, *extra):
+    sampletag_fa = os.path.join(REPO_ROOT, 'workflow', 'data', 'sampletags', 'mouse_sampletags.fa')
+    monkeypatch.setattr('sys.argv', [
+        'simulate_data.py', '--whitelist_dir', WHITELIST_DIR, '--out_dir', str(out_dir),
+        '--n_cells', '4', '--n_genes', '3', '--n_umis', '6', '--read_len', '40',
+        '--chr_len', '200', '--gene_pos', '50',
+        '--sampletag_fa', sampletag_fa, '--n_sampletags', '2', '--n_st_reads', '5', *extra])
+    main()
+
+
+def test_main_appends_sampletag_reads_to_the_wta_fastqs(tmp_path, monkeypatch):
+    _run_main(monkeypatch, tmp_path)
+    headers = _fastq_headers(tmp_path / 'sim_R1.fq.gz')
+    assert sum(h.startswith('@st') for h in headers) == 4 * 5
+    assert not (tmp_path / 'sim_st_R1.fq.gz').exists()
+
+
+def test_main_writes_separate_sampletag_fastqs(tmp_path, monkeypatch):
+    _run_main(monkeypatch, tmp_path, '--separate_sampletag_fastqs')
+    wta = _fastq_headers(tmp_path / 'sim_R1.fq.gz')
+    st_r1 = _fastq_headers(tmp_path / 'sim_st_R1.fq.gz')
+    st_r2 = _fastq_headers(tmp_path / 'sim_st_R2.fq.gz')
+    assert not any(h.startswith('@st') for h in wta)
+    assert len(st_r1) == 4 * 5
+    assert st_r1 == st_r2
+    assert all(h.startswith('@st') for h in st_r1)

@@ -41,6 +41,9 @@ if config.get('use_simulated', False):
             _s['uses']['cb_umi_fq'] = op.join(_sim_dir, 'sim_R1.fq.gz')
         if not _s['uses'].get('cdna_fq'):
             _s['uses']['cdna_fq'] = op.join(_sim_dir, 'sim_R2.fq.gz')
+        if config.get('sim_separate_sampletags', False):
+            _s['uses'].setdefault('sampletag_cb_umi_fq', op.join(_sim_dir, 'sim_st_R1.fq.gz'))
+            _s['uses'].setdefault('sampletag_cdna_fq', op.join(_sim_dir, 'sim_st_R2.fq.gz'))
 
 include: "src/workflow_functions.py"
 
@@ -1147,8 +1150,12 @@ rule search_sampletags:
     conda:
         op.join(workflow.basedir, 'envs', 'star.yaml')
     input:
-        cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
-        cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
+        cb_umi = lambda wildcards: op.join(
+            config['working_dir'], 'data', 'fastq',
+            sampletag_reads_name(wildcards.sample) + '_standardized_cb_umi.fq.gz'),
+        cdna = lambda wildcards: op.join(
+            config['working_dir'], 'data', 'fastq',
+            sampletag_reads_name(wildcards.sample) + '_standardized_cdna.fq.gz'),
         tags = lambda wildcards: op.join(workflow.basedir, 'data', 'sampletags',
                                          get_species_by_name(wildcards.sample) + '_sampletags.fa')
     output:

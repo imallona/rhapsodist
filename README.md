@@ -105,6 +105,7 @@ The `sim_*` configs are small synthetic scenarios that exercise specific feature
 
 - `sim_config_search.yaml`: alevin only, so sampletags are called by the alignment-free search instead of starsolo.
 - `sim_kallisto.yaml`: kallisto only, sampletags off. Isolates the kallisto mode (self-compiled kallisto, bioconda bustools); run by the manual `integration-kallisto` CI job.
+- `sim_separate_sampletags.yaml`: tag reads simulated as their own fastq pair (`sim_separate_sampletags: true`), as for a separately sequenced sample tag library.
 - `sim_search_sampletags.yaml` and `sim_starsolo_sampletags.yaml`: declare a per-sample `sampletags` set, so they test restricting the matched tags and splitting each aligner's counts into one file per tag. The first uses the mapping form (search mode); the second uses the list form across two aligners (starsolo mode).
 
 Both sampletag scenarios run end to end in the `integration-sampletags` CI job, which checks that the expected per-tag split files exist. The job is opt-in because it builds conda envs: add the `integration` label to a pull request to start it, or run it from the Actions tab once the workflow is on the default branch.
@@ -322,14 +323,31 @@ samples:
       species: human           # human or mouse; required when use_sampletags is yes
 ```
 
-Only human and mouse tag sets are bundled. A separately sequenced sample tag library is not currently supported as a distinct input.
+Only human and mouse tag sets are bundled.
+
+When the sample tags were sequenced as their own library, give its fastqs, or its SRA run, next to the WTA ones:
+
+```yaml
+samples:
+  - name: my_sample
+    uses:
+      cb_umi_fq: /path/to/wta_R1.fastq.gz
+      cdna_fq: /path/to/wta_R2.fastq.gz
+      sampletag_cb_umi_fq: /path/to/sampletag_R1.fastq.gz
+      sampletag_cdna_fq: /path/to/sampletag_R2.fastq.gz
+      # or: sampletag_sra_run: "SRR..."
+      use_sampletags: yes
+      species: mouse
+```
+
+The tag library is standardized like the WTA reads, under the name `{sample}_sampletags`, and is never downsampled. Its tags are counted by the alignment-free search, also when `starsolo` runs.
 
 Two methods produce the tag counts, chosen automatically from the aligner list:
 
 - When `starsolo` is among the aligners, sample tags are called by the starsolo mode: extract the WTA reads that STARsolo leaves unmapped (with their corrected cell barcode and UMI), align them to the tag sequences, and count. Only the 70 bp tag matches within the full-length read, so the STAR step filters on an absolute matched-base count rather than the default read-length fraction.
 - When `starsolo` is not run (for example an alevin-only or kallisto-only configuration), sample tags are called by an alignment-free search instead (`workflow/src/search_sampletags.py`). It scans the standardized reads directly for the fixed tag prefix, assigns each match to the closest tag by hamming distance, and corrects the cell barcode segments against the BD whitelists with the same one-mismatch tolerance STARsolo applies. Both methods write the same count table, so the demultiplexing and report steps are identical.
 
-The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs only when starsolo is absent. On the simulated data it assigned every cell to its true tag.
+The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs when starsolo is absent, and for a sample with a separate tag library. On the simulated data it assigned every cell to its true tag.
 
 #### Restricting tags and splitting counts per tag
 

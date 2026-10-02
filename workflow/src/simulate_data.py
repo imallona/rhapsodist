@@ -14,6 +14,9 @@ Outputs (all written to --out_dir):
                             can pair files by metadata without falling back to sequence comparison.
   sim_R2.fq.gz              R2 reads: cDNA (gene sequence) + sampletag reads appended.
                             Headers carry ' 2:N:0:0' Illumina read-pair tag.
+  sim_st_R1.fq.gz, sim_st_R2.fq.gz
+                            Sampletag reads, written here instead of being appended to
+                            sim_R1/sim_R2 when --separate_sampletag_fastqs is given.
 
 Barcode structure in R1:
   [diversity_insert (none|A|GT|TCA)] [CB1(9)] GTGA [CB2(9)] GACA [CB3(9)] [UMI(8)] [polyT(20)]
@@ -63,6 +66,8 @@ def parse_args():
                    help='Number of sampletags to use (first N from --sampletag_fa)')
     p.add_argument('--n_st_reads',   type=int, default=50,
                    help='Sampletag reads per cell')
+    p.add_argument('--separate_sampletag_fastqs', action='store_true',
+                   help='Write sampletag reads to sim_st_R1.fq.gz and sim_st_R2.fq.gz')
     p.add_argument('--n_empty_droplets', type=int, default=0,
                    help='Number of empty-droplet barcodes to simulate (low-count noise for alevin knee finder)')
     p.add_argument('--gtf_style', default='ensembl', choices=('ensembl', 'gencode'),
@@ -383,9 +388,10 @@ def main():
 
     if args.sampletag_fa:
         sampletags = read_sampletag_fasta(args.sampletag_fa, args.n_sampletags)
+        st_prefix = 'sim_st' if args.separate_sampletag_fastqs else 'sim'
         append_sampletag_fastqs(cell_barcodes, sampletags, args.n_st_reads, rng,
-                                os.path.join(args.out_dir, 'sim_R1.fq.gz'),
-                                os.path.join(args.out_dir, 'sim_R2.fq.gz'),
+                                os.path.join(args.out_dir, st_prefix + '_R1.fq.gz'),
+                                os.path.join(args.out_dir, st_prefix + '_R2.fq.gz'),
                                 next_idx)
         with open(os.path.join(args.out_dir, 'sampletag_assignments.txt'), 'w') as fh:
             fh.write('cell_barcode\tsampletag\n')
