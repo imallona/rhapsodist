@@ -395,6 +395,8 @@ biology_markers_file: data/markers/skin_markers.tsv   # TSV with marker and cell
 
 The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. A `skin_markers.tsv` file is included for mouse epidermis (used by Sendoel); add your own TSV for other tissues.
 
+Set `use_case: trajectory` and `trajectory_root_marker` (a gene marking the earliest state) for a sample with a differentiation course. The report then adds a pseudotime per aligner, the graph distance from the cluster with the highest expression of that gene, and the Spearman correlation of pseudotime between aligners. `use_case: hela` replaces the marker panels by cell cycle phase.
+
 When external per-cell metadata is available (e.g. CRISPR guide assignments from a separate amplicon library), the report joins it for visualization. The pipeline itself does not process or quantify guides.
 
 ### Benchmarks

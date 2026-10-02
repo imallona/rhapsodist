@@ -20,6 +20,7 @@
 - The BD CWL rule no longer sets a pull folder, which broke pulls with apptainer 1.5.
 - Samples accept a separate sample tag library: `sampletag_cb_umi_fq`, `sampletag_cdna_fq` or `sampletag_sra_run`.
 - The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
+- Biology report: `use_case: trajectory` adds pseudotime agreement between aligners.
 
 ## v0.3.0 - 2026-06-29
 

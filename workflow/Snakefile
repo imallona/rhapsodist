@@ -2042,6 +2042,7 @@ rule render_biology_report:
         doc = op.join(workflow.basedir, 'src', 'reports', '04_biology.Rmd'),
         ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
         agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
+        pseudotime = op.join(workflow.basedir, 'src', 'pseudotime.R'),
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
         guide_csv = lambda wildcards: (
@@ -2059,6 +2060,7 @@ rule render_biology_report:
         markers_file = config.get('biology_markers_file',
                                   op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
         use_case = config.get('use_case', 'sendoel'),
+        trajectory_root_marker = config.get('trajectory_root_marker', ''),
         guide_csv = lambda wildcards: (
             op.join(config['working_dir'], 'data', 'guides',
                     wildcards.sample + '_guides.csv.gz')
@@ -2083,6 +2085,7 @@ rule render_biology_report:
               has_sbg = "{params.has_sbg}",
               markers_file = "{params.markers_file}",
               use_case = "{params.use_case}",
+              trajectory_root_marker = "{params.trajectory_root_marker}",
               guide_csv = "{params.guide_csv}"))' &> {log}
         """
 
