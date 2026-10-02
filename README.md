@@ -178,6 +178,15 @@ aligner: ['starsolo', 'kallisto', 'alevin']
 
 Any combination of starsolo, kallisto, alevin, sbg. When sbg is included, set `sbg_cwl` to the path of the BD Rhapsody CWL file. The cross-pipeline comparison report is only produced when two or more aligners are listed; a single-aligner run skips it.
 
+#### Aligner choice
+
+- `starsolo` aligns to the genome and counts reads that map to one gene (`soloMultiMappers: Unique`). It also writes a BAM file and provides the sample tag counts.
+- `kallisto` and `alevin` pseudoalign to the transcriptome and take less time than `starsolo`. `alevin` needs the least memory; `bustools correct` reserves about 20 GB whatever the input size.
+- `alevin` spreads multi-mapping reads over genes unless `alevin_sketch: true`, which makes its counts comparable to `starsolo`.
+- `sbg` is the BD pipeline. It parses the barcodes itself and tolerates mismatches in them, so it reports more cells and UMIs than the other three at `cb_umi_max_errors: 0`. It takes the longest and needs singularity or apptainer. Use it to match counts from BD's own software.
+
+Counts from `starsolo`, `kallisto` and `alevin` correlate closely with each other. Listing two or more aligners adds the comparison report for your own data.
+
 ### STARsolo options
 
 ```yaml
@@ -195,6 +204,8 @@ cell_filtering: "native"
 - `native`: STARsolo uses its soloCellFilter; alevin and kallisto apply DropletUtils barcodeRanks.
 - `emptydrops`: apply DropletUtils emptyDrops across all aligners.
 - `none`: no cell filtering; every observed barcode is kept so you can filter downstream yourself. For STARsolo this overrides soloCellFilter to None; for alevin and kallisto the knee filter is skipped.
+
+`native` takes the least time and fits a run with one aligner. With `emptydrops` every aligner is filtered by the same method, so cell numbers are comparable between aligners; it tests each barcode against the ambient profile of the empty droplets, which helps on tissues where small cells have few UMIs.
 
 ### Alevin UMI counting
 

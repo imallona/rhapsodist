@@ -14,6 +14,7 @@
 - BD CWL step times are split by stage.
 - Benchmark files are assigned from `workflow/data/benchmark_stages.tsv`.
 - Per-aligner totals change where steps were misassigned.
+- README sections on aligner choice and cell filter choice.
 
 ## v0.3.0 - 2026-06-29
 
