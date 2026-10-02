@@ -579,6 +579,13 @@ run_biology = function(opt) {
         pp_save_pdf(p_qc, pdir, "bio_qc_bars", width = 6, height = 3)
     }
 
+    ## Pairwise Spearman correlation of pseudotime (use_case trajectory).
+    if (file.exists(biords("pseudotime"))) {
+        pseudotime_cor = as.data.table(as.table(readRDS(biords("pseudotime"))$spearman))
+        setnames(pseudotime_cor, c("pipeline1", "pipeline2", "spearman"))
+        pp_save_csv(pseudotime_cor, pdir, "bio_pseudotime_spearman")
+    }
+
     ## Pseudobulk MARD with bootstrap CIs.
     if (file.exists(biords("pseudobulk_mard"))) {
         pbobj = readRDS(biords("pseudobulk_mard"))

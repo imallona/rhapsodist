@@ -2024,6 +2024,13 @@ rule render_comparison_report:
         """
 
 
+## biology_markers_file may be relative to workflow/, where the bundled marker tables are
+_biology_markers_file = config.get('biology_markers_file',
+                                   op.join('data', 'markers', 'skin_markers.tsv'))
+if not op.isabs(_biology_markers_file) and not op.exists(_biology_markers_file):
+    _biology_markers_file = op.join(workflow.basedir, _biology_markers_file)
+
+
 rule render_biology_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
@@ -2043,8 +2050,7 @@ rule render_biology_report:
         ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
         agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
         pseudotime = op.join(workflow.basedir, 'src', 'pseudotime.R'),
-        markers_file = config.get('biology_markers_file',
-                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        markers_file = _biology_markers_file,
         guide_csv = lambda wildcards: (
             [op.join(config['working_dir'], 'data', 'guides',
                      wildcards.sample + '_guides.csv.gz')]
@@ -2057,8 +2063,7 @@ rule render_biology_report:
         sample = lambda wildcards: wildcards.sample,
         aligners = ','.join(get_aligners()),
         has_sbg = 'true' if _has_sbg else 'false',
-        markers_file = config.get('biology_markers_file',
-                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        markers_file = _biology_markers_file,
         use_case = config.get('use_case', 'sendoel'),
         trajectory_root_marker = config.get('trajectory_root_marker', ''),
         guide_csv = lambda wildcards: (

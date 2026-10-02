@@ -101,6 +101,7 @@ The repository includes several config files under `configs/`:
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
 - `gse282765_config.yaml`: mouse colon CD45+ cells on enhanced beads with two sample tags, sequenced as a separate library (GEO GSE282765). Fetches both libraries from SRA.
+- `gse301173_config.yaml`: mouse neutrophils from bone marrow, blood and lung with eleven sample tags in a separate library (GEO GSE301173). Runs the biology report with `use_case: trajectory`.
 
 The `sim_*` configs are small synthetic scenarios that exercise specific features in CI:
 
@@ -394,7 +395,7 @@ run_biology_report: true       # generate biology report with marker expression,
 biology_markers_file: data/markers/skin_markers.tsv   # TSV with marker and cell_type columns, relative to workflow dir
 ```
 
-The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. A `skin_markers.tsv` file is included for mouse epidermis (used by Sendoel); add your own TSV for other tissues.
+The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. `skin_markers.tsv` (mouse epidermis, used by Sendoel) and `neutrophil_markers.tsv` (mouse neutrophil maturation) are included; add your own TSV for other tissues.
 
 Set `use_case: trajectory` and `trajectory_root_marker` (a gene marking the earliest state) for a sample with a differentiation course. The report then adds a pseudotime per aligner, the graph distance from the cluster with the highest expression of that gene, and the Spearman correlation of pseudotime between aligners. `use_case: hela` replaces the marker panels by cell cycle phase.
 
