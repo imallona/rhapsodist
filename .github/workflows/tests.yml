@@ -84,6 +84,7 @@ jobs:
             r-matrix
             r-data.table
             r-argparse
+            r-ggplot2
           condarc: |
             channels:
               - conda-forge
@@ -91,6 +92,9 @@ jobs:
 
       - name: run sampletag split R tests
         run: cd workflow && Rscript tests/test_split_sce_by_sampletag.R
+
+      - name: run sample tag concordance R tests
+        run: Rscript paper/test_compare_sampletag_calls.R
 
   integration-dry-run:
     runs-on: ubuntu-latest
@@ -194,6 +198,17 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_separate_sampletags.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # public data config: separate tag library fetched from SRA
+      - name: dry-run GSE282765 config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/gse282765_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
             --dry-run \
             --nolock \
             --cores 2

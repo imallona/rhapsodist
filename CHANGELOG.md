@@ -21,6 +21,7 @@
 - Samples accept a separate sample tag library: `sampletag_cb_umi_fq`, `sampletag_cdna_fq` or `sampletag_sra_run`.
 - The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
 - Biology report: `use_case: trajectory` adds pseudotime agreement between aligners.
+- Config for GSE282765 (two sample tags, separate tag library) and a concordance script.
 
 ## v0.3.0 - 2026-06-29
 
