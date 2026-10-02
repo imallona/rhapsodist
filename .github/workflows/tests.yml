@@ -213,6 +213,17 @@ jobs:
             --nolock \
             --cores 2
 
+      # public data config: trajectory use case and an eleven-tag separate library
+      - name: dry-run GSE301173 config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/gse301173_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
       # output_format both adds the sce_to_h5ad targets to the DAG; the delayed
       # split backend keeps the original lazy path reachable.
       - name: dry-run h5ad output and delayed split backend

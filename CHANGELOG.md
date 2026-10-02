@@ -22,6 +22,8 @@
 - The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
 - Biology report: `use_case: trajectory` adds pseudotime agreement between aligners.
 - Config for GSE282765 (two sample tags, separate tag library) and a concordance script.
+- Config for GSE301173 (neutrophils, trajectory use case, eleven sample tags).
+- `biology_markers_file` may be relative to `workflow/`.
 
 ## v0.3.0 - 2026-06-29
 
