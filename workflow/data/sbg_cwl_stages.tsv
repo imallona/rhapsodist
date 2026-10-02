@@ -1,0 +1,16 @@
+step	stage
+CheckReference	preprocessing
+QualCLAlign_RNA	alignment and quantification
+AlignmentAnalysis	alignment and quantification
+AnnotateMolecules	alignment and quantification
+SumMoleculesCorrected	alignment and quantification
+GetDataTable	matrix building
+SampleTag	sample tags
+MergeMultiplex	sample tags
+Metrics	reporting
+CalcSeqSaturation	reporting
+BundleLogs	reporting
+AddtoBam_RNA	extra outputs
+MergeBAM_RNA	extra outputs
+GenerateH5MU	extra outputs
+GenerateSeurat	extra outputs
