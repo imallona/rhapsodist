@@ -100,6 +100,7 @@ The repository includes several config files under `configs/`:
 - `config.yaml`: base template with all available options and comments. Copy this as a starting point for new datasets.
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
+- `gse282765_config.yaml`: mouse colon CD45+ cells on enhanced beads with two sample tags, sequenced as a separate library (GEO GSE282765). Fetches both libraries from SRA.
 
 The `sim_*` configs are small synthetic scenarios that exercise specific features in CI:
 

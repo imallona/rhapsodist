@@ -1,0 +1,42 @@
+## Mouse colon CD45+ cells, enhanced beads, two sample tags (GEO GSE282765).
+## WTA library GSM8696920, sample tag library GSM8696924, deposited separately.
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+alevin_sketch: true
+
+working_dir: output/gse282765
+
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
+
+## 151 nt cDNA reads
+sjdbOverhang: 150
+
+skip_sampletags: false
+
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+has_sbg: true
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+
+samples:
+  - name: colon
+    uses:
+      sra_run: "SRR31797227"
+      sampletag_sra_run: "SRR31797223"
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: yes
+      species: mouse
+      sampletags:
+        3: PHIL
+        4: WT
