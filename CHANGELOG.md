@@ -15,6 +15,9 @@
 - Benchmark files are assigned from `workflow/data/benchmark_stages.tsv`.
 - Per-aligner totals change where steps were misassigned.
 - README sections on aligner choice and cell filter choice.
+- No rule needs a system `pigz` or `gawk`; the salmon pin file includes `gawk`.
+- `get_txp2gene` fails on an empty table.
+- The BD CWL rule no longer sets a pull folder, which broke pulls with apptainer 1.5.
 
 ## v0.3.0 - 2026-06-29
 
