@@ -16,6 +16,7 @@ params:
   markers_file: ""
   guide_csv: ""
   use_case: "sendoel"
+  trajectory_root_marker: ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -46,14 +47,20 @@ suppressPackageStartupMessages({
 
 source(file.path(dirname(knitr::current_input()), "..", "ggtheme.R"))
 source(file.path(dirname(knitr::current_input()), "..", "agreement_metrics.R"))
+source(file.path(dirname(knitr::current_input()), "..", "pseudotime.R"))
 
 wd = params$working_dir
 samp = params$sample
 aligners = strsplit(params$aligners, ",")[[1]]
 has_sbg = isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
 use_case = if (nzchar(params$use_case)) params$use_case else "sendoel"
-stopifnot(use_case %in% c("sendoel", "hela"))
+stopifnot(use_case %in% c("sendoel", "hela", "trajectory"))
 is_hela = identical(use_case, "hela")
+is_trajectory = identical(use_case, "trajectory")
+root_marker = params$trajectory_root_marker
+if (is_trajectory && !nzchar(root_marker)) {
+    stop("use_case trajectory needs trajectory_root_marker in the config.")
+}
 
 if (!is_hela) {
     if (!nzchar(params$markers_file) || !file.exists(params$markers_file)) {
@@ -585,6 +592,45 @@ for (i in seq_len(nrow(marker_meta))) {
     })
     print(wrap_plots(feat_plots, nrow = 1))
     cat("\n\n")
+}
+```
+
+### Pseudotime
+
+For each pipeline, the root is the cell nearest the centroid of the cluster with
+the highest mean expression of the root marker. Pseudotime is the shortest-path
+distance from the root over the 20-nearest-neighbour graph of the first 20
+principal components, scaled to [0, 1]. Pipelines are compared by the Spearman
+correlation of pseudotime on shared barcodes.
+
+```{r pseudotime, eval=is_trajectory, fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+pseudotime_list = lapply(seurat_objects, function(so) {
+    if (!root_marker %in% rownames(so)) return(NULL)
+    so = FindNeighbors(so, reduction = "pca", dims = 1:20, k.param = 20,
+                       return.neighbor = TRUE, verbose = FALSE)
+    neighbours = so[["RNA.nn"]]
+    root = root_cell(Embeddings(so, "pca")[, 1:20], as.character(Idents(so)),
+                     FetchData(so, root_marker)[[1]])
+    data.table(barcode = colnames(so),
+               pseudotime = graph_pseudotime(Indices(neighbours), Distances(neighbours), root),
+               umap_1 = Embeddings(so, "umap")[, 1],
+               umap_2 = Embeddings(so, "umap")[, 2])
+})
+pseudotime_list = Filter(Negate(is.null), pseudotime_list)
+
+if (length(pseudotime_list) == 0) {
+    cat("Pseudotime skipped: root marker", root_marker, "not found in any pipeline.\n")
+} else {
+    pseudotime_dt = rbindlist(pseudotime_list, idcol = "pipeline")
+    print(
+        ggplot(pseudotime_dt, aes(umap_1, umap_2, colour = pseudotime)) +
+            geom_point(size = 0.2) +
+            scale_colour_viridis_c(na.value = "grey80") +
+            facet_wrap(~pipeline, nrow = 1) +
+            theme_ng() +
+            labs(title = paste("Pseudotime from the", root_marker, "cluster"),
+                 x = "UMAP 1", y = "UMAP 2")
+    )
 }
 ```
 
@@ -1229,6 +1275,32 @@ if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
     })
     ct_ari_plots = Filter(Negate(is.null), ct_ari_plots)
     if (length(ct_ari_plots) > 0) print(wrap_plots(ct_ari_plots, nrow = 1))
+}
+```
+
+### Pseudotime agreement
+
+```{r pseudotime-agreement, eval=is_trajectory, fig.width=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$w, fig.height=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$h}
+if (length(pseudotime_list) >= 2) {
+    pseudotime_wide = dcast(pseudotime_dt, barcode ~ pipeline, value.var = "pseudotime")
+    pseudotime_cor = pairwise_pseudotime_correlation(as.matrix(pseudotime_wide[, -"barcode"]))
+    saveRDS(list(pseudotime = pseudotime_dt, spearman = pseudotime_cor),
+            file.path(wd, paste0(samp, "_biology_pseudotime.rds")))
+    cor_long = as.data.frame(as.table(pseudotime_cor))
+    names(cor_long) = c("pipeline1", "pipeline2", "value")
+    print(
+        ggplot(cor_long, aes(pipeline1, pipeline2, fill = value)) +
+            geom_tile(colour = "white") +
+            geom_text(aes(label = sprintf("%.3f", value)), size = 3.2) +
+            scale_fill_distiller(palette = "RdYlGn", direction = 1, limits = c(NA, 1)) +
+            theme_ng() +
+            theme(aspect.ratio = NULL,
+                  axis.text.x = element_text(angle = 30, hjust = 1)) +
+            labs(title = "Pseudotime Spearman rho on shared barcodes",
+                 x = NULL, y = NULL, fill = "rho")
+    )
+} else {
+    cat("Pseudotime agreement skipped: need pseudotime for at least 2 pipelines.\n")
 }
 ```
 

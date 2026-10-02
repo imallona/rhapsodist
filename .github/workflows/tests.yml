@@ -41,6 +41,7 @@ jobs:
             r-base
             bioconductor-s4vectors
             r-matrix
+            r-igraph
           condarc: |
             channels:
               - conda-forge
@@ -57,6 +58,9 @@ jobs:
 
       - name: run benchmark stage R tests
         run: Rscript workflow/tests/test_benchmark_stages.R
+
+      - name: run pseudotime R tests
+        run: Rscript workflow/tests/test_pseudotime.R
 
   # Per-sampletag split tests. Needs the SCE/HDF5/anndataR stack (heavier than the
   # light r-unit-tests job above), so it runs as its own job. Checks backend
