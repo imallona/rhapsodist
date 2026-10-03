@@ -24,6 +24,7 @@
 - Config for GSE282765 (two sample tags, separate tag library) and a concordance script.
 - Config for GSE301173 (neutrophils, trajectory use case, eleven sample tags).
 - `biology_markers_file` may be relative to `workflow/`.
+- Paper figure tables add scaled MARD and Spearman per aligner pair.
 
 ## v0.3.0 - 2026-06-29
 

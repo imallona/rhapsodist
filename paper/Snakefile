@@ -79,6 +79,7 @@ rule simulations_figure:
                       aligner = ALIGNERS),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
         op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
@@ -108,6 +109,7 @@ rule experimental_figure:
         biology_rds = op.join(WD, "{sample}_biology_qc.rds"),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
         op.join(WD, "paper", "{sample}", EXPERIMENTAL_FIG_STEM + ".pdf")
@@ -139,6 +141,7 @@ rule linker_qc_figure:
         tsv = op.join(WD, "linker_qc", "{sample}_linker_errors.tsv"),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_linker_errors.pdf"),
         op.join(WD, "paper", "{sample}", "bio_linker_errors.csv"),
@@ -161,6 +164,7 @@ rule benchmarks_figure:
     input:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "bench_full.csv"),
         op.join(WD, "paper", BENCH_PREFIX + "_bench_total.pdf"),

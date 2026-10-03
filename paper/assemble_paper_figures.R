@@ -39,6 +39,7 @@ script_dir = tryCatch({
     if (length(f) == 0) getwd() else dirname(normalizePath(f))
 }, error = function(e) getwd())
 source(file.path(script_dir, "export_helpers.R"))
+source(file.path(script_dir, "..", "workflow", "src", "agreement_metrics.R"))
 
 parse_args = function() {
     p = ArgumentParser()
@@ -233,21 +234,9 @@ run_simulation = function(opt) {
     shared = Reduce(intersect, lapply(pb_list, names))
     if (length(shared) > 0 && length(pb_list) >= 2) {
         pb_mat = do.call(cbind, lapply(pb_list, function(v) v[shared]))
-        mard_stat = function(x, y) {
-            d = (x + y) / 2
-            mean(abs(x - y)[d > 0] / d[d > 0], na.rm = TRUE)
-        }
-        pairs = expand.grid(a = colnames(pb_mat), b = colnames(pb_mat),
-                            stringsAsFactors = FALSE)
-        mard_dt = rbindlist(lapply(seq_len(nrow(pairs)), function(i) {
-            a = pairs$a[i]; b = pairs$b[i]
-            x = pb_mat[, a]; y = pb_mat[, b]
-            m = mard_stat(x, y)
-            ci = if (a == b) c(NA, NA) else pp_bootstrap_pair(x, y, mard_stat, n_boot = 1000)
-            data.table(pipeline1 = a, pipeline2 = b, mard = m,
-                       ci_lo = ci[1], ci_hi = ci[2])
-        }))
+        mard_dt = pp_pairwise_table(pb_mat, mard, "mard")
         pp_save_csv(mard_dt, pdir, "sim_pseudobulk_mard")
+        pp_save_rank_agreement(pb_mat, pdir, "sim_pseudobulk")
 
         p_mard = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard)) +
             geom_tile(colour = "white") +
@@ -590,21 +579,9 @@ run_biology = function(opt) {
     if (file.exists(biords("pseudobulk_mard"))) {
         pbobj = readRDS(biords("pseudobulk_mard"))
         pb_mat = pbobj$pb
-        mard_stat = function(x, y) {
-            d = (x + y) / 2
-            mean(abs(x - y)[d > 0] / d[d > 0], na.rm = TRUE)
-        }
-        pipes = colnames(pb_mat)
-        pairs = expand.grid(a = pipes, b = pipes, stringsAsFactors = FALSE)
-        mard_dt = rbindlist(lapply(seq_len(nrow(pairs)), function(i) {
-            a = pairs$a[i]; b = pairs$b[i]
-            m = mard_stat(pb_mat[, a], pb_mat[, b])
-            ci = if (a == b) c(NA, NA) else pp_bootstrap_pair(
-                pb_mat[, a], pb_mat[, b], mard_stat, n_boot = 1000)
-            data.table(pipeline1 = a, pipeline2 = b, mard = m,
-                       ci_lo = ci[1], ci_hi = ci[2])
-        }))
+        mard_dt = pp_pairwise_table(pb_mat, mard, "mard")
         pp_save_csv(mard_dt, pdir, "bio_pseudobulk_mard")
+        pp_save_rank_agreement(pb_mat, pdir, "bio_pseudobulk")
         mard_dt[, pipeline1 := order_pipelines(pipeline1, aligners)]
         mard_dt[, pipeline2 := order_pipelines(pipeline2, aligners)]
         p = ggplot(mard_dt, aes(pipeline1, pipeline2, fill = mard * 100)) +
