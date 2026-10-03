@@ -33,4 +33,5 @@ dependencies:
   - conda-forge::r-viridis
   - conda-forge::r-clue
   - conda-forge::r-mclust
+  - conda-forge::r-igraph
   - conda-forge::pandoc

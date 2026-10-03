@@ -59,3 +59,16 @@ The script reads only files the main pipeline writes:
 - Simulation truth at `<wd>/simulate/cell_barcodes.txt` and `<wd>/simulate/true_mex/` (matrix market format)
 - Biology derived objects at `<wd>/<sample>_biology_*.rds` including `qc`, `cb_umi`, `clusters`, `pseudobulk_mard`, and per-pipeline Seurat caches `<sample>_biology_<aligner>_seurat.rds`
 - Benchmark files under `<wd>/benchmarks/*.txt`
+
+## Sample tag concordance
+
+`compare_sampletag_calls.R` compares the sample tag calls of a run with per-tag expression files of the BD pipeline, such as the ones deposited with GSM8696920. It writes a CSV and a PDF with, per deposited tag, the cells called with the same tag, the other tag, multiplet, undetermined or absent.
+
+```bash
+Rscript paper/compare_sampletag_calls.R \
+    --demux output/gse282765/sampletags/colon/sampletag_demux.tsv.gz \
+    --deposited mouse_sampletag_3=GSM8696920_Colon_healthy_Mm_PHIL_ST03_Expression_Data.st.txt.gz \
+                mouse_sampletag_4=GSM8696920_Colon_healthy_Mm_WT_ST04_Expression_Data.st.txt.gz \
+    --whitelist_dir workflow/data/whitelist_384x3 \
+    --out_prefix output/gse282765/paper/colon/sampletag_concordance
+```

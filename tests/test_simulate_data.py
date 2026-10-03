@@ -8,7 +8,9 @@ from workflow.src.simulate_data import (
     append_empty_droplets,
     append_sampletag_fastqs,
     make_chromosomes,
+    main,
     make_r1,
+    parse_args,
     rand_seq,
     read_sampletag_fasta,
     sample_cell_barcodes,
@@ -325,3 +327,74 @@ def test_append_sampletag_fastqs_read_count(tmp_path, small_barcodes, rng):
         read_idx_start=0,
     )
     assert end_idx == len(small_barcodes) * n_st
+
+
+def test_sample_count_matrix_default_has_no_zeros(rng):
+    counts = sample_count_matrix(n_cells=20, n_genes=50, n_umis_mean=50, rng=rng)
+    assert min(v for row in counts for v in row) == 1
+
+
+def test_sample_count_matrix_min_count_zero_keeps_zeros():
+    kwargs = dict(n_cells=20, n_genes=50, n_umis_mean=50)
+    drawn = sample_count_matrix(rng=random.Random(7), min_count=0, **kwargs)
+    raised = sample_count_matrix(rng=random.Random(7), min_count=1, **kwargs)
+    assert any(v == 0 for row in drawn for v in row)
+    assert raised == [[max(1, v) for v in row] for row in drawn]
+
+
+def test_write_fastqs_zero_count_emits_no_read(tmp_path, small_barcodes, small_gene_seqs, rng):
+    r1 = str(tmp_path / 'R1.fq.gz')
+    r2 = str(tmp_path / 'R2.fq.gz')
+    ## the first gene has no UMI in any cell
+    count_matrix = [[0] + [2] * (len(small_gene_seqs) - 1) for _ in small_barcodes]
+    total = write_fastqs(small_barcodes, small_gene_seqs, count_matrix=count_matrix,
+                         rng=rng, r1_path=r1, r2_path=r2)
+    with gzip.open(r2, 'rt') as fh:
+        cdna = [line.strip() for i, line in enumerate(fh) if i % 4 == 1]
+    assert total == sum(v for row in count_matrix for v in row)
+    assert small_gene_seqs[0] not in cdna
+
+
+def test_parse_args_min_count_default(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['simulate_data.py', '--whitelist_dir', 'w', '--out_dir', 'o'])
+    assert parse_args().min_count == 1
+
+
+def test_parse_args_rejects_negative_min_count(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['simulate_data.py', '--whitelist_dir', 'w', '--out_dir', 'o',
+                                     '--min_count', '-1'])
+    with pytest.raises(SystemExit):
+        parse_args()
+
+
+def _fastq_headers(path):
+    with gzip.open(path, 'rt') as fh:
+        return [line.split()[0] for i, line in enumerate(fh) if i % 4 == 0]
+
+
+def _run_main(monkeypatch, out_dir, *extra):
+    sampletag_fa = os.path.join(REPO_ROOT, 'workflow', 'data', 'sampletags', 'mouse_sampletags.fa')
+    monkeypatch.setattr('sys.argv', [
+        'simulate_data.py', '--whitelist_dir', WHITELIST_DIR, '--out_dir', str(out_dir),
+        '--n_cells', '4', '--n_genes', '3', '--n_umis', '6', '--read_len', '40',
+        '--chr_len', '200', '--gene_pos', '50',
+        '--sampletag_fa', sampletag_fa, '--n_sampletags', '2', '--n_st_reads', '5', *extra])
+    main()
+
+
+def test_main_appends_sampletag_reads_to_the_wta_fastqs(tmp_path, monkeypatch):
+    _run_main(monkeypatch, tmp_path)
+    headers = _fastq_headers(tmp_path / 'sim_R1.fq.gz')
+    assert sum(h.startswith('@st') for h in headers) == 4 * 5
+    assert not (tmp_path / 'sim_st_R1.fq.gz').exists()
+
+
+def test_main_writes_separate_sampletag_fastqs(tmp_path, monkeypatch):
+    _run_main(monkeypatch, tmp_path, '--separate_sampletag_fastqs')
+    wta = _fastq_headers(tmp_path / 'sim_R1.fq.gz')
+    st_r1 = _fastq_headers(tmp_path / 'sim_st_R1.fq.gz')
+    st_r2 = _fastq_headers(tmp_path / 'sim_st_R2.fq.gz')
+    assert not any(h.startswith('@st') for h in wta)
+    assert len(st_r1) == 4 * 5
+    assert st_r1 == st_r2
+    assert all(h.startswith('@st') for h in st_r1)

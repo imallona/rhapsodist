@@ -14,6 +14,9 @@ Outputs (all written to --out_dir):
                             can pair files by metadata without falling back to sequence comparison.
   sim_R2.fq.gz              R2 reads: cDNA (gene sequence) + sampletag reads appended.
                             Headers carry ' 2:N:0:0' Illumina read-pair tag.
+  sim_st_R1.fq.gz, sim_st_R2.fq.gz
+                            Sampletag reads, written here instead of being appended to
+                            sim_R1/sim_R2 when --separate_sampletag_fastqs is given.
 
 Barcode structure in R1:
   [diversity_insert (none|A|GT|TCA)] [CB1(9)] GTGA [CB2(9)] GACA [CB3(9)] [UMI(8)] [polyT(20)]
@@ -27,7 +30,9 @@ Count model:
   identical total counts (~22% CV). Per-gene expression levels are drawn from log-normal(0, 1)
   and normalised so they sum to 1. Final counts per (cell, gene) are drawn from
   NB(mu=cell_total * gene_frac, size=2), giving realistic overdispersed counts across both
-  cells and genes. The true count matrix is written to true_mex/ for downstream evaluation.
+  cells and genes. Counts below --min_count are raised to it; the default of 1 makes every
+  cell express every gene, and 0 keeps the zeros of the draw. The true count matrix is written
+  to true_mex/ for downstream evaluation.
 """
 
 import argparse
@@ -45,7 +50,9 @@ def parse_args():
     p.add_argument('--n_cells',      type=int, default=100)
     p.add_argument('--n_genes',      type=int, default=100)
     p.add_argument('--n_umis',       type=int, default=100,
-                   help='Mean UMIs per cell per gene; actual counts vary across cells and genes')
+                   help='Mean UMIs per cell; actual counts vary across cells and genes')
+    p.add_argument('--min_count',    type=int, default=1,
+                   help='Lowest count per cell and gene; 0 allows zero counts')
     p.add_argument('--seed',         type=int, default=42)
     p.add_argument('--chr_len',      type=int, default=2000,
                    help='Total chromosome length (nt)')
@@ -59,11 +66,16 @@ def parse_args():
                    help='Number of sampletags to use (first N from --sampletag_fa)')
     p.add_argument('--n_st_reads',   type=int, default=50,
                    help='Sampletag reads per cell')
+    p.add_argument('--separate_sampletag_fastqs', action='store_true',
+                   help='Write sampletag reads to sim_st_R1.fq.gz and sim_st_R2.fq.gz')
     p.add_argument('--n_empty_droplets', type=int, default=0,
                    help='Number of empty-droplet barcodes to simulate (low-count noise for alevin knee finder)')
     p.add_argument('--gtf_style', default='ensembl', choices=('ensembl', 'gencode'),
                    help='Attribute order in the GTF; gencode and ensembl place transcript_id differently')
-    return p.parse_args()
+    args = p.parse_args()
+    if args.min_count < 0:
+        p.error('--min_count must be 0 or more')
+    return args
 
 
 def rand_seq(length, rng):
@@ -108,7 +120,7 @@ def _nb_sample(mu, size, rng):
 
 
 def sample_count_matrix(n_cells, n_genes, n_umis_mean, rng,
-                        cell_size=20.0, gene_size=2.0):
+                        cell_size=20.0, gene_size=2.0, min_count=1):
     """Sample a (n_cells x n_genes) count matrix with realistic count variability.
 
     Per-cell library-size factors are drawn from NB(mu=n_umis_mean, size=cell_size)
@@ -117,6 +129,7 @@ def sample_count_matrix(n_cells, n_genes, n_umis_mean, rng,
     to mean 1, giving a realistic range of expression levels across genes.
     Final counts per (cell, gene) are drawn from NB(mu=cell_total * gene_frac, size=gene_size)
     where cell_total is the cell library size and gene_frac is the gene's relative expression.
+    Counts below min_count are raised to it.
     """
     ## per-cell library sizes: similar but not identical
     cell_totals = [max(1, _nb_sample(n_umis_mean, cell_size, rng)) for _ in range(n_cells)]
@@ -128,7 +141,7 @@ def sample_count_matrix(n_cells, n_genes, n_umis_mean, rng,
 
     counts = []
     for ct in cell_totals:
-        row = [max(1, _nb_sample(ct * gf, gene_size, rng)) for gf in gene_fracs]
+        row = [max(min_count, _nb_sample(ct * gf, gene_size, rng)) for gf in gene_fracs]
         counts.append(row)
     return counts
 
@@ -350,7 +363,8 @@ def main():
         for cb1, cb2, cb3 in cell_barcodes:
             fh.write(f'{cb1}{cb2}{cb3}\n')
 
-    count_matrix = sample_count_matrix(args.n_cells, args.n_genes, args.n_umis, rng)
+    count_matrix = sample_count_matrix(args.n_cells, args.n_genes, args.n_umis, rng,
+                                       min_count=args.min_count)
 
     next_idx = write_fastqs(cell_barcodes, gene_seqs, count_matrix, rng,
                             os.path.join(args.out_dir, 'sim_R1.fq.gz'),
@@ -360,7 +374,7 @@ def main():
 
     total_umis = sum(v for row in count_matrix for v in row)
     print(f'Generated {args.n_genes} chromosomes, {args.n_cells} cells x '
-          f'{args.n_genes} genes, {total_umis} total UMIs (mean {args.n_umis}/cell/gene) '
+          f'{args.n_genes} genes, {total_umis} total UMIs '
           f'= {next_idx} cDNA reads')
 
     if args.n_empty_droplets > 0:
@@ -374,9 +388,10 @@ def main():
 
     if args.sampletag_fa:
         sampletags = read_sampletag_fasta(args.sampletag_fa, args.n_sampletags)
+        st_prefix = 'sim_st' if args.separate_sampletag_fastqs else 'sim'
         append_sampletag_fastqs(cell_barcodes, sampletags, args.n_st_reads, rng,
-                                os.path.join(args.out_dir, 'sim_R1.fq.gz'),
-                                os.path.join(args.out_dir, 'sim_R2.fq.gz'),
+                                os.path.join(args.out_dir, st_prefix + '_R1.fq.gz'),
+                                os.path.join(args.out_dir, st_prefix + '_R2.fq.gz'),
                                 next_idx)
         with open(os.path.join(args.out_dir, 'sampletag_assignments.txt'), 'w') as fh:
             fh.write('cell_barcode\tsampletag\n')

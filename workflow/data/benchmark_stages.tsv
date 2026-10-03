@@ -1,0 +1,50 @@
+pattern	aligners	stage
+simulate_data	starsolo,kallisto,alevin,sbg	simulation
+validate_simulation	starsolo,kallisto,alevin,sbg	reporting
+fetch_sra_{sample}	starsolo,kallisto,alevin,sbg	download
+fetch_guide_{sample}	starsolo,kallisto,alevin,sbg	download
+download_genome	starsolo,kallisto,alevin,sbg	download
+download_gtf	starsolo,kallisto,alevin,sbg	download
+download_transcriptome	starsolo,kallisto,alevin,sbg	download
+download_sbg_reference	sbg	download
+kallisto_install	kallisto	install
+rustody_install	rustody	install
+star_indexing	starsolo	reference
+kallisto_index	kallisto	reference
+salmon_index	alevin	reference
+build_spliceu_reference	alevin	reference
+deversion_transcriptome	kallisto,alevin	reference
+get_txp2gene	kallisto,alevin	reference
+build_sbg_reference_simulated	sbg	reference
+build_sbg_reference_real	sbg	reference
+{sample}_downsample	starsolo,kallisto,alevin,sbg	preprocessing
+standardize_cb_umis_{sample}	starsolo,kallisto,alevin	preprocessing
+{sample}_derive_observed_whitelist	starsolo,kallisto,alevin	preprocessing
+star_{sample}	starsolo	alignment and quantification
+{sample}_kallisto_bus	kallisto	alignment and quantification
+{sample}_bustools_sort	kallisto	alignment and quantification
+{sample}_bustools_correct	kallisto	alignment and quantification
+{sample}_bustools_count	kallisto	alignment and quantification
+alevin_{sample}_align	alevin	alignment and quantification
+alevin_fry_quant_{sample}	alevin	alignment and quantification
+rustody_{sample}	rustody	alignment and quantification
+sbg_cwl_{sample}	sbg	alignment and quantification
+alevin_knee_filter_{sample}	alevin	matrix building
+r_sce_generation_{sample}_star	starsolo	matrix building
+r_sce_generation_{sample}_kallisto	kallisto	matrix building
+r_sce_generation_{sample}_alevin	alevin	matrix building
+r_sce_generation_{sample}_sbg	sbg	matrix building
+{sample}_unaligned_tagged	starsolo,kallisto,alevin	sample tags
+{sample}_sampletags_cutadapt	starsolo,kallisto,alevin	sample tags
+{species}_sampletags__index	starsolo,kallisto,alevin	sample tags
+{sample}_align_sampletags_star	starsolo,kallisto,alevin	sample tags
+{sample}_sampletag_counting	starsolo,kallisto,alevin	sample tags
+{sample}_search_sampletags	starsolo,kallisto,alevin	sample tags
+{sample}_demux_sampletags	starsolo,kallisto,alevin	sample tags
+{sample}_{aligner}_split_sampletags	{aligner}	sample tags
+{sample}_sampletag_report	starsolo,kallisto,alevin	reporting
+{aligner}_{sample}_descriptive_report	{aligner}	reporting
+{sample}_comparison_report	starsolo,kallisto,alevin,sbg	reporting
+{sample}_biology_report	starsolo,kallisto,alevin,sbg	reporting
+{sample}_linker_qc_report	starsolo,kallisto,alevin	reporting
+benchmarks_report	starsolo,kallisto,alevin,sbg	reporting

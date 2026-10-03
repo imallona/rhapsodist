@@ -15,6 +15,12 @@ if _ST_FA and not op.isabs(_ST_FA) and not op.exists(_ST_FA):
         _ST_FA = _candidate
 
 
+## with sim_separate_sampletags the tag reads go to their own fastq pair
+_SEPARATE_ST = config.get('sim_separate_sampletags', False)
+_ST_FASTQS = ([op.join(_SIM_DIR, 'sim_st_R1.fq.gz'), op.join(_SIM_DIR, 'sim_st_R2.fq.gz')]
+              if _SEPARATE_ST else [])
+
+
 rule simulate_genome_gtf_transcriptome_fastqs:
     conda:
         op.join(workflow.basedir, 'envs', 'simulate.yaml')
@@ -31,11 +37,13 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         r1            = op.join(_SIM_DIR, 'sim_R1.fq.gz'),
         r2            = op.join(_SIM_DIR, 'sim_R2.fq.gz'),
         st_assignments = op.join(_SIM_DIR, 'sampletag_assignments.txt'),
+        st_fastqs     = _ST_FASTQS,
         true_mex      = op.join(_SIM_DIR, 'true_mex', 'matrix.mtx.gz')
     params:
         n_cells       = config.get('sim_n_cells',    100),
         n_genes       = config.get('sim_n_genes',    100),
         n_umis        = config.get('sim_n_umis',     100),
+        min_count     = config.get('sim_min_count',    1),
         seed          = config.get('sim_seed',        42),
         chr_len       = config.get('sim_chr_len',   2000),
         gene_pos      = config.get('sim_gene_pos',  1000),
@@ -46,7 +54,8 @@ rule simulate_genome_gtf_transcriptome_fastqs:
         n_empty_droplets = config.get('sim_n_empty_droplets', 0),
         sampletag_arg = ('--sampletag_fa ' + _ST_FA + ' --n_sampletags ' +
                          str(config.get('sim_n_sampletags', 3)) +
-                         ' --n_st_reads ' + str(config.get('sim_n_st_reads', 100))
+                         ' --n_st_reads ' + str(config.get('sim_n_st_reads', 100)) +
+                         (' --separate_sampletag_fastqs' if _SEPARATE_ST else '')
                          ) if _ST_FA else '',
         whitelist_dir = _WHITELIST_DIR,
         out_dir       = _SIM_DIR
@@ -62,6 +71,7 @@ rule simulate_genome_gtf_transcriptome_fastqs:
             --n_cells       {params.n_cells}       \
             --n_genes       {params.n_genes}       \
             --n_umis        {params.n_umis}        \
+            --min_count     {params.min_count}     \
             --seed          {params.seed}          \
             --chr_len       {params.chr_len}       \
             --gene_pos      {params.gene_pos}      \

@@ -90,3 +90,46 @@ pp_bootstrap_pair = function(values_a, values_b, stat, n_boot = 1000,
     }, numeric(1))
     unname(stats::quantile(b, probs = probs, na.rm = TRUE))
 }
+
+## One row per pair of columns of pb_mat: the statistic and its bootstrap 95%
+## CI over genes; value is named by value_name.
+pp_pairwise_table = function(pb_mat, stat, value_name, n_boot = 1000) {
+    pairs = expand.grid(a = colnames(pb_mat), b = colnames(pb_mat),
+                        stringsAsFactors = FALSE)
+    out = rbindlist(lapply(seq_len(nrow(pairs)), function(i) {
+        a = pairs$a[i]; b = pairs$b[i]
+        ci = if (a == b) c(NA, NA) else
+            pp_bootstrap_pair(pb_mat[, a], pb_mat[, b], stat, n_boot = n_boot)
+        data.table(pipeline1 = a, pipeline2 = b, value = stat(pb_mat[, a], pb_mat[, b]),
+                   ci_lo = ci[1], ci_hi = ci[2])
+    }))
+    setnames(out, "value", value_name)
+    out
+}
+
+## Heatmap of a pp_pairwise_table column.
+pp_pairwise_heatmap = function(dt, value_name, title, label_format, limits) {
+    ggplot(dt, aes(pipeline1, pipeline2, fill = .data[[value_name]])) +
+        geom_tile(colour = "white") +
+        geom_text(aes(label = sprintf(label_format, .data[[value_name]])), size = 2.8) +
+        scale_fill_viridis_c(option = "viridis", limits = limits,
+                             oob = scales::squish, alpha = 0.75) +
+        scale_y_discrete(limits = rev) +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 30, hjust = 1), aspect.ratio = 1) +
+        labs(x = NULL, y = NULL, fill = value_name, title = title)
+}
+
+## Scaled MARD and Spearman tables and heatmaps, saved as <prefix>_scaled_mard
+## and <prefix>_spearman.
+pp_save_rank_agreement = function(pb_mat, pdir, prefix) {
+    scaled = pp_pairwise_table(pb_mat, scaled_mard, "scaled_mard")
+    pp_save_csv(scaled, pdir, paste0(prefix, "_scaled_mard"))
+    pp_save_pdf(pp_pairwise_heatmap(scaled, "scaled_mard", "Pseudobulk MARD on counts per million",
+                                    "%.3f", c(0, 1)),
+                pdir, paste0(prefix, "_scaled_mard"), width = 4.5, height = 3.5)
+    rho = pp_pairwise_table(pb_mat, spearman, "spearman")
+    pp_save_csv(rho, pdir, paste0(prefix, "_spearman"))
+    pp_save_pdf(pp_pairwise_heatmap(rho, "spearman", "Pseudobulk Spearman rho", "%.3f", c(NA, 1)),
+                pdir, paste0(prefix, "_spearman"), width = 4.5, height = 3.5)
+}

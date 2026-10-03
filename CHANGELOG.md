@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
+- Comparison and biology reports add Spearman rho and MARD on counts per million.
+- MARD is computed by one helper, `workflow/src/agreement_metrics.R`.
+- `run_info.tsv` records CPU, memory, filesystem and Snakemake settings of a run.
+- The `rhapsodist` command passes `--benchmark-extended`, which records threads per rule.
+- The benchmarks report prints the machine record and the threads.
+- Requires Snakemake 8.12 or later.
+- The BD CWL rule writes per-step times to `benchmarks/sbg_cwl_steps_{sample}.tsv`.
+- The benchmarks report adds time per stage and aligner.
+- BD CWL step times are split by stage.
+- Benchmark files are assigned from `workflow/data/benchmark_stages.tsv`.
+- Per-aligner totals change where steps were misassigned.
+- README sections on aligner choice and cell filter choice.
+- No rule needs a system `pigz` or `gawk`; the salmon pin file includes `gawk`.
+- `get_txp2gene` fails on an empty table.
+- The BD CWL rule no longer sets a pull folder, which broke pulls with apptainer 1.5.
+- Samples accept a separate sample tag library: `sampletag_cb_umi_fq`, `sampletag_cdna_fq` or `sampletag_sra_run`.
+- The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
+- Biology report: `use_case: trajectory` adds pseudotime agreement between aligners.
+- Config for GSE282765 (two sample tags, separate tag library) and a concordance script.
+- Config for GSE301173 (neutrophils, trajectory use case, eleven sample tags).
+- `biology_markers_file` may be relative to `workflow/`.
+- Paper figure tables add scaled MARD and Spearman per aligner pair.
+
 ## v0.3.0 - 2026-06-29
 
 ### Requests

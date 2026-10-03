@@ -41,12 +41,17 @@ if config.get('use_simulated', False):
             _s['uses']['cb_umi_fq'] = op.join(_sim_dir, 'sim_R1.fq.gz')
         if not _s['uses'].get('cdna_fq'):
             _s['uses']['cdna_fq'] = op.join(_sim_dir, 'sim_R2.fq.gz')
+        if config.get('sim_separate_sampletags', False):
+            _s['uses'].setdefault('sampletag_cb_umi_fq', op.join(_sim_dir, 'sim_st_R1.fq.gz'))
+            _s['uses'].setdefault('sampletag_cdna_fq', op.join(_sim_dir, 'sim_st_R2.fq.gz'))
 
 include: "src/workflow_functions.py"
 
 include: op.join('src', 'simulate.snmk')
 
 include: op.join('src', 'fetch_data.snmk')
+
+include: op.join('src', 'run_info.py')
 
 ## kallisto is self-compiled and put on PATH: the bioconda kallisto hits Illegal
 ## instruction on CPUs without AVX, while a local build matches the host CPU.
@@ -917,7 +922,7 @@ rule derive_observed_whitelist:
     benchmark:
         op.join(config['working_dir'], 'benchmarks', '{sample}_derive_observed_whitelist.txt')
     run:
-        import subprocess
+        import gzip
 
         with open(input.cb1) as fh:
             cb1 = {line.strip() for line in fh if line.strip()}
@@ -927,23 +932,16 @@ rule derive_observed_whitelist:
             cb3 = {line.strip() for line in fh if line.strip()}
 
         observed_valid_barcodes = set()
-        proc = subprocess.Popen(
-            ['pigz', '-d', '-c', '-p', str(threads), input.cb_umi_fq],
-            stdout=subprocess.PIPE
-        )
-        for line_index, raw_line in enumerate(proc.stdout):
-            if line_index % 4 != 1:
-                continue
-            seq = raw_line.rstrip(b'\n').decode()
-            if len(seq) < 27:
-                continue
-            bc = seq[:27]
-            if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
-                observed_valid_barcodes.add(bc)
-        proc.stdout.close()
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"pigz decompression failed with exit code {proc.returncode}")
+        with gzip.open(input.cb_umi_fq, 'rb') as reads:
+            for line_index, raw_line in enumerate(reads):
+                if line_index % 4 != 1:
+                    continue
+                seq = raw_line.rstrip(b'\n').decode()
+                if len(seq) < 27:
+                    continue
+                bc = seq[:27]
+                if bc[:9] in cb1 and bc[9:18] in cb2 and bc[18:27] in cb3:
+                    observed_valid_barcodes.add(bc)
 
         with open(output.observed_whitelist, 'w') as out_fh:
             for barcode in sorted(observed_valid_barcodes):
@@ -1152,8 +1150,12 @@ rule search_sampletags:
     conda:
         op.join(workflow.basedir, 'envs', 'star.yaml')
     input:
-        cb_umi = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cb_umi.fq.gz"),
-        cdna = op.join(config['working_dir'], 'data', 'fastq', "{sample}_standardized_cdna.fq.gz"),
+        cb_umi = lambda wildcards: op.join(
+            config['working_dir'], 'data', 'fastq',
+            sampletag_reads_name(wildcards.sample) + '_standardized_cb_umi.fq.gz'),
+        cdna = lambda wildcards: op.join(
+            config['working_dir'], 'data', 'fastq',
+            sampletag_reads_name(wildcards.sample) + '_standardized_cdna.fq.gz'),
         tags = lambda wildcards: op.join(workflow.basedir, 'data', 'sampletags',
                                          get_species_by_name(wildcards.sample) + '_sampletags.fa')
     output:
@@ -1446,6 +1448,11 @@ rule get_txp2gene:
              if (match($9, /transcript_id "([^"]+)"/, tx) && match($9, /gene_id "([^"]+)"/, gn))
                  print tx[1] "\\t" gn[1]
          }}' {input.genes_gtf} | uniq > {output} 2> {log}
+
+         if [ ! -s {output} ]; then
+             echo "no transcript_id and gene_id pair found in {input.genes_gtf}" >> {log}
+             exit 1
+         fi
          """
          
 if config.get('alevin_sketch', False):
@@ -1752,6 +1759,8 @@ for _sbg_sample in _sbg_samples:
 
     rule:
         name: f"rewrite_sbg_fastq_headers_{_sbg_sample}"
+        conda:
+            op.join(workflow.basedir, 'envs', 'star.yaml')
         input:
             r1 = get_cbumi_by_name(_sbg_sample),
             r2 = get_cdna_by_name(_sbg_sample)
@@ -1809,8 +1818,11 @@ for _sbg_sample in _sbg_samples:
         input:
             r1 = _sbg_fq_r1,
             r2 = _sbg_fq_r2,
-            ref = _ref_input
+            ref = _ref_input,
+            step_times_script = op.join(workflow.basedir, 'src', 'cwl_step_times.py')
         output:
+            step_times = op.join(config['working_dir'], 'benchmarks',
+                                 f'sbg_cwl_steps_{_sbg_sample}.tsv'),
             matrix_unfiltered = op.join(config['working_dir'], 'sbg', _sbg_sample,
                                         'unfiltered_MEX_output', 'matrix.mtx.gz'),
             matrix_filtered = op.join(config['working_dir'], 'sbg', _sbg_sample,
@@ -1866,11 +1878,11 @@ ENDOFYML
             fi
 
             CWL_SINGULARITY_CACHE={params.sif_cache} \
-            SINGULARITY_PULLFOLDER={params.sif_cache} \
-            APPTAINER_PULLFOLDER={params.sif_cache} \
-            cwl-runner --singularity \
+            cwl-runner --singularity --timestamps \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
+
+            python {input.step_times_script} --log {log} --out {output.step_times}
 
             ## cwl-runner places MEX outputs as zips in --outdir.
             ## Unzip both filtered and unfiltered into their respective subdirectories.
@@ -1972,6 +1984,7 @@ rule render_comparison_report:
             if config.get('use_simulated', False) else []
         ),
         doc = op.join(workflow.basedir, 'src', 'reports', '02_comparison.Rmd'),
+        agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
     output:
         html = op.join(config['working_dir'], '{sample}_comparison.html')
     params:
@@ -2011,6 +2024,13 @@ rule render_comparison_report:
         """
 
 
+## biology_markers_file may be relative to workflow/, where the bundled marker tables are
+_biology_markers_file = config.get('biology_markers_file',
+                                   op.join('data', 'markers', 'skin_markers.tsv'))
+if not op.isabs(_biology_markers_file) and not op.exists(_biology_markers_file):
+    _biology_markers_file = op.join(workflow.basedir, _biology_markers_file)
+
+
 rule render_biology_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
@@ -2028,8 +2048,9 @@ rule render_biology_report:
         ),
         doc = op.join(workflow.basedir, 'src', 'reports', '04_biology.Rmd'),
         ggtheme = op.join(workflow.basedir, 'src', 'ggtheme.R'),
-        markers_file = config.get('biology_markers_file',
-                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        agreement_metrics = op.join(workflow.basedir, 'src', 'agreement_metrics.R'),
+        pseudotime = op.join(workflow.basedir, 'src', 'pseudotime.R'),
+        markers_file = _biology_markers_file,
         guide_csv = lambda wildcards: (
             [op.join(config['working_dir'], 'data', 'guides',
                      wildcards.sample + '_guides.csv.gz')]
@@ -2042,9 +2063,9 @@ rule render_biology_report:
         sample = lambda wildcards: wildcards.sample,
         aligners = ','.join(get_aligners()),
         has_sbg = 'true' if _has_sbg else 'false',
-        markers_file = config.get('biology_markers_file',
-                                  op.join(workflow.basedir, 'data', 'markers', 'skin_markers.tsv')),
+        markers_file = _biology_markers_file,
         use_case = config.get('use_case', 'sendoel'),
+        trajectory_root_marker = config.get('trajectory_root_marker', ''),
         guide_csv = lambda wildcards: (
             op.join(config['working_dir'], 'data', 'guides',
                     wildcards.sample + '_guides.csv.gz')
@@ -2069,14 +2090,27 @@ rule render_biology_report:
               has_sbg = "{params.has_sbg}",
               markers_file = "{params.markers_file}",
               use_case = "{params.use_case}",
+              trajectory_root_marker = "{params.trajectory_root_marker}",
               guide_csv = "{params.guide_csv}"))' &> {log}
         """
+
+
+rule record_run_info:
+    output:
+        tsv = op.join(config['working_dir'], 'run_info.tsv')
+    run:
+        import snakemake
+        write_run_info(
+            collect_run_info(config['working_dir'], workflow.cores, config['nthreads'],
+                             config['max_mem_mb'], snakemake.__version__),
+            output.tsv)
 
 
 rule render_benchmarks_report:
     conda:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
+        run_info = op.join(config['working_dir'], 'run_info.tsv'),
         ## depend on descriptive reports so all benchmark files have been written
         descriptive = expand(
             op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html'),
@@ -2085,6 +2119,9 @@ rule render_benchmarks_report:
         ),
         sbg_sce = _sbg_sce_targets,
         doc = op.join(workflow.basedir, 'src', 'reports', '03_benchmarks.Rmd'),
+        stages = [op.join(workflow.basedir, 'src', 'benchmark_stages.R'),
+                  op.join(workflow.basedir, 'data', 'benchmark_stages.tsv'),
+                  op.join(workflow.basedir, 'data', 'sbg_cwl_stages.tsv')],
     output:
         html = op.join(config['working_dir'], 'benchmarks_report.html')
     params:
