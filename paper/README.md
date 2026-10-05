@@ -98,3 +98,11 @@ git clone --branch 2.9.7 https://github.com/sdparekh/zUMIs
 - Target: `<working_dir>/zumis/<sample>/<sample>_zumis_sce.rds`, from the downsampled reads.
 - v1 beads only: zUMIs reads the cell label at fixed positions, which the variable-length inset of Enhanced beads shifts.
 - Fastq header comments are removed first. zUMIs keeps a comment that contains a space, as in SRA headers, in the read name, and STAR then fails.
+
+## OpenPipelines
+
+`openpipelines/run_openpipelines.sh` runs the `bd_rhapsody` component of OpenPipelines v4.2.0 with nextflow and apptainer. The component runs the BD Rhapsody Sequence Analysis CWL pipeline v2.2.1 in the image `bdgenomics/rhapsody:2.2.1`, the pipeline of the `sbg` aligner.
+
+- Config: `openpipelines_reference` (default: the `sbg` reference archive), `openpipelines_bead_version` (`Enh` or `EnhV2`), `openpipelines_whitelist_dir` for `EnhV2`.
+- Target: `<working_dir>/openpipelines/<sample>/<sample>_openpipelines_sce.rds`, from the reads of the `sbg` aligner.
+- On the simulated reads its counts equal those of the `sbg` aligner.
