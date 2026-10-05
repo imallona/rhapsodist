@@ -30,6 +30,8 @@
 - `paper/openpipelines/`: OpenPipelines run for the workflow comparison.
 - `configs/sim_sparse_config.yaml`: simulation with zero counts.
 - Simulation figure tables add the detected fraction per true count.
+- Configs for the epidermis and HeLa data at `cb_umi_max_errors` 1 and 2.
+- `paper/compare_linker_tolerance.R`: cells, UMIs and agreement per setting.
 
 ## v0.3.0 - 2026-06-29
 

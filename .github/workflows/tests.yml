@@ -98,6 +98,8 @@ jobs:
 
       - name: run detection recall R tests
         run: Rscript paper/test_detection_recall.R
+      - name: run linker tolerance R tests
+        run: Rscript paper/test_compare_linker_tolerance.R
 
   integration-dry-run:
     runs-on: ubuntu-latest
@@ -215,6 +217,22 @@ jobs:
             --dry-run \
             --nolock \
             --cores 2
+      # linker tolerance configs read the fastqs of the base run; empty files stand in
+      - name: dry-run linker tolerance configs
+        run: |
+          for base in sendoel2024:sample_16_wta_p60 moro_mallona2025:hela_unmod; do
+            fastq_dir=output/${base%%:*}/data/fastq/sra/${base##*:}
+            mkdir -p "$fastq_dir"
+            touch "$fastq_dir/${base##*:}_R1.fastq.gz" "$fastq_dir/${base##*:}_R2.fastq.gz"
+            for errors in 1 2; do
+              snakemake \
+                --snakefile workflow/Snakefile \
+                --configfile configs/${base%%:*}_linker${errors}_config.yaml \
+                --dry-run \
+                --nolock \
+                --cores 2
+            done
+          done
 
       # public data config: separate tag library fetched from SRA
       - name: dry-run GSE282765 config

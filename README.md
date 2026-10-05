@@ -101,6 +101,7 @@ The repository includes several config files under `configs/`:
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
 - `sim_sparse_config.yaml`: the same with `sim_min_count: 0` and fewer UMIs per cell, so the true matrix has zeros.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
+- `sendoel2024_linker{1,2}_config.yaml`, `moro_mallona2025_linker{1,2}_config.yaml`: the two datasets at `cb_umi_max_errors` 1 and 2, without the BD pipeline. They read the fastqs fetched by the base config, which runs first.
 - `gse282765_config.yaml`: mouse colon CD45+ cells on enhanced beads with two sample tags, sequenced as a separate library (GEO GSE282765). Fetches both libraries from SRA.
 - `gse301173_config.yaml`: mouse neutrophils from bone marrow, blood and lung with eleven sample tags in a separate library (GEO GSE301173). Runs the biology report with `use_case: trajectory`.
 

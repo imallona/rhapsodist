@@ -73,6 +73,17 @@ Rscript paper/compare_sampletag_calls.R \
     --out_prefix output/gse282765/paper/colon/sampletag_concordance
 ```
 
+## Linker tolerance
+
+`compare_linker_tolerance.R` compares runs of one sample that differ in `cb_umi_max_errors`. Per aligner and setting it writes cells, median UMIs per cell, and Spearman and scaled MARD of the pseudobulk against the first run, as a CSV and a PDF.
+
+```bash
+Rscript paper/compare_linker_tolerance.R \
+    --runs 0=output/sendoel2024 1=output/sendoel2024_linker1 2=output/sendoel2024_linker2 \
+    --sample sample_16_wta_p60 --aligners starsolo,kallisto,alevin \
+    --out_prefix output/sendoel2024/paper/sample_16_wta_p60/linker_tolerance
+```
+
 ## UniverSC
 
 UniverSC rewrites the Cell Ranger whitelist inside its image, so `universc/run_universc.sh` runs it from a writable copy:
