@@ -1,0 +1,21 @@
+## Same image as Dockerfile, built with: apptainer build rhapsodist.sif rhapsodist.def
+Bootstrap: docker
+From: mambaorg/micromamba:2.9.0
+
+%files
+    workflow /opt/rhapsodist/workflow
+    configs /opt/rhapsodist/configs
+    rhapsodist /opt/rhapsodist/rhapsodist
+    pyproject.toml /opt/rhapsodist/pyproject.toml
+    container_build.sh /opt/rhapsodist/container_build.sh
+
+%environment
+    export SNAKEMAKE_CONDA_PREFIX=/opt/rhapsodist_envs
+
+%post
+    export SNAKEMAKE_CONDA_PREFIX=/opt/rhapsodist_envs
+    cd /opt/rhapsodist
+    bash container_build.sh
+
+%runscript
+    exec micromamba run -n base rhapsodist "$@"

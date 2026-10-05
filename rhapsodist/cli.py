@@ -36,6 +36,8 @@ def main():
         description="run the rhapsodist bd rhapsody wta pipeline.",
         epilog="any extra arguments are forwarded verbatim to snakemake.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        ## without this, snakemake's --config is read as --configfile
+        allow_abbrev=False,
     )
     ap.add_argument(
         "--configfile",
