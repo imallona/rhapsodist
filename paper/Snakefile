@@ -187,3 +187,47 @@ rule benchmarks_figure:
             --n_expected_cells {params.n_exp} \
             --bench_prefix {params.bench_prefix} &> {log}
         """
+
+
+## UniverSC on the downsampled reads. Config: universc_sandbox (see README) and
+## universc_technology (bd-rhapsody or bd-rhapsody-v2). Not part of rule all.
+rule universc:
+    input:
+        r1 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R2.fastq.gz"),
+        genome = op.join(config.get("reference_dir", ""), "genome.fa"),
+        gtf = op.join(config.get("reference_dir", ""), "annotation.gtf"),
+        run = op.join(PAPER_DIR, "universc", "run_universc.sh"),
+    output:
+        outs = directory(op.join(WD, "universc", "{sample}", "work", "{sample}_outs")),
+    params:
+        sandbox = config.get("universc_sandbox", ""),
+        technology = config.get("universc_technology", "bd-rhapsody"),
+        workdir = op.join(WD, "universc", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "universc_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "universc_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.sandbox} {params.workdir} {wildcards.sample} \
+            {params.technology} {input.r1} {input.r2} {input.genome} {input.gtf} \
+            {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule universc_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        outs = op.join(WD, "universc", "{sample}", "work", "{sample}_outs"),
+        script = op.join(PAPER_DIR, "universc", "universc_to_sce.R"),
+    output:
+        op.join(WD, "universc", "{sample}", "{sample}_universc_sce.rds")
+    log:
+        op.join(WD, "logs", "universc_sce_{sample}.log")
+    shell:
+        "Rscript {input.script} {input.outs} {wildcards.sample} {output} &> {log}"
