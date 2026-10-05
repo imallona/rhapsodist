@@ -37,6 +37,8 @@
 - `Dockerfile` and `rhapsodist.def`: image with the pinned environments.
 - `pip install` works: the build backend in `pyproject.toml` was wrong.
 - `rhapsodist --config` reaches Snakemake; it was read as `--configfile`.
+- Benchmarks report waits for the other reports and skips its own benchmark.
+- `sim_separate_sampletags` without `sampletag_fa` is an error.
 
 ## v0.3.0 - 2026-06-29
 

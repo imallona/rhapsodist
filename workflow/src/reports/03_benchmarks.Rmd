@@ -49,6 +49,8 @@ if (file.exists(run_info_file)) {
 ```{r load-benchmarks}
 bm_dir   <- file.path(wd, "benchmarks")
 bm_files <- list.files(bm_dir, pattern = "\\.txt$", full.names = TRUE)
+## this report's own benchmark is written after it renders; one from an earlier run is left out
+bm_files <- bm_files[basename(bm_files) != "benchmarks_report.txt"]
 if (length(bm_files) == 0) stop("No benchmark files found in ", bm_dir)
 
 read_bm <- function(fn) {

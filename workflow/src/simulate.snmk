@@ -17,6 +17,8 @@ if _ST_FA and not op.isabs(_ST_FA) and not op.exists(_ST_FA):
 
 ## with sim_separate_sampletags the tag reads go to their own fastq pair
 _SEPARATE_ST = config.get('sim_separate_sampletags', False)
+if _SEPARATE_ST and not _ST_FA:
+    raise ValueError("sim_separate_sampletags needs sampletag_fa")
 _ST_FASTQS = ([op.join(_SIM_DIR, 'sim_st_R1.fq.gz'), op.join(_SIM_DIR, 'sim_st_R2.fq.gz')]
               if _SEPARATE_ST else [])
 
