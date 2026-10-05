@@ -595,6 +595,7 @@ rule render_descriptive_report:
         mkdir -p {params.path}
         R --vanilla -e 'rmarkdown::render(\"{input.script}\",
           output_file = \"{output.html}\",
+          intermediates_dir = \"{params.path}\",
           params = list(path = \"{params.path}\"))' &> {log}
         """
 
