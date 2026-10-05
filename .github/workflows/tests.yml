@@ -96,6 +96,9 @@ jobs:
       - name: run sample tag concordance R tests
         run: Rscript paper/test_compare_sampletag_calls.R
 
+      - name: run detection recall R tests
+        run: Rscript paper/test_detection_recall.R
+
   integration-dry-run:
     runs-on: ubuntu-latest
     defaults:
@@ -198,6 +201,17 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_separate_sampletags.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # simulation with zero counts
+      - name: dry-run sparse simulation config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_sparse_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
             --dry-run \
             --nolock \
             --cores 2
