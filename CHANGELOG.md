@@ -26,6 +26,7 @@
 - `biology_markers_file` may be relative to `workflow/`.
 - Paper figure tables add scaled MARD and Spearman per aligner pair.
 - `paper/universc/`: UniverSC run and conversion for the workflow comparison.
+- `paper/zumis/`: zUMIs run and conversion for the workflow comparison.
 
 ## v0.3.0 - 2026-06-29
 

@@ -231,3 +231,48 @@ rule universc_sce:
         op.join(WD, "logs", "universc_sce_{sample}.log")
     shell:
         "Rscript {input.script} {input.outs} {wildcards.sample} {output} &> {log}"
+
+
+## zUMIs on the downsampled reads of v1 beads. Config: zumis_dir, a clone of
+## zUMIs 2.9.7 (see README). Not part of rule all.
+rule zumis:
+    input:
+        r1 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R2.fastq.gz"),
+        genome = op.join(config.get("reference_dir", ""), "genome.fa"),
+        gtf = op.join(config.get("reference_dir", ""), "annotation.gtf"),
+        run = op.join(PAPER_DIR, "zumis", "run_zumis.sh"),
+    output:
+        counts = op.join(WD, "zumis", "{sample}", "work", "zUMIs_output", "expression",
+                         "{sample}.dgecounts.rds"),
+    params:
+        zumis_dir = config.get("zumis_dir", ""),
+        workdir = op.join(WD, "zumis", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "zumis_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "zumis_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.zumis_dir} {params.workdir} {wildcards.sample} \
+            {input.r1} {input.r2} {input.genome} {input.gtf} \
+            {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule zumis_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        counts = op.join(WD, "zumis", "{sample}", "work", "zUMIs_output", "expression",
+                         "{sample}.dgecounts.rds"),
+        script = op.join(PAPER_DIR, "zumis", "zumis_to_sce.R"),
+    output:
+        op.join(WD, "zumis", "{sample}", "{sample}_zumis_sce.rds")
+    log:
+        op.join(WD, "logs", "zumis_sce_{sample}.log")
+    shell:
+        "Rscript {input.script} {input.counts} {wildcards.sample} {output} &> {log}"
