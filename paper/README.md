@@ -85,3 +85,16 @@ apptainer build --sandbox universc_sandbox docker://tomkellygenetics/universc:1.
 - Target: `<working_dir>/universc/<sample>/<sample>_universc_sce.rds`, from the downsampled reads.
 - Enhanced V2 beads: UniverSC 1.2.7 has no whitelist for the 384-sequence panel.
 - v1 beads: the conversion writes some read 1 records with sequence and quality of unequal length, and Cell Ranger fails. The script drops those pairs, counts them in `<sample>_dropped_pairs.txt` and reruns Cell Ranger.
+
+## zUMIs
+
+`zumis/run_zumis.sh` runs zUMIs 2.9.7 from a clone, with the conda environment it ships:
+
+```bash
+git clone --branch 2.9.7 https://github.com/sdparekh/zUMIs
+```
+
+- Config: `zumis_dir`, the clone.
+- Target: `<working_dir>/zumis/<sample>/<sample>_zumis_sce.rds`, from the downsampled reads.
+- v1 beads only: zUMIs reads the cell label at fixed positions, which the variable-length inset of Enhanced beads shifts.
+- Fastq header comments are removed first. zUMIs keeps a comment that contains a space, as in SRA headers, in the read name, and STAR then fails.
