@@ -39,6 +39,8 @@
 - `rhapsodist --config` reaches Snakemake; it was read as `--configfile`.
 - Benchmarks report waits for the other reports and skips its own benchmark.
 - `sim_separate_sampletags` without `sampletag_fa` is an error.
+- `paper/compare_workflows.R`: other workflows against the rhapsodist aligners.
+- UniverSC SCE barcodes lose the `-1` suffix, matching the aligners.
 
 ## v0.3.0 - 2026-06-29
 

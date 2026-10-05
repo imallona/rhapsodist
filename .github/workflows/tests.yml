@@ -101,6 +101,9 @@ jobs:
       - name: run linker tolerance R tests
         run: Rscript paper/test_compare_linker_tolerance.R
 
+      - name: run workflow comparison R tests
+        run: Rscript paper/test_compare_workflows.R
+
   integration-dry-run:
     runs-on: ubuntu-latest
     defaults:

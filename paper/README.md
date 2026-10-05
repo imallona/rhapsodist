@@ -84,6 +84,17 @@ Rscript paper/compare_linker_tolerance.R \
     --out_prefix output/sendoel2024/paper/sample_16_wta_p60/linker_tolerance
 ```
 
+## Workflow comparison
+
+`compare_workflows.R` compares UniverSC, zUMIs and OpenPipelines with the rhapsodist aligners on one sample. Per workflow and aligner it writes cells, cells shared by barcode, Spearman and scaled MARD of the pseudobulk, and the time and memory of the workflow's benchmark file. A workflow without an SCE is listed as failed.
+
+```bash
+Rscript paper/compare_workflows.R \
+    --working_dir output/sendoel2024 --sample sample_16_wta_p60 --bead_version v1 \
+    --aligners starsolo,kallisto,alevin,sbg --workflows universc,zumis,openpipelines \
+    --out_prefix output/sendoel2024/paper/sample_16_wta_p60/workflow_comparison
+```
+
 ## UniverSC
 
 UniverSC rewrites the Cell Ranger whitelist inside its image, so `universc/run_universc.sh` runs it from a writable copy:
