@@ -1,0 +1,51 @@
+## moro_mallona2025 with cb_umi_max_errors: 2, for the linker tolerance comparison.
+## Reads come from the run of configs/moro_mallona2025_config.yaml, which goes first.
+## The BD pipeline is left out: it does not use this setting.
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+alevin_sketch: true
+
+## cb/umi linker trim tolerance (cutadapt -e); default 0
+cb_umi_max_errors: 2
+
+## keep 10% of paired reads before trimming; same seed for R1/R2
+downsample: 10
+
+working_dir: output/moro_mallona2025_linker2
+
+## Gencode GRCh38 v46 human reference
+reference_dir: data/reference/GRCh38_v46
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/GRCh38.p14.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.transcripts.fa.gz"
+
+## cDNA read length is 71; sjdbOverhang = readLength - 1
+sjdbOverhang: 70
+
+skip_sampletags: true
+
+## Use case selects the biology panels and the paper figure filename.
+## hela: no marker celltype, swap in an ARI heatmap and a cell-cycle UMAP.
+## Writes <wd>/paper/<sample>/fig2_hela.pdf.
+use_case: hela
+run_biology_report: true
+
+aligner: ['starsolo', 'kallisto', 'alevin']
+has_sbg: false
+
+samples:
+  - name: hela_unmod
+    uses:
+      cb_umi_fq: output/moro_mallona2025/data/fastq/sra/hela_unmod/hela_unmod_R1.fastq.gz
+      cdna_fq: output/moro_mallona2025/data/fastq/sra/hela_unmod/hela_unmod_R2.fastq.gz
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: no
