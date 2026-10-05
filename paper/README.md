@@ -72,3 +72,16 @@ Rscript paper/compare_sampletag_calls.R \
     --whitelist_dir workflow/data/whitelist_384x3 \
     --out_prefix output/gse282765/paper/colon/sampletag_concordance
 ```
+
+## UniverSC
+
+UniverSC rewrites the Cell Ranger whitelist inside its image, so `universc/run_universc.sh` runs it from a writable copy:
+
+```bash
+apptainer build --sandbox universc_sandbox docker://tomkellygenetics/universc:1.2.7
+```
+
+- Config: `universc_sandbox` and `universc_technology` (`bd-rhapsody` or `bd-rhapsody-v2`).
+- Target: `<working_dir>/universc/<sample>/<sample>_universc_sce.rds`, from the downsampled reads.
+- Enhanced V2 beads: UniverSC 1.2.7 has no whitelist for the 384-sequence panel.
+- v1 beads: the conversion writes some read 1 records with sequence and quality of unequal length, and Cell Ranger fails. The script drops those pairs, counts them in `<sample>_dropped_pairs.txt` and reruns Cell Ranger.
