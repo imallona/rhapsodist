@@ -34,6 +34,9 @@
 - `paper/compare_linker_tolerance.R`: cells, UMIs and agreement per setting.
 - `soloCBmatchWLtype` config field, default `1MM_multi` as before.
 - Comparison report lists barcode correction counts per aligner.
+- `Dockerfile` and `rhapsodist.def`: image with the pinned environments.
+- `pip install` works: the build backend in `pyproject.toml` was wrong.
+- `rhapsodist --config` reaches Snakemake; it was read as `--configfile`.
 
 ## v0.3.0 - 2026-06-29
 

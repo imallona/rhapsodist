@@ -573,3 +573,19 @@ jobs:
             output/simul_kallisto/simulate/cell_barcodes.txt
             .snakemake/log/
           if-no-files-found: ignore
+
+  container-image:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build the image
+        run: docker build -t rhapsodist .
+
+      - name: dry-run the simulation in the image
+        run: |
+          docker run --rm -v "$PWD":/work rhapsodist \
+            --configfile /opt/rhapsodist/configs/sim_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
+            --cores 2 --dry-run --nolock

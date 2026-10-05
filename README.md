@@ -75,6 +75,16 @@ Run the simulation test:
 rhapsodist --configfile configs/sim_config.yaml --cores 10
 ```
 
+Or use the container image, which holds Snakemake and the pinned environments (not the BD pipeline). Run it from a directory with your config; outputs are written there:
+
+```
+docker build -t rhapsodist .
+docker run --rm -v "$PWD":/work rhapsodist --configfile /opt/rhapsodist/configs/sim_config.yaml --config "aligner=['starsolo','kallisto','alevin']" --cores 10
+
+apptainer build rhapsodist.sif rhapsodist.def
+apptainer run rhapsodist.sif --configfile /opt/rhapsodist/configs/sim_config.yaml --config "aligner=['starsolo','kallisto','alevin']" --cores 10
+```
+
 Run on real data (update the YAML first to point to your R1/R2 files or SRA accessions):
 
 ```
