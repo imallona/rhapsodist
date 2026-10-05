@@ -276,3 +276,62 @@ rule zumis_sce:
         op.join(WD, "logs", "zumis_sce_{sample}.log")
     shell:
         "Rscript {input.script} {input.counts} {wildcards.sample} {output} &> {log}"
+
+
+## OpenPipelines bd_rhapsody component on the reads of the sbg aligner, with
+## its reference archive (openpipelines_reference) and bead version
+## (openpipelines_bead_version: Enh for v1 and enhanced beads, EnhV2 with
+## openpipelines_whitelist_dir). Needs nextflow and apptainer. Not part of
+## rule all.
+rule openpipelines:
+    input:
+        r1 = op.join(WD, "sbg", "{sample}", "fastq", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "sbg", "{sample}", "fastq", "{sample}_R2.fastq.gz"),
+        reference = config.get("openpipelines_reference",
+                               op.join(WD, "sbg_reference", "rhapsody_reference.tar.gz")),
+        run = op.join(PAPER_DIR, "openpipelines", "run_openpipelines.sh"),
+    output:
+        matrix = op.join(WD, "openpipelines", "{sample}", "work", "MEX", "matrix.mtx.gz"),
+    params:
+        workdir = op.join(WD, "openpipelines", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "openpipelines_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "openpipelines_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.workdir} {wildcards.sample} {input.r1} {input.r2} \
+            {input.reference} {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule openpipelines_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        matrix = op.join(WD, "openpipelines", "{sample}", "work", "MEX", "matrix.mtx.gz"),
+        script = op.join(PAPER_DIR, "..", "workflow", "src", "generate_sce_sbg.R"),
+        index2barcode = op.join(PAPER_DIR, "..", "workflow", "src", "index2barcode.R"),
+    output:
+        op.join(WD, "openpipelines", "{sample}", "{sample}_openpipelines_sce.rds")
+    params:
+        mex_dir = op.join(WD, "openpipelines", "{sample}", "work", "MEX"),
+        bead_version = config.get("openpipelines_bead_version", "Enh"),
+        whitelist_dir = config.get("openpipelines_whitelist_dir", ""),
+        features_map = op.join(WD, "starsolo", "{sample}", "Solo.out", "Gene", "filtered",
+                               "features.tsv"),
+    log:
+        op.join(WD, "logs", "openpipelines_sce_{sample}.log")
+    shell:
+        """
+        R -q --no-save --no-restore --slave -f {input.script} --args \
+            --sample {wildcards.sample} --mex_dir {params.mex_dir} --output_fn {output} \
+            --bead_version {params.bead_version} \
+            --index2barcode_script {input.index2barcode} --cell_filtering native \
+            $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
+            $([ -f "{params.features_map}" ] && echo "--features_map {params.features_map}") \
+            &> {log}
+        """
