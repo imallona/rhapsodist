@@ -39,6 +39,7 @@ script_dir = tryCatch({
     if (length(f) == 0) getwd() else dirname(normalizePath(f))
 }, error = function(e) getwd())
 source(file.path(script_dir, "export_helpers.R"))
+source(file.path(script_dir, "detection_recall.R"))
 source(file.path(script_dir, "..", "workflow", "src", "agreement_metrics.R"))
 
 parse_args = function() {
@@ -219,16 +220,42 @@ run_simulation = function(opt) {
     pb_list = lapply(sces, function(sce) rowSums(counts(sce)))
 
     truth_pb = NULL
+    truth_mat = NULL
     if (dir.exists(truth_mex)) {
         mat_fn = list.files(truth_mex, pattern = "matrix\\.mtx(\\.gz)?$", full.names = TRUE)[1]
         feat_fn = list.files(truth_mex, pattern = "features\\.tsv(\\.gz)?$", full.names = TRUE)[1]
+        bc_fn = list.files(truth_mex, pattern = "barcodes\\.tsv(\\.gz)?$", full.names = TRUE)[1]
         if (!is.na(mat_fn) && !is.na(feat_fn)) {
             m = readMM(mat_fn)
             feat = read.table(feat_fn, sep = "\t", stringsAsFactors = FALSE)
             rownames(m) = feat$V1
             truth_pb = rowSums(m)
             pb_list$truth = truth_pb
+            if (!is.na(bc_fn)) {
+                colnames(m) = readLines(bc_fn)
+                truth_mat = m
+            }
         }
+    }
+
+    ## Detected fraction of gene-by-cell entries per true count.
+    if (!is.null(truth_mat)) {
+        detection = rbindlist(lapply(names(sces), function(pipe) {
+            cbind(pipeline = pipe,
+                  detection_by_true_count(truth_mat, counts(sces[[pipe]])))
+        }))
+        pp_save_csv(detection, pdir, "sim_detection_by_true_count")
+        p_detection = ggplot(detection[n_entries > 0],
+                             aes(true_count, detected_fraction,
+                                 colour = pipeline, group = pipeline)) +
+            geom_line() +
+            geom_point() +
+            scale_y_continuous(limits = c(0, 1)) +
+            theme_bw() +
+            labs(x = "true count per gene and cell", y = "fraction detected",
+                 colour = "pipeline")
+        pp_save_pdf(p_detection, pdir, "sim_detection_by_true_count",
+                    width = 5, height = 3)
     }
 
     shared = Reduce(intersect, lapply(pb_list, names))

@@ -28,6 +28,8 @@
 - `paper/universc/`: UniverSC run and conversion for the workflow comparison.
 - `paper/zumis/`: zUMIs run and conversion for the workflow comparison.
 - `paper/openpipelines/`: OpenPipelines run for the workflow comparison.
+- `configs/sim_sparse_config.yaml`: simulation with zero counts.
+- Simulation figure tables add the detected fraction per true count.
 
 ## v0.3.0 - 2026-06-29
 
