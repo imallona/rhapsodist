@@ -211,6 +211,7 @@ jobs:
           snakemake \
             --snakefile workflow/Snakefile \
             --configfile configs/sim_sparse_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
             --dry-run \
             --nolock \
             --cores 2
