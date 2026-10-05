@@ -2155,12 +2155,14 @@ rule render_benchmarks_report:
         op.join(workflow.basedir, 'envs', 'r_bioc.yaml')
     input:
         run_info = op.join(config['working_dir'], 'run_info.tsv'),
-        ## depend on descriptive reports so all benchmark files have been written
+        ## depend on every other report so all benchmark files have been written
         descriptive = expand(
             op.join(config['working_dir'], '{aligner}', '{sample}', 'descriptive_report.html'),
             aligner = get_aligners(),
             sample  = get_sample_names()
         ),
+        other_reports = (_sampletag_reports + _comparison_reports + _biology_reports
+                         + _linker_qc_reports),
         sbg_sce = _sbg_sce_targets,
         doc = op.join(workflow.basedir, 'src', 'reports', '03_benchmarks.Rmd'),
         stages = [op.join(workflow.basedir, 'src', 'benchmark_stages.R'),
