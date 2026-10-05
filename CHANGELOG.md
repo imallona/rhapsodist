@@ -32,6 +32,8 @@
 - Simulation figure tables add the detected fraction per true count.
 - Configs for the epidermis and HeLa data at `cb_umi_max_errors` 1 and 2.
 - `paper/compare_linker_tolerance.R`: cells, UMIs and agreement per setting.
+- `soloCBmatchWLtype` config field, default `1MM_multi` as before.
+- Comparison report lists barcode correction counts per aligner.
 
 ## v0.3.0 - 2026-06-29
 

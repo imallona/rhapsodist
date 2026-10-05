@@ -16,6 +16,7 @@ params:
   barcodes_file:    ""
   n_umis_per_cell:  0
   true_mex_dir:     ""
+  barcode_correction: ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -142,6 +143,16 @@ ggplot(gt_long, aes(x = method, y = count, fill = type)) +
 bc_lists <- lapply(sces, colnames)
 upset(fromList(bc_lists), order.by = "freq", text.scale = 1.4,
       point.size = 3, line.size = 0.8, mb.ratio = c(0.6, 0.4))
+```
+
+## Cell barcode correction
+
+Matches of cell barcodes against the whitelist, as each aligner reports them. The units differ between aligners, and an empty cell is a count the aligner does not report.
+
+```{r barcode_correction}
+if (nzchar(params$barcode_correction) && file.exists(params$barcode_correction)) {
+    knitr::kable(fread(params$barcode_correction), format.args = list(big.mark = ","))
+}
 ```
 
 ## Deviation from simulated truth

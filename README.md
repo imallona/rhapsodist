@@ -188,6 +188,7 @@ Any combination of starsolo, kallisto, alevin, sbg. When sbg is included, set `s
 - `starsolo` aligns to the genome and counts reads that map to one gene (`soloMultiMappers: Unique`). It also writes a BAM file and provides the sample tag counts.
 - `kallisto` and `alevin` pseudoalign to the transcriptome and take less time than `starsolo`. `alevin` needs the least memory; `bustools correct` reserves about 20 GB whatever the input size.
 - `alevin` spreads multi-mapping reads over genes unless `alevin_sketch: true`, which makes its counts comparable to `starsolo`.
+- Cell barcodes are corrected against the observed whitelist by each tool: `starsolo` as set by `soloCBmatchWLtype` (default `1MM_multi`, one mismatch), `kallisto` by `bustools correct`, `alevin` by `alevin-fry generate-permit-list --valid-bc` when `alevin_sketch: true`. The comparison report lists the exact, corrected and unmatched counts each tool reports.
 - `sbg` is the BD pipeline. It parses the barcodes itself and tolerates mismatches in them, so it reports more cells and UMIs than the other three at `cb_umi_max_errors: 0`. It takes the longest and needs singularity or apptainer. Use it to match counts from BD's own software.
 
 Counts from `starsolo`, `kallisto` and `alevin` correlate closely with each other. Listing two or more aligners adds the comparison report for your own data.
@@ -197,6 +198,7 @@ Counts from `starsolo`, `kallisto` and `alevin` correlate closely with each othe
 ```yaml
 soloCellFilter: "EmptyDrops_CR"
 soloMultiMappers: "Unique"
+soloCBmatchWLtype: "1MM_multi"
 extraStarSoloArgs: ""
 ```
 
