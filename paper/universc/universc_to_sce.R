@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 ## Writes the filtered UniverSC (Cell Ranger) matrix as an HDF5-backed
 ## SingleCellExperiment, laid out like the rhapsodist aligner outputs: rownames
-## are gene IDs, rowData$name the gene symbol. Barcodes stay in Cell Ranger's
-## converted form.
+## are gene IDs, rowData$name the gene symbol, colnames the 27 nt barcodes
+## without Cell Ranger's "-1" suffix.
 ##
 ## Rscript paper/universc/universc_to_sce.R OUTS_DIR SAMPLE OUTPUT_RDS
 
@@ -25,6 +25,7 @@ rowData(sce) <- S4Vectors::DataFrame(name = rowData(sce)$Symbol,
                                      type = rowData(sce)$Type,
                                      row.names = rownames(sce))
 colData(sce) <- NULL
+colnames(sce) <- sub("-1$", "", colnames(sce))
 mainExpName(sce) <- sample
 
 dir.create(dirname(output_rds), recursive = TRUE, showWarnings = FALSE)
