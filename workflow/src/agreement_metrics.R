@@ -17,6 +17,13 @@ scaled_mard <- function(x, y) {
 
 spearman <- function(x, y) cor(x, y, method = "spearman")
 
+## Spearman and scaled MARD of two named pseudobulk vectors on the genes both hold.
+pseudobulk_agreement <- function(reference, other) {
+    genes <- intersect(names(reference), names(other))
+    data.frame(spearman = spearman(reference[genes], other[genes]),
+               scaled_mard = scaled_mard(reference[genes], other[genes]))
+}
+
 ## Square matrix of stat(mat[, a], mat[, b]) for every pair of columns.
 pairwise_matrix <- function(mat, stat) {
     cols <- colnames(mat)

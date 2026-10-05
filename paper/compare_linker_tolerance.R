@@ -21,13 +21,6 @@ run_summary <- function(counts) {
     data.table(n_cells = ncol(counts), median_umis = median(Matrix::colSums(counts)))
 }
 
-## Agreement of two named pseudobulk vectors on the genes both hold.
-pseudobulk_agreement <- function(reference, other) {
-    genes <- intersect(names(reference), names(other))
-    data.table(spearman = spearman(reference[genes], other[genes]),
-               scaled_mard = scaled_mard(reference[genes], other[genes]))
-}
-
 read_counts <- function(working_dir, aligner, sample) {
     path <- file.path(working_dir, aligner, sample, sprintf("%s_%s_sce.rds", sample, aligner))
     SingleCellExperiment::counts(readRDS(path))
