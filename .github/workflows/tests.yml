@@ -237,6 +237,17 @@ jobs:
             done
           done
 
+      # reads the stand-in fastqs of the step above
+      - name: dry-run downsampled epidermis config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sendoel2024_downsampled_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
       # public data config: separate tag library fetched from SRA
       - name: dry-run GSE282765 config
         run: |

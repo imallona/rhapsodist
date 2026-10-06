@@ -41,6 +41,7 @@
 - `sim_separate_sampletags` without `sampletag_fa` is an error.
 - `paper/compare_workflows.R`: other workflows against the rhapsodist aligners.
 - UniverSC SCE barcodes lose the `-1` suffix, matching the aligners.
+- Config for the epidermis sample at 10% of the reads.
 
 ## v0.3.0 - 2026-06-29
 

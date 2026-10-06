@@ -1,0 +1,40 @@
+## sendoel2024 at 10% of the reads, for the comparison with other workflows.
+## Reads come from the run of configs/sendoel2024_config.yaml, which goes first.
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+alevin_sketch: true
+
+## keep 10% of paired reads before trimming; same seed for R1/R2
+downsample: 10
+
+working_dir: output/sendoel2024_downsampled
+
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
+
+## 62 nt cDNA reads
+sjdbOverhang: 61
+
+skip_sampletags: true
+
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+has_sbg: true
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+
+samples:
+  - name: sample_16_wta_p60
+    uses:
+      cb_umi_fq: output/sendoel2024/data/fastq/sra/sample_16_wta_p60/sample_16_wta_p60_R1.fastq.gz
+      cdna_fq: output/sendoel2024/data/fastq/sra/sample_16_wta_p60/sample_16_wta_p60_R2.fastq.gz
+      allowedlist: 96
+      diversity_insets: no
