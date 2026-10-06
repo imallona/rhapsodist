@@ -112,6 +112,7 @@ The repository includes several config files under `configs/`:
 - `sim_sparse_config.yaml`: the same with `sim_min_count: 0` and fewer UMIs per cell, so the true matrix has zeros.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
 - `sendoel2024_linker{1,2}_config.yaml`, `moro_mallona2025_linker{1,2}_config.yaml`: the two datasets at `cb_umi_max_errors` 1 and 2, without the BD pipeline. They read the fastqs fetched by the base config, which runs first.
+- `sendoel2024_downsampled_config.yaml`: the epidermis sample at 10% of the reads, with the four aligners. It reads the fastqs fetched by the base config.
 - `gse282765_config.yaml`: mouse colon CD45+ cells on enhanced beads with two sample tags, sequenced as a separate library (GEO GSE282765). Fetches both libraries from SRA.
 - `gse301173_config.yaml`: mouse neutrophils from bone marrow, blood and lung with eleven sample tags in a separate library (GEO GSE301173). Runs the biology report with `use_case: trajectory`.
 
@@ -439,6 +440,28 @@ sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
 sbg requires `singularity` or `apptainer` on `PATH` (not installable via conda). The workflow refuses to start otherwise.
 
 The CWL run is one Snakemake rule. Its steps are timed from the cwltool log and written to `benchmarks/sbg_cwl_steps_{sample}.tsv` (step, start, end, seconds, status).
+
+## Slurm
+
+`slurm/` has one job script per run. A job runs Snakemake on the cores of its own allocation, so the benchmark files of a run come from one node. The run scripts request 10 cores on one CPU model; set `--constraint` to a model of your cluster.
+
+```
+cp slurm/site.env.example slurm/site.env   # site paths; ignored by git
+mkdir -p slurm/logs
+sbatch slurm/00_probe.sh
+```
+
+Order:
+
+1. `00_probe.sh`: environment, internet access, apptainer.
+2. `01_environments.sh`: conda environments and the BD image.
+3. `02_simulations.sh`, `03_hela.sh`, `04_epidermis.sh`: 10 cores each, in any order.
+4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
+5. `08_figures.sh`, then `09_archive.sh`.
+
+Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
+
+`07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. `output` can be a symlink to scratch storage; `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
 
 ## Contributors
 
