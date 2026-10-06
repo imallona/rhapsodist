@@ -441,6 +441,26 @@ sbg requires `singularity` or `apptainer` on `PATH` (not installable via conda).
 
 The CWL run is one Snakemake rule. Its steps are timed from the cwltool log and written to `benchmarks/sbg_cwl_steps_{sample}.tsv` (step, start, end, seconds, status).
 
+## Slurm
+
+`slurm/` has one job script per run. A job runs Snakemake on the cores of its own allocation, so the benchmark files of a run come from one node. The run scripts request 10 cores on one CPU model; set `--constraint` to a model of your cluster.
+
+```
+cp slurm/site.env.example slurm/site.env   # site paths; ignored by git
+mkdir -p slurm/logs
+sbatch slurm/00_probe.sh
+```
+
+Order:
+
+1. `00_probe.sh`: environment, internet access, apptainer.
+2. `01_environments.sh`: conda environments and the BD image.
+3. `02_simulations.sh`, `03_hela.sh`, `04_epidermis.sh`: 10 cores each, in any order.
+4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
+5. `08_figures.sh`, then `09_archive.sh`.
+
+`07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. `output` can be a symlink to scratch storage; `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
+
 ## Contributors
 
 - Izaskun Mallona
