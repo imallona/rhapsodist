@@ -3,7 +3,7 @@
 #SBATCH --job-name=rhapsodist-sim
 #SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=10
-#SBATCH --mem-per-cpu=2000
+#SBATCH --mem-per-cpu=4000
 #SBATCH --tmp=20000
 #SBATCH --constraint=EPYC_7763
 #SBATCH --output=slurm/logs/%x-%j.out
