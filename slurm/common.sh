@@ -17,6 +17,9 @@ if ! command -v snakemake > /dev/null && [ -n "${CONDA_INIT:-}" ]; then
     conda activate "$CONDA_ENV"
 fi
 
+## curl reads slurm/.curlrc, which sets retries for the downloads.
+export CURL_HOME="$PWD/slurm"
+
 CORES="${SLURM_CPUS_PER_TASK:-10}"
 
 conda_prefix_flag=()
