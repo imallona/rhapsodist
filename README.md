@@ -459,6 +459,8 @@ Order:
 4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
 5. `08_figures.sh`, then `09_archive.sh`.
 
+Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
+
 `07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. `output` can be a symlink to scratch storage; `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
 
 ## Contributors
