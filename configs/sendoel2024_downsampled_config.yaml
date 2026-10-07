@@ -38,3 +38,6 @@ samples:
       cdna_fq: output/sendoel2024/data/fastq/sra/sample_16_wta_p60/sample_16_wta_p60_R2.fastq.gz
       allowedlist: 96
       diversity_insets: no
+
+## Tools run by paper/Snakefile on the downsampled reads, for the paper comparison.
+other_workflows: [universc, zumis, openpipelines]

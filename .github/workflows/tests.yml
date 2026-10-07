@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
 
       - name: install test dependencies
-        run: pip install pytest pytest-cov
+        run: pip install pytest pytest-cov pyyaml
 
       - name: run unit tests with coverage
         run: pytest
@@ -118,11 +118,14 @@ jobs:
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: snakemake
-          create-args: python=3.12 snakemake
+          create-args: python=3.12 snakemake pytest pyyaml
           condarc: |
             channels:
               - conda-forge
               - bioconda
+
+      - name: dry-run the paper Snakefile for the figure job configs
+        run: pytest -o addopts="" -p no:cacheprovider tests/test_paper_dry_run.py
 
       - name: dry-run simulation workflow
         run: |
