@@ -55,7 +55,7 @@ parse_args = function() {
     p$add_argument("--markers_file", default = "")
     p$add_argument("--bench_prefix", default = "fig_sim")
     p$add_argument("--use_case",
-                   choices = c("sendoel", "hela"),
+                   choices = c("sendoel", "hela", "trajectory"),
                    default = "sendoel")
     p$parse_args()
 }
@@ -567,9 +567,10 @@ run_biology = function(opt) {
     aligners = intersect(canonical_pipeline_order, aligners)
     pdir = setup_paper_dir(wd, samp)
     use_case = if (is.null(opt$use_case)) "sendoel" else opt$use_case
-    stopifnot(use_case %in% c("sendoel", "hela"))
+    stopifnot(use_case %in% c("sendoel", "hela", "trajectory"))
     is_hela = identical(use_case, "hela")
-    fig_stem = switch(use_case, hela = "fig2_hela", sendoel = "fig3_sendoel")
+    fig_stem = switch(use_case, hela = "fig2_hela", sendoel = "fig3_sendoel",
+                      trajectory = "fig5_trajectory")
 
     biords = function(tag) file.path(wd, paste0(samp, "_biology_", tag, ".rds"))
 

@@ -457,7 +457,7 @@ Order:
 2. `01_environments.sh`: conda environments and the BD image.
 3. `02_simulations.sh`, `03_hela.sh`, `04_epidermis.sh`: 10 cores each, in any order.
 4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
-5. `08_figures.sh`, then `09_archive.sh`.
+5. `08_figures.sh`: figure tables of every run, with the linker tolerance, other workflow and sample tag comparisons. Then `09_archive.sh`.
 
 Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
 

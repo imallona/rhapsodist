@@ -67,3 +67,8 @@ samples:
 #     diversity_insets: no
 #     guide_gsm: "GSM7500355"
 #     guide_wta: "WTA18"
+
+## Runs of the same sample at other cb_umi_max_errors, for the paper comparison.
+linker_tolerance_runs:
+  1: output/sendoel2024_linker1
+  2: output/sendoel2024_linker2

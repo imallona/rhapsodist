@@ -40,3 +40,9 @@ samples:
       sampletags:
         3: PHIL
         4: WT
+
+## Per-tag expression files of the BD pipeline deposited with the series, for
+## the paper comparison of sample tag calls.
+deposited_sampletag_files:
+  mouse_sampletag_3: https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM8696nnn/GSM8696920/suppl/GSM8696920_Colon_healthy_Mm_PHIL_ST03_Expression_Data.st.txt.gz
+  mouse_sampletag_4: https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM8696nnn/GSM8696920/suppl/GSM8696920_Colon_healthy_Mm_WT_ST04_Expression_Data.st.txt.gz

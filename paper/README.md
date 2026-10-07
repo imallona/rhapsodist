@@ -4,7 +4,7 @@ Manuscript-only scaffolding. Reads RDS outputs produced by the main rhapsodist p
 
 ## Layout
 
-- `Snakefile`: optional, three rules (`simulations_figure`, `sendoel_figure`, `benchmarks_figure`).
+- `Snakefile`: the figure rules (`simulations_figure`, `experimental_figure`, `linker_qc_figure`, `benchmarks_figure`), the comparison rules (`compare_linker_tolerance`, `compare_workflows`, `compare_sampletag_calls`, each on when the config sets `linker_tolerance_runs`, `other_workflows` or `deposited_sampletag_files`), and the other workflow rules.
 - `assemble_paper_figures.R`: the single script that does the work.
 - `export_helpers.R`: small helpers for CSV and PDF writing, bootstrap confidence intervals, and ggrastr-based rasterisation.
 - `env.yaml`: conda environment used by the Snakemake rules. Lighter than `workflow/envs/r_bioc.yaml` and does not need to track it.
