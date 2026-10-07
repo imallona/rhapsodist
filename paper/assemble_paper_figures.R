@@ -1404,11 +1404,10 @@ run_biology = function(opt) {
     if (exists("bc_lists", inherits = FALSE)) {
         ## Smaller internal render dims → UpSetR text uses a larger fraction
         ## of the canvas, so fonts look bigger after patchwork scales the
-        ## raster up to fill the grid cell. Title names the sample so
-        ## the reader sees at a glance whether this is fig 2 (HeLa) or
-        ## fig 3 (mouse skin).
-        upset_title = if (is_hela) "Cell-barcode overlap (HeLa)"
-                      else         "Cell-barcode overlap (mouse skin)"
+        ## raster up to fill the grid cell. The title names the dataset.
+        dataset_label = switch(use_case, hela = "HeLa", sendoel = "mouse skin",
+                               trajectory = opt$sample)
+        upset_title = sprintf("Cell-barcode overlap (%s)", dataset_label)
         panels2$A = upset_panel(bc_lists, width_in = 5, height_in = 3.5,
                                 title = upset_title)
     }

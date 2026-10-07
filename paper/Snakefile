@@ -44,6 +44,7 @@ LINKER_RUNS = config.get("linker_tolerance_runs", {}) or {}
 OTHER_WORKFLOWS = config.get("other_workflows", []) or []
 DEPOSITED_SAMPLETAGS = config.get("deposited_sampletag_files", {}) or {}
 COMPARED_ALIGNERS = [a for a in ALIGNERS if a != "sbg"]
+ALIGNERS_RUN = ALIGNERS + (["sbg"] if HAS_SBG and "sbg" not in ALIGNERS else [])
 SAMPLE_USES = {s["name"]: s.get("uses", {}) for s in config.get("samples", [])}
 
 
@@ -264,7 +265,7 @@ rule compare_workflows:
     conda:
         ENV
     input:
-        sces = [sce_path(WD, a, "{sample}") for a in ALIGNERS],
+        sces = [sce_path(WD, a, "{sample}") for a in ALIGNERS_RUN],
         script = op.join(PAPER_DIR, "compare_workflows.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
@@ -272,7 +273,7 @@ rule compare_workflows:
         op.join(WD, "paper", "{sample}", "workflow_comparison_cells.pdf"),
         op.join(WD, "paper", "{sample}", "workflow_comparison_agreement.pdf"),
     params:
-        aligners = aligners_arg,
+        aligners = ",".join(ALIGNERS_RUN),
         workflows = ",".join(OTHER_WORKFLOWS),
         bead_version = lambda wildcards: bead_version(wildcards.sample),
         out_prefix = op.join(WD, "paper", "{sample}", "workflow_comparison"),
@@ -296,7 +297,7 @@ rule fetch_deposited_sampletags:
     log:
         op.join(WD, "logs", "fetch_deposited_{tag}.log")
     shell:
-        "curl -L -sS -o {output} {params.url} 2> {log}"
+        "mkdir -p $(dirname {output}) && curl -fL -sS -o {output} {params.url} 2> {log}"
 
 
 rule compare_sampletag_calls:
