@@ -26,6 +26,8 @@ process.resourceLimits = [cpus: $cores, memory: ${mem_gb}.GB]
 singularity.cacheDir = "${NXF_SINGULARITY_CACHEDIR:-$workdir/images}"
 CONFIG
 
+## The v4.2.0 config uses variables the strict parser of Nextflow 26 rejects.
+export NXF_SYNTAX_PARSER=v1
 nextflow run openpipelines-bio/openpipeline -r v4.2.0 \
     -main-script target/nextflow/mapping/bd_rhapsody/main.nf \
     -profile singularity -c limits.config -work-dir "$workdir/nextflow_work" -resume \
