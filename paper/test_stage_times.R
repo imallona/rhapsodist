@@ -24,6 +24,7 @@ write_benchmark(bench, "star_s1", 600)
 write_benchmark(bench, "s1_bustools_count", 120)
 write_benchmark(bench, "sbg_cwl_s1", 1000)
 write_benchmark(bench, "download_genome", 500)
+write_benchmark(bench, "benchmarks_report", 900)
 writeLines(c("step\tstart\tend\tseconds\tstatus",
              "QualCLAlign_RNA\ta\tb\t700\tsuccess",
              "Metrics\ta\tb\tNA\tfailed"),
@@ -43,6 +44,8 @@ check("the CWL rule is split into its steps and an overhead",
       tab$seconds[tab$pipeline == "sbg" & tab$stage == "alignment and quantification"] == 700 &&
       tab$seconds[tab$pipeline == "sbg" & tab$stage == "CWL overhead"] == 300)
 check("download steps are left out", !"download" %in% as.character(tab$stage))
+check("the benchmarks report's own timing is left out",
+      !"reporting" %in% as.character(tab$stage))
 check("an aligner with only shared steps has only those stages",
       identical(as.character(tab$stage[tab$pipeline == "alevin"]), "preprocessing"))
 check("minutes derive from seconds", all(abs(tab$minutes * 60 - tab$seconds) < 1e-9))

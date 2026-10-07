@@ -12,6 +12,8 @@ STAGE_DATA_DIR <- file.path(stage_times_dir, "..", "workflow", "data")
 ## Seconds of each benchmark file in bench_dir, by stem.
 benchmark_seconds <- function(bench_dir) {
     files <- list.files(bench_dir, pattern = "\\.txt$", full.names = TRUE)
+    ## the benchmarks report times itself after rendering; an earlier render is left out
+    files <- files[basename(files) != "benchmarks_report.txt"]
     seconds <- vapply(files, function(fn) {
         bm <- tryCatch(read.delim(fn, nrows = 1), error = function(e) NULL)
         if (is.null(bm) || !"s" %in% names(bm)) NA_real_ else as.numeric(bm$s[1])
