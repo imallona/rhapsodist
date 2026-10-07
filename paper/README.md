@@ -59,6 +59,7 @@ The script reads only files the main pipeline writes:
 - Simulation truth at `<wd>/simulate/cell_barcodes.txt` and `<wd>/simulate/true_mex/` (matrix market format)
 - Biology derived objects at `<wd>/<sample>_biology_*.rds` including `qc`, `cb_umi`, `clusters`, `pseudobulk_mard`, and per-pipeline Seurat caches `<sample>_biology_<aligner>_seurat.rds`
 - Benchmark files under `<wd>/benchmarks/*.txt`
+- The machine record at `<wd>/run_info.tsv`; the `benchmarks` kind copies it to `paper/run_info.csv` and writes `bench_stage.csv` from `workflow/data/benchmark_stages.tsv`
 
 ## Sample tag concordance
 
