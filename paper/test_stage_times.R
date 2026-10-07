@@ -49,6 +49,15 @@ check("minutes derive from seconds", all(abs(tab$minutes * 60 - tab$seconds) < 1
 check("aligners are ordered as given",
       identical(levels(tab$pipeline), aligners))
 
+empty <- file.path(run, "empty_benchmarks")
+dir.create(empty)
+writeLines("step\tstart\tend\tseconds\tstatus", file.path(empty, "sbg_cwl_steps_s2.tsv"))
+write_benchmark(empty, "sbg_cwl_s2", 50)
+check("a header-only CWL step file gives no steps", is.null(cwl_step_seconds(empty)))
+only_rule <- stage_time_table(empty, "sbg")
+check("the CWL rule time is kept when no step was timed",
+      only_rule$seconds[only_rule$stage == "alignment and quantification"] == 50)
+
 check("missing run info is NULL", is.null(read_run_info(run)))
 writeLines(c("key\tvalue", "cpu_model\tAMD EPYC 7763", "n_cpus\t128"),
            file.path(run, "run_info.tsv"))

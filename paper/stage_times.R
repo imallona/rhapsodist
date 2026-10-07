@@ -27,10 +27,11 @@ cwl_step_seconds <- function(bench_dir) {
     rows <- do.call(rbind, lapply(files, function(fn) {
         steps <- read.delim(fn, stringsAsFactors = FALSE)
         steps <- steps[!is.na(steps$seconds), ]
+        if (nrow(steps) == 0) return(NULL)
         data.frame(sample = sub("^sbg_cwl_steps_(.*)\\.tsv$", "\\1", basename(fn)),
                    step = steps$step, seconds = steps$seconds, stringsAsFactors = FALSE)
     }))
-    if (nrow(rows) == 0) NULL else rows
+    if (is.null(rows) || nrow(rows) == 0) NULL else rows
 }
 
 ## One row per aligner and compared stage: seconds and minutes.
