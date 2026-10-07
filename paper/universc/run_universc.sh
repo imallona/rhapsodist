@@ -34,6 +34,8 @@ apptainer exec --writable \
     "$cores" "$mem_gb" <<'IN_CONTAINER'
 set -euo pipefail
 sample=$1; technology=$2; genome=$3; gtf=$4; cores=$5; mem_gb=$6
+## in a Slurm job UniverSC asks scontrol for its own path and then misses its whitelists
+unset SLURM_JOB_ID SLURM_JOBID
 cd /work
 
 if [ ! -f reference/reference.json ]; then
