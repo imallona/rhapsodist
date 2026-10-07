@@ -1,6 +1,6 @@
 repo_path: '.'
 
-nthreads: 20
+nthreads: 10
 max_mem_mb: 14000
 
 soloCellFilter: "EmptyDrops_CR"
