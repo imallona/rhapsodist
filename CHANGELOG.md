@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Figure tables add time per stage and aligner, and the machine record.
 - Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
 - Comparison and biology reports add Spearman rho and MARD on counts per million.
 - MARD is computed by one helper, `workflow/src/agreement_metrics.R`.

@@ -40,6 +40,7 @@ script_dir = tryCatch({
 }, error = function(e) getwd())
 source(file.path(script_dir, "export_helpers.R"))
 source(file.path(script_dir, "detection_recall.R"))
+source(file.path(script_dir, "stage_times.R"))
 source(file.path(script_dir, "..", "workflow", "src", "agreement_metrics.R"))
 
 parse_args = function() {
@@ -1657,6 +1658,21 @@ run_benchmarks = function(opt) {
         labs(x = NULL, y = "peak RSS (GB)")
     pp_save_pdf(p_t + p_m, pdir, paste0(opt$bench_prefix, "_bench_total"),
                 width = 6, height = 3.3)
+
+    by_stage = stage_time_table(bench_dir, aligners)
+    pp_save_csv(by_stage, pdir, "bench_stage")
+    p_stage = ggplot(by_stage, aes(pipeline, minutes, fill = stage)) +
+        geom_col(width = 0.7) +
+        scale_fill_brewer(palette = "Set2", name = NULL) +
+        theme_bw() +
+        theme(legend.position = "right") +
+        labs(x = NULL, y = "wall-clock time (min)")
+    pp_save_pdf(p_stage, pdir, paste0(opt$bench_prefix, "_bench_stage"),
+                width = 6, height = 3.3)
+
+    run_info = read_run_info(wd)
+    if (is.null(run_info)) run_info = data.frame(key = character(0), value = character(0))
+    pp_save_csv(run_info, pdir, "run_info")
 
     bm_steps = bm[pipeline %in% aligners]
     if (nrow(bm_steps) > 0) {

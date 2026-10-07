@@ -165,10 +165,18 @@ rule benchmarks_figure:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
+        run_info = op.join(WD, "run_info.tsv"),
     output:
         op.join(WD, "paper", "bench_full.csv"),
+        op.join(WD, "paper", "bench_stage.csv"),
+        op.join(WD, "paper", "run_info.csv"),
         op.join(WD, "paper", BENCH_PREFIX + "_bench_total.pdf"),
-        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf")
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_stage.pdf")
     params:
         wd = WD,
         aligners = aligners_arg,

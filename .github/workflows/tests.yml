@@ -104,6 +104,9 @@ jobs:
       - name: run workflow comparison R tests
         run: Rscript paper/test_compare_workflows.R
 
+      - name: run stage time R tests
+        run: Rscript paper/test_stage_times.R
+
   integration-dry-run:
     runs-on: ubuntu-latest
     defaults:
