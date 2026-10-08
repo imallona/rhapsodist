@@ -1,7 +1,9 @@
 #!/bin/bash
-## UniverSC, zUMIs and OpenPipelines on 10% of the HeLa (task 0) and
-## epidermis (task 1) reads, after 03 and 04: sbatch slurm/07_other_workflows.sh
-## A tool without support for the bead version fails; the others still run.
+## OpenPipelines on 10% of the HeLa reads (task 0), and UniverSC, zUMIs and
+## OpenPipelines on 10% of the epidermis reads (task 1), after 03 and 04:
+## sbatch slurm/07_other_workflows.sh
+## UniverSC 1.2.7 has no whitelist for the 384x3 beads of the HeLa run; the
+## comparison lists it as failed.
 #SBATCH --job-name=rhapsodist-others
 #SBATCH --array=0-1
 #SBATCH --time=72:00:00
@@ -18,9 +20,8 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     configfile=configs/moro_mallona2025_config.yaml
     working_dir=output/moro_mallona2025
     sample=hela_unmod
-    workflows=(universc openpipelines)
+    workflows=(openpipelines)
     settings=(
-        universc_technology=bd-rhapsody-v2
         openpipelines_bead_version=EnhV2
         openpipelines_whitelist_dir=workflow/data/whitelist_384x3
     )
