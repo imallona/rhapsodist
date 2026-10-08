@@ -24,6 +24,7 @@ cd "$workdir"
 cat > limits.config <<CONFIG
 process.resourceLimits = [cpus: $cores, memory: ${mem_gb}.GB]
 singularity.cacheDir = "${NXF_SINGULARITY_CACHEDIR:-$workdir/images}"
+singularity.runOptions = "-B ${TMPDIR:-/tmp}"
 CONFIG
 
 ## The v4.2.0 config uses variables the strict parser of Nextflow 26 rejects.

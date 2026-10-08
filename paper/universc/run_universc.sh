@@ -24,18 +24,21 @@ if [ ! -d "$sandbox/universc" ]; then
     exit 1
 fi
 
-mkdir -p "$workdir/${sample}_fastq" "$sandbox/work" "$sandbox/reads" "$sandbox/reference"
+mkdir -p "$workdir/${sample}_fastq" "$sandbox/work" "$sandbox/reads" "$sandbox/reference" "$sandbox/job_tmp"
 ln -sf "/reads/$(basename "$r1")" "$workdir/${sample}_fastq/${sample}_S1_L001_R1_001.fastq.gz"
 ln -sf "/reads/$(basename "$r2")" "$workdir/${sample}_fastq/${sample}_S1_L001_R2_001.fastq.gz"
 
 apptainer exec --writable \
     -B "$workdir:/work" -B "$(dirname "$r1"):/reads" -B "$(dirname "$genome"):/reference" \
+    -B "${TMPDIR:-/tmp}:/job_tmp" \
     "$sandbox" bash -s "$sample" "$technology" "$(basename "$genome")" "$(basename "$gtf")" \
     "$cores" "$mem_gb" <<'IN_CONTAINER'
 set -euo pipefail
 sample=$1; technology=$2; genome=$3; gtf=$4; cores=$5; mem_gb=$6
 ## in a Slurm job UniverSC asks scontrol for its own path and then misses its whitelists
 unset SLURM_JOB_ID SLURM_JOBID
+## the TMPDIR of the host does not exist in the sandbox
+export TMPDIR=/job_tmp
 cd /work
 
 if [ ! -f reference/reference.json ]; then
