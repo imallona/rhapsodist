@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The paper rules read the `aligner` config key.
+- The benchmarks report waits for the tag splits and the simulation validation.
+- `validate_simulation` counts as simulation in the stage times.
 - Paper rules for the linker tolerance, other workflow and sample tag comparisons.
 - The paper figures accept `use_case: trajectory`.
 - Figure tables add time per stage and aligner, and the machine record.

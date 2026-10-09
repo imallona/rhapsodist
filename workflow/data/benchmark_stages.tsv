@@ -1,6 +1,6 @@
 pattern	aligners	stage
 simulate_data	starsolo,kallisto,alevin,sbg	simulation
-validate_simulation	starsolo,kallisto,alevin,sbg	reporting
+validate_simulation	starsolo,kallisto,alevin,sbg	simulation
 fetch_sra_{sample}	starsolo,kallisto,alevin,sbg	download
 fetch_guide_{sample}	starsolo,kallisto,alevin,sbg	download
 download_genome	starsolo,kallisto,alevin,sbg	download

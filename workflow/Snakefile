@@ -2163,6 +2163,7 @@ rule render_benchmarks_report:
         ),
         other_reports = (_sampletag_reports + _comparison_reports + _biology_reports
                          + _linker_qc_reports),
+        benchmarked_targets = _sampletag_splits + _extra_targets,
         sbg_sce = _sbg_sce_targets,
         doc = op.join(workflow.basedir, 'src', 'reports', '03_benchmarks.Rmd'),
         stages = [op.join(workflow.basedir, 'src', 'benchmark_stages.R'),

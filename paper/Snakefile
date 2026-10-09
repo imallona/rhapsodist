@@ -16,8 +16,11 @@ import os.path as op
 
 WD = config["working_dir"]
 SAMPLES = [s["name"] for s in config.get("samples", [])]
-ALIGNERS = config.get("aligners", ["starsolo", "kallisto", "alevin"])
-HAS_SBG = bool(config.get("has_sbg", False)) or "sbg" in ALIGNERS
+CONFIGURED_ALIGNERS = config.get("aligner", ["starsolo", "kallisto", "alevin"])
+if isinstance(CONFIGURED_ALIGNERS, str):
+    CONFIGURED_ALIGNERS = [CONFIGURED_ALIGNERS]
+ALIGNERS = [a for a in CONFIGURED_ALIGNERS if a != "sbg"]
+HAS_SBG = bool(config.get("has_sbg", False)) or "sbg" in CONFIGURED_ALIGNERS
 IS_SIM = bool(config.get("use_simulated", False))
 N_EXP_CELLS = int(config.get("sim_n_cells", 0))
 
@@ -43,8 +46,8 @@ HAS_BIOLOGY = bool(config.get("run_biology_report", False))
 LINKER_RUNS = config.get("linker_tolerance_runs", {}) or {}
 OTHER_WORKFLOWS = config.get("other_workflows", []) or []
 DEPOSITED_SAMPLETAGS = config.get("deposited_sampletag_files", {}) or {}
-COMPARED_ALIGNERS = [a for a in ALIGNERS if a != "sbg"]
-ALIGNERS_RUN = ALIGNERS + (["sbg"] if HAS_SBG and "sbg" not in ALIGNERS else [])
+COMPARED_ALIGNERS = ALIGNERS
+ALIGNERS_RUN = ALIGNERS + (["sbg"] if HAS_SBG else [])
 SAMPLE_USES = {s["name"]: s.get("uses", {}) for s in config.get("samples", [])}
 
 

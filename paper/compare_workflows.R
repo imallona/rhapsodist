@@ -97,7 +97,7 @@ main <- function() {
     agreement_plot <- ggplot(comparison[status == "ok"], aes(aligner, workflow, fill = spearman)) +
         geom_tile(colour = "white") +
         geom_text(aes(label = sprintf("%.3f", spearman)), size = 3) +
-        scale_fill_viridis_c(limits = c(0, 1)) +
+        scale_fill_viridis_c(limits = c(-1, 1)) +
         theme_bw() +
         labs(x = "rhapsodist aligner", y = NULL, fill = "Spearman")
     ggsave(paste0(args$out_prefix, "_agreement.pdf"), agreement_plot, width = 5, height = 2.5)

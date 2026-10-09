@@ -54,3 +54,19 @@ def test_paper_dry_run(config_path, tmp_path):
         cwd=tmp_path, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     assert re.search(r'^all\s+1$', result.stdout, re.M), result.stdout
+
+
+def test_paper_dry_run_reads_the_aligner_key(tmp_path):
+    config_path = os.path.join('configs', 'sim_config.yaml')
+    with open(os.path.join(REPO_ROOT, config_path)) as fh:
+        config = yaml.safe_load(fh)
+    sample = config['samples'][0]['name']
+    touch(tmp_path, config['working_dir'], 'kallisto', sample, f'{sample}_kallisto_sce.rds')
+    touch(tmp_path, config['working_dir'], 'run_info.tsv')
+    result = subprocess.run(
+        ['snakemake', '--snakefile', os.path.join(REPO_ROOT, 'paper', 'Snakefile'),
+         '--configfile', os.path.join(REPO_ROOT, config_path),
+         '--config', "aligner=['kallisto']", 'has_sbg=False',
+         '--dry-run', '--nolock', '--cores', '1'],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
