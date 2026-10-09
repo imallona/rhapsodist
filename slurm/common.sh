@@ -38,14 +38,17 @@ echo "host $(hostname), job ${SLURM_JOB_ID:-none}, commit $(git rev-parse --shor
 echo "cpu $(sed -n 's/^model name[^:]*: //p' /proc/cpuinfo | head -n 1), cores $CORES"
 
 ## run_workflow SNAKEFILE CONFIGFILE [snakemake arguments]
+## Prints a dry run to the job log first.
 ## Slurm sends TERM before the time limit; it is forwarded to Snakemake.
 run_workflow() {
     local snakefile=$1 configfile=$2
     shift 2
     echo "$(date -Is) $snakefile $configfile $*"
-    snakemake --snakefile "$snakefile" --configfile "$configfile" \
-        --use-conda "${conda_prefix_flag[@]}" --benchmark-extended \
-        --cores "$CORES" --rerun-incomplete "$@" &
+    local arguments=(--snakefile "$snakefile" --configfile "$configfile"
+        --use-conda "${conda_prefix_flag[@]}" --benchmark-extended
+        --cores "$CORES" --rerun-incomplete "$@")
+    snakemake "${arguments[@]}" --dry-run --quiet rules
+    snakemake "${arguments[@]}" &
     local child=$! status=0 stopping=""
     trap 'stopping=yes; kill -TERM "$child" 2> /dev/null' TERM
     wait "$child" || status=$?
