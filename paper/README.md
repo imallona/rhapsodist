@@ -91,9 +91,9 @@ Rscript paper/compare_linker_tolerance.R \
 
 ```bash
 Rscript paper/compare_workflows.R \
-    --working_dir output/sendoel2024_downsampled --sample sample_16_wta_p60 --bead_version v1 \
+    --working_dir output/sendoel2024_downsampled40 --sample sample_16_wta_p60 --bead_version v1 \
     --aligners starsolo,kallisto,alevin,sbg --workflows universc,zumis,openpipelines \
-    --out_prefix output/sendoel2024_downsampled/paper/sample_16_wta_p60/workflow_comparison
+    --out_prefix output/sendoel2024_downsampled40/paper/sample_16_wta_p60/workflow_comparison
 ```
 
 ## UniverSC

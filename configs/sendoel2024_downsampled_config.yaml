@@ -1,4 +1,5 @@
-## sendoel2024 at 10% of the reads, for the comparison with other workflows.
+## sendoel2024 at 40% of the reads, for the comparison with other workflows.
+## The BD pipeline calls no cells in this sample at 10% of the reads.
 ## Reads come from the run of configs/sendoel2024_config.yaml, which goes first.
 repo_path: '.'
 
@@ -11,10 +12,10 @@ extraStarSoloArgs: ""
 cell_filtering: "native"
 alevin_sketch: true
 
-## keep 10% of paired reads before trimming; same seed for R1/R2
-downsample: 10
+## keep 40% of paired reads before trimming; same seed for R1/R2
+downsample: 40
 
-working_dir: output/sendoel2024_downsampled
+working_dir: output/sendoel2024_downsampled40
 
 reference_dir: data/reference/GRCm39_vM36
 gtf_origin: "gencode"

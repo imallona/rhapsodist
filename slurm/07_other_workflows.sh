@@ -1,6 +1,6 @@
 #!/bin/bash
 ## OpenPipelines on 10% of the HeLa reads (task 0), and UniverSC, zUMIs and
-## OpenPipelines on 10% of the epidermis reads (task 1), after 03 and 04:
+## OpenPipelines on 40% of the epidermis reads (task 1), after 03 and 04:
 ## sbatch slurm/07_other_workflows.sh
 ## UniverSC 1.2.7 has no whitelist for the 384x3 beads of the HeLa run; the
 ## comparison lists it as failed.
@@ -27,14 +27,14 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     )
 else
     configfile=configs/sendoel2024_downsampled_config.yaml
-    working_dir=output/sendoel2024_downsampled
+    working_dir=output/sendoel2024_downsampled40
     sample=sample_16_wta_p60
     workflows=(universc zumis openpipelines)
     settings=(
         universc_technology=bd-rhapsody
         openpipelines_bead_version=Enh
     )
-    ## The four aligners on the same 10% of the reads.
+    ## The four aligners on the same 40% of the reads.
     run_workflow workflow/Snakefile "$configfile"
 fi
 
