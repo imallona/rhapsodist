@@ -58,7 +58,7 @@ main <- function() {
         data.table(deposited_tag = pair[1],
                    cb = cell_index_to_barcode(read_deposited_cells(pair[2]), whitelists))
     }))
-    calls <- classify_calls(deposited, fread(args$demux))
+    calls <- classify_calls(deposited, fread(cmd = paste("zcat", shQuote(args$demux))))
 
     counts <- calls[, .N, by = .(deposited_tag, outcome)][order(deposited_tag, -N)]
     counts[, fraction := round(N / sum(N), 4), by = deposited_tag]
