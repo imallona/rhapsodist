@@ -16,6 +16,7 @@ params:
   barcodes_file:    ""
   n_umis_per_cell:  0
   true_mex_dir:     ""
+  barcode_correction: ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -28,6 +29,8 @@ suppressPackageStartupMessages({
     library(data.table)
     library(patchwork)
 })
+
+source(file.path(dirname(knitr::current_input()), "..", "agreement_metrics.R"))
 
 wd           <- params$working_dir
 samp         <- params$sample
@@ -142,6 +145,16 @@ upset(fromList(bc_lists), order.by = "freq", text.scale = 1.4,
       point.size = 3, line.size = 0.8, mb.ratio = c(0.6, 0.4))
 ```
 
+## Cell barcode correction
+
+Matches of cell barcodes against the whitelist, as each aligner reports them. The units differ between aligners, and an empty cell is a count the aligner does not report.
+
+```{r barcode_correction}
+if (nzchar(params$barcode_correction) && file.exists(params$barcode_correction)) {
+    knitr::kable(fread(params$barcode_correction), format.args = list(big.mark = ","))
+}
+```
+
 ## Deviation from simulated truth
 
 ```{r truth-load, eval=nchar(true_mex_dir) > 0}
@@ -159,10 +172,12 @@ colnames(truth_counts) <- truth_barcodes
 truth_pb <- rowSums(truth_counts)
 ```
 
+Pairwise agreement between the pseudobulk of each method and the simulated
+truth. MARD = mean(|x - y| / ((x + y) / 2)) over genes with a count in either
+vector. Scaled MARD is the same statistic on counts per million, so a difference
+in total UMI yield cancels. Spearman rho compares gene ranks.
+
 ```{r truth-heatmap, eval=nchar(true_mex_dir) > 0, fig.width=5, fig.height=4}
-## Build a pseudo-bulk matrix that includes truth as an additional column,
-## then compute pairwise mean absolute relative difference (MARD) between
-## all methods and truth.  MARD = mean(|x-y| / ((x+y)/2)).
 shared_genes <- Reduce(intersect, c(lapply(sces, rownames), list(names(truth_pb))))
 
 pb_with_truth <- do.call(cbind, c(
@@ -171,29 +186,31 @@ pb_with_truth <- do.call(cbind, c(
 ))
 colnames(pb_with_truth) <- c(names(sces), "truth")
 
-mard_mat <- outer(
-    colnames(pb_with_truth), colnames(pb_with_truth),
-    Vectorize(function(a, b) {
-        x <- pb_with_truth[, a]
-        y <- pb_with_truth[, b]
-        denom <- (x + y) / 2
-        mean(abs(x - y)[denom > 0] / denom[denom > 0], na.rm = TRUE)
-    })
-)
-dimnames(mard_mat) <- list(colnames(pb_with_truth), colnames(pb_with_truth))
+agreement_heatmap <- function(long, title, fill_label, label_format) {
+    ggplot(long, aes(pipeline1, pipeline2, fill = value)) +
+        geom_tile(colour = "white") +
+        geom_text(aes(label = sprintf(label_format, value)), size = 3.2) +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+        labs(title = title, subtitle = "Including simulated truth",
+             x = NULL, y = NULL, fill = fill_label)
+}
 
-mard_long <- as.data.frame(as.table(mard_mat))
-names(mard_long) <- c("method1", "method2", "mard")
+percent <- function(long) transform(long, value = value * 100)
+lower_is_better <- scale_fill_distiller(palette = "RdYlGn", direction = -1,
+                                        limits = c(0, NA))
 
-ggplot(mard_long, aes(method1, method2, fill = mard * 100)) +
-    geom_tile(colour = "white") +
-    geom_text(aes(label = sprintf("%.2f%%", mard * 100)), size = 3.2) +
-    scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-    labs(title = "Pairwise mean absolute relative difference",
-         subtitle = "Including simulated truth; lower is better",
-         x = NULL, y = NULL, fill = "MARD (%)")
+agreement_heatmap(percent(pairwise_long(pb_with_truth, mard)),
+                  "Pairwise MARD", "MARD (%)", "%.2f%%") +
+    lower_is_better
+
+agreement_heatmap(percent(pairwise_long(pb_with_truth, scaled_mard)),
+                  "Pairwise MARD on counts per million", "MARD (%)", "%.2f%%") +
+    lower_is_better
+
+agreement_heatmap(pairwise_long(pb_with_truth, spearman),
+                  "Pairwise Spearman rho", "rho", "%.3f") +
+    scale_fill_distiller(palette = "RdYlGn", direction = 1, limits = c(NA, 1))
 ```
 
 ```{r truth-summary, eval=nchar(true_mex_dir) > 0}

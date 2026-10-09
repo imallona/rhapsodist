@@ -1,0 +1,48 @@
+## Mouse neutrophils from bone marrow, blood and lung, enhanced beads, eleven
+## sample tags (GEO GSE301173). WTA library GSM9076693, sample tag library
+## GSM9076694, deposited separately.
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+alevin_sketch: true
+
+working_dir: output/gse301173
+
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
+
+## 75 nt cDNA reads
+sjdbOverhang: 74
+
+skip_sampletags: false
+
+## neutrophil maturation: pseudotime from the cluster with the highest Camp
+## expression (immature, bone marrow) towards mature blood and lung neutrophils
+run_biology_report: true
+use_case: trajectory
+trajectory_root_marker: Camp
+biology_markers_file: data/markers/neutrophil_markers.tsv
+
+aligner: ['starsolo', 'kallisto', 'alevin', 'sbg']
+has_sbg: true
+sbg_cwl: third_party/cwl/v2.2.1/rhapsody_pipeline_2.2.1.cwl
+
+samples:
+  - name: neutrophils
+    uses:
+      sra_run: "SRR34315237"
+      sampletag_sra_run: "SRR34315236"
+      allowedlist: 384
+      diversity_insets: yes
+      use_sampletags: yes
+      species: mouse
+      sampletags: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]

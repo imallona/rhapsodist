@@ -75,6 +75,16 @@ Run the simulation test:
 rhapsodist --configfile configs/sim_config.yaml --cores 10
 ```
 
+Or use the container image, which holds Snakemake and the pinned environments (not the BD pipeline). Run it from a directory with your config; outputs are written there:
+
+```
+docker build -t rhapsodist .
+docker run --rm -v "$PWD":/work rhapsodist --configfile /opt/rhapsodist/configs/sim_config.yaml --config "aligner=['starsolo','kallisto','alevin']" working_dir=/work/output/simul --cores 10
+
+apptainer build rhapsodist.sif rhapsodist.def
+apptainer run rhapsodist.sif --configfile /opt/rhapsodist/configs/sim_config.yaml --config "aligner=['starsolo','kallisto','alevin']" working_dir="$PWD/output/simul" --cores 10
+```
+
 Run on real data (update the YAML first to point to your R1/R2 files or SRA accessions):
 
 ```
@@ -90,7 +100,7 @@ rhapsodist --configfile configs/config.yaml --cores 10 --rerun-incomplete --nolo
 Or call snakemake directly:
 
 ```
-snakemake --use-conda --cores 10 --configfile configs/config.yaml
+snakemake --use-conda --benchmark-extended --cores 10 --configfile configs/config.yaml
 ```
 
 ## Example configs
@@ -99,12 +109,18 @@ The repository includes several config files under `configs/`:
 
 - `config.yaml`: base template with all available options and comments. Copy this as a starting point for new datasets.
 - `sim_config.yaml`: simulated BD Rhapsody data used for CI and testing.
+- `sim_sparse_config.yaml`: the same with `sim_min_count: 0` and fewer UMIs per cell, so the true matrix has zeros.
 - `sendoel2024_config.yaml`: P60 mouse epidermis from a pooled CRISPR screen (Sendoel et al. 2024, GEO GSE235325). Multiple cell types, v1 beads, mouse GRCm39 vM36. Fetches FASTQs from SRA; includes per-cell guide assignments from the authors.
+- `sendoel2024_linker{1,2}_config.yaml`, `moro_mallona2025_linker{1,2}_config.yaml`: the two datasets at `cb_umi_max_errors` 1 and 2, without the BD pipeline. They read the fastqs fetched by the base config, which runs first.
+- `sendoel2024_downsampled_config.yaml`: the epidermis sample at 40% of the reads, with the four aligners. It reads the fastqs fetched by the base config.
+- `gse282765_config.yaml`: mouse colon CD45+ cells on enhanced beads with two sample tags, sequenced as a separate library (GEO GSE282765). Fetches both libraries from SRA.
+- `gse301173_config.yaml`: mouse neutrophils from bone marrow, blood and lung with eleven sample tags in a separate library (GEO GSE301173). Runs the biology report with `use_case: trajectory`.
 
 The `sim_*` configs are small synthetic scenarios that exercise specific features in CI:
 
 - `sim_config_search.yaml`: alevin only, so sampletags are called by the alignment-free search instead of starsolo.
 - `sim_kallisto.yaml`: kallisto only, sampletags off. Isolates the kallisto mode (self-compiled kallisto, bioconda bustools); run by the manual `integration-kallisto` CI job.
+- `sim_separate_sampletags.yaml`: tag reads simulated as their own fastq pair (`sim_separate_sampletags: true`), as for a separately sequenced sample tag library.
 - `sim_search_sampletags.yaml` and `sim_starsolo_sampletags.yaml`: declare a per-sample `sampletags` set, so they test restricting the matched tags and splitting each aligner's counts into one file per tag. The first uses the mapping form (search mode); the second uses the list form across two aligners (starsolo mode).
 
 Both sampletag scenarios run end to end in the `integration-sampletags` CI job, which checks that the expected per-tag split files exist. The job is opt-in because it builds conda envs: add the `integration` label to a pull request to start it, or run it from the Actions tab once the workflow is on the default branch.
@@ -178,11 +194,22 @@ aligner: ['starsolo', 'kallisto', 'alevin']
 
 Any combination of starsolo, kallisto, alevin, sbg. When sbg is included, set `sbg_cwl` to the path of the BD Rhapsody CWL file. The cross-pipeline comparison report is only produced when two or more aligners are listed; a single-aligner run skips it.
 
+#### Aligner choice
+
+- `starsolo` aligns to the genome and counts reads that map to one gene (`soloMultiMappers: Unique`). It also writes a BAM file and provides the sample tag counts.
+- `kallisto` and `alevin` pseudoalign to the transcriptome and take less time than `starsolo`. `alevin` needs the least memory; `bustools correct` reserves about 20 GB whatever the input size.
+- `alevin` spreads multi-mapping reads over genes unless `alevin_sketch: true`, which makes its counts comparable to `starsolo`.
+- Cell barcodes are corrected against the observed whitelist by each tool: `starsolo` as set by `soloCBmatchWLtype` (default `1MM_multi`, one mismatch), `kallisto` by `bustools correct`, `alevin` by `alevin-fry generate-permit-list --valid-bc` when `alevin_sketch: true`. The comparison report lists the exact, corrected and unmatched counts each tool reports.
+- `sbg` is the BD pipeline. It parses the barcodes itself and tolerates mismatches in them, so it reports more cells and UMIs than the other three at `cb_umi_max_errors: 0`. It takes the longest and needs singularity or apptainer. Use it to match counts from BD's own software.
+
+Counts from `starsolo`, `kallisto` and `alevin` correlate closely with each other. Listing two or more aligners adds the comparison report for your own data.
+
 ### STARsolo options
 
 ```yaml
 soloCellFilter: "EmptyDrops_CR"
 soloMultiMappers: "Unique"
+soloCBmatchWLtype: "1MM_multi"
 extraStarSoloArgs: ""
 ```
 
@@ -195,6 +222,8 @@ cell_filtering: "native"
 - `native`: STARsolo uses its soloCellFilter; alevin and kallisto apply DropletUtils barcodeRanks.
 - `emptydrops`: apply DropletUtils emptyDrops across all aligners.
 - `none`: no cell filtering; every observed barcode is kept so you can filter downstream yourself. For STARsolo this overrides soloCellFilter to None; for alevin and kallisto the knee filter is skipped.
+
+`native` takes the least time and fits a run with one aligner. With `emptydrops` every aligner is filtered by the same method, so cell numbers are comparable between aligners; it tests each barcode against the ambient profile of the empty droplets, which helps on tissues where small cells have few UMIs.
 
 ### Alevin UMI counting
 
@@ -311,14 +340,31 @@ samples:
       species: human           # human or mouse; required when use_sampletags is yes
 ```
 
-Only human and mouse tag sets are bundled. A separately sequenced sample tag library is not currently supported as a distinct input.
+Only human and mouse tag sets are bundled.
+
+When the sample tags were sequenced as their own library, give its fastqs, or its SRA run, next to the WTA ones:
+
+```yaml
+samples:
+  - name: my_sample
+    uses:
+      cb_umi_fq: /path/to/wta_R1.fastq.gz
+      cdna_fq: /path/to/wta_R2.fastq.gz
+      sampletag_cb_umi_fq: /path/to/sampletag_R1.fastq.gz
+      sampletag_cdna_fq: /path/to/sampletag_R2.fastq.gz
+      # or: sampletag_sra_run: "SRR..."
+      use_sampletags: yes
+      species: mouse
+```
+
+The tag library is standardized like the WTA reads, under the name `{sample}_sampletags`, and is never downsampled. Its tags are counted by the alignment-free search, also when `starsolo` runs.
 
 Two methods produce the tag counts, chosen automatically from the aligner list:
 
 - When `starsolo` is among the aligners, sample tags are called by the starsolo mode: extract the WTA reads that STARsolo leaves unmapped (with their corrected cell barcode and UMI), align them to the tag sequences, and count. Only the 70 bp tag matches within the full-length read, so the STAR step filters on an absolute matched-base count rather than the default read-length fraction.
 - When `starsolo` is not run (for example an alevin-only or kallisto-only configuration), sample tags are called by an alignment-free search instead (`workflow/src/search_sampletags.py`). It scans the standardized reads directly for the fixed tag prefix, assigns each match to the closest tag by hamming distance, and corrects the cell barcode segments against the BD whitelists with the same one-mismatch tolerance STARsolo applies. Both methods write the same count table, so the demultiplexing and report steps are identical.
 
-The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs only when starsolo is absent. On the simulated data it assigned every cell to its true tag.
+The choice is not configurable. When starsolo is present it always provides the tag counts, so a config that reproduces the published figures cannot switch methods. The search method runs when starsolo is absent, and for a sample with a separate tag library. On the simulated data it assigned every cell to its true tag.
 
 #### Restricting tags and splitting counts per tag
 
@@ -364,9 +410,15 @@ run_biology_report: true       # generate biology report with marker expression,
 biology_markers_file: data/markers/skin_markers.tsv   # TSV with marker and cell_type columns, relative to workflow dir
 ```
 
-The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. A `skin_markers.tsv` file is included for mouse epidermis (used by Sendoel); add your own TSV for other tissues.
+The biology report compares pipelines on QC, marker expression, pseudobulk correlation, barcode overlap, per-barcode UMI concordance, and cluster agreement (adjusted Rand index). It reads a markers TSV file with two columns (marker, cell_type) to know which genes to check. `skin_markers.tsv` (mouse epidermis, used by Sendoel) and `neutrophil_markers.tsv` (mouse neutrophil maturation) are included; add your own TSV for other tissues.
+
+Set `use_case: trajectory` and `trajectory_root_marker` (a gene marking the earliest state) for a sample with a differentiation course. The report then adds a pseudotime per aligner, the graph distance from the cluster with the highest expression of that gene, and the Spearman correlation of pseudotime between aligners. `use_case: hela` replaces the marker panels by cell cycle phase.
 
 When external per-cell metadata is available (e.g. CRISPR guide assignments from a separate amplicon library), the report joins it for visualization. The pipeline itself does not process or quantify guides.
+
+### Benchmarks
+
+Each rule writes time and peak memory to `benchmarks/`. `run_info.tsv` records the CPU model, number of CPUs, memory, filesystem type of the working directory, Snakemake version and the cores given to the run. With `--benchmark-extended` (Snakemake 8.12 or later; the `rhapsodist` command passes it) the benchmark files also hold the threads of each rule. The benchmarks report prints both.
 
 ### BD Rhapsody official pipeline (optional)
 
@@ -386,6 +438,30 @@ sbg_reference_archive: /path/to/Rhapsody_reference.tar.gz
 ```
 
 sbg requires `singularity` or `apptainer` on `PATH` (not installable via conda). The workflow refuses to start otherwise.
+
+The CWL run is one Snakemake rule. Its steps are timed from the cwltool log and written to `benchmarks/sbg_cwl_steps_{sample}.tsv` (step, start, end, seconds, status).
+
+## Slurm
+
+`slurm/` has one job script per run. A job runs Snakemake on the cores of its own allocation, so the benchmark files of a run come from one node. The run scripts request 10 cores on one CPU model; set `--constraint` to a model of your cluster.
+
+```
+cp slurm/site.env.example slurm/site.env   # site paths; ignored by git
+mkdir -p slurm/logs
+sbatch slurm/00_probe.sh
+```
+
+Order:
+
+1. `00_probe.sh`: environment, internet access, apptainer.
+2. `01_environments.sh`: conda environments and the BD image.
+3. `02_simulations.sh`, `03_hela.sh`, `04_epidermis.sh`: 10 cores each, in any order.
+4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
+5. `08_figures.sh`: figure tables of every run, with the linker tolerance, other workflow and sample tag comparisons. Then `09_archive.sh`.
+
+Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
+
+`07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. Downloads with `curl` are retried, as set in `slurm/.curlrc`. `output` can be a symlink to scratch storage; `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
 
 ## Contributors
 

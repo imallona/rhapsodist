@@ -16,6 +16,7 @@ params:
   markers_file: ""
   guide_csv: ""
   use_case: "sendoel"
+  trajectory_root_marker: ""
 ---
 
 ```{r setup, message=FALSE, warning=FALSE}
@@ -45,14 +46,21 @@ suppressPackageStartupMessages({
 })
 
 source(file.path(dirname(knitr::current_input()), "..", "ggtheme.R"))
+source(file.path(dirname(knitr::current_input()), "..", "agreement_metrics.R"))
+source(file.path(dirname(knitr::current_input()), "..", "pseudotime.R"))
 
 wd = params$working_dir
 samp = params$sample
 aligners = strsplit(params$aligners, ",")[[1]]
 has_sbg = isTRUE(params$has_sbg) || identical(params$has_sbg, "true")
 use_case = if (nzchar(params$use_case)) params$use_case else "sendoel"
-stopifnot(use_case %in% c("sendoel", "hela"))
+stopifnot(use_case %in% c("sendoel", "hela", "trajectory"))
 is_hela = identical(use_case, "hela")
+is_trajectory = identical(use_case, "trajectory")
+root_marker = params$trajectory_root_marker
+if (is_trajectory && !nzchar(root_marker)) {
+    stop("use_case trajectory needs trajectory_root_marker in the config.")
+}
 
 if (!is_hela) {
     if (!nzchar(params$markers_file) || !file.exists(params$markers_file)) {
@@ -587,6 +595,45 @@ for (i in seq_len(nrow(marker_meta))) {
 }
 ```
 
+### Pseudotime
+
+For each pipeline, the root is the cell nearest the centroid of the cluster with
+the highest mean expression of the root marker. Pseudotime is the shortest-path
+distance from the root over the 20-nearest-neighbour graph of the first 20
+principal components, scaled to [0, 1]. Pipelines are compared by the Spearman
+correlation of pseudotime on shared barcodes.
+
+```{r pseudotime, eval=is_trajectory, fig.width=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$w, fig.height=ng_fig_size(length(seurat_objects), 1, panel_mm = 55)$h}
+pseudotime_list = lapply(seurat_objects, function(so) {
+    if (!root_marker %in% rownames(so)) return(NULL)
+    so = FindNeighbors(so, reduction = "pca", dims = 1:20, k.param = 20,
+                       return.neighbor = TRUE, verbose = FALSE)
+    neighbours = so[["RNA.nn"]]
+    root = root_cell(Embeddings(so, "pca")[, 1:20], as.character(Idents(so)),
+                     FetchData(so, root_marker)[[1]])
+    data.table(barcode = colnames(so),
+               pseudotime = graph_pseudotime(Indices(neighbours), Distances(neighbours), root),
+               umap_1 = Embeddings(so, "umap")[, 1],
+               umap_2 = Embeddings(so, "umap")[, 2])
+})
+pseudotime_list = Filter(Negate(is.null), pseudotime_list)
+
+if (length(pseudotime_list) == 0) {
+    cat("Pseudotime skipped: root marker", root_marker, "not found in any pipeline.\n")
+} else {
+    pseudotime_dt = rbindlist(pseudotime_list, idcol = "pipeline")
+    print(
+        ggplot(pseudotime_dt, aes(umap_1, umap_2, colour = pseudotime)) +
+            geom_point(size = 0.2) +
+            scale_colour_viridis_c(na.value = "grey80") +
+            facet_wrap(~pipeline, nrow = 1) +
+            theme_ng() +
+            labs(title = paste("Pseudotime from the", root_marker, "cluster"),
+                 x = "UMAP 1", y = "UMAP 2")
+    )
+}
+```
+
 ## Guide RNA assignments
 
 This dataset is from a pooled CRISPR screen. The authors provide per-cell guide
@@ -753,7 +800,9 @@ For each pipeline, gene counts are summed across all cells to produce a
 pseudobulk vector. Pairwise mean absolute relative difference (MARD) between
 pipelines is shown as a heatmap. MARD = mean(|x - y| / ((x + y) / 2)) over
 genes where at least one pipeline has non-zero counts. Lower values mean closer
-agreement.
+agreement. Scaled MARD is the same statistic on counts per million, so a
+difference in total UMI yield between pipelines cancels. Spearman rho compares
+gene ranks.
 
 ```{r pseudobulk-mard, fig.width=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$w, fig.height=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$h}
 available_aligners = intersect(aligners, unique(cb_umi_dt$pipeline))
@@ -788,34 +837,37 @@ if (length(available_aligners) < 2) {
     } else {
         pb_mat = do.call(cbind, lapply(sces_pb, function(v) v[shared_genes]))
 
-        mard_mat = outer(
-            colnames(pb_mat), colnames(pb_mat),
-            Vectorize(function(a, b) {
-                x = pb_mat[, a]
-                y = pb_mat[, b]
-                denom = (x + y) / 2
-                mean(abs(x - y)[denom > 0] / denom[denom > 0], na.rm = TRUE)
-            })
-        )
-        dimnames(mard_mat) = list(colnames(pb_mat), colnames(pb_mat))
-        mard_long = as.data.frame(as.table(mard_mat))
-        names(mard_long) = c("pipeline1", "pipeline2", "mard")
-
-        saveRDS(list(mard = mard_mat, pb = pb_mat),
+        saveRDS(list(mard = pairwise_matrix(pb_mat, mard),
+                     scaled_mard = pairwise_matrix(pb_mat, scaled_mard),
+                     spearman = pairwise_matrix(pb_mat, spearman),
+                     pb = pb_mat),
                 file.path(wd, paste0(samp, "_biology_pseudobulk_mard.rds")))
 
-        print(
-            ggplot(mard_long, aes(pipeline1, pipeline2, fill = mard * 100)) +
+        agreement_heatmap = function(long, title, fill_label, label_format) {
+            ggplot(long, aes(pipeline1, pipeline2, fill = value)) +
                 geom_tile(colour = "white") +
-                geom_text(aes(label = sprintf("%.2f%%", mard * 100)), size = 3.2) +
-                scale_fill_distiller(palette = "RdYlGn", direction = -1, limits = c(0, NA)) +
+                geom_text(aes(label = sprintf(label_format, value)), size = 3.2) +
                 theme_ng() +
                 theme(aspect.ratio = NULL,
                       axis.text.x = element_text(angle = 30, hjust = 1)) +
-                labs(title = "Pairwise pseudobulk MARD",
-                     subtitle = "Lower is better",
-                     x = NULL, y = NULL, fill = "MARD (%)")
-        )
+                labs(title = title, x = NULL, y = NULL, fill = fill_label)
+        }
+
+        percent = function(long) transform(long, value = value * 100)
+        lower_is_better = scale_fill_distiller(palette = "RdYlGn", direction = -1,
+                                               limits = c(0, NA))
+
+        print(agreement_heatmap(percent(pairwise_long(pb_mat, mard)),
+                                "Pairwise pseudobulk MARD", "MARD (%)", "%.2f%%") +
+              lower_is_better)
+        print(agreement_heatmap(percent(pairwise_long(pb_mat, scaled_mard)),
+                                "Pairwise pseudobulk MARD on counts per million",
+                                "MARD (%)", "%.2f%%") +
+              lower_is_better)
+        print(agreement_heatmap(pairwise_long(pb_mat, spearman),
+                                "Pairwise pseudobulk Spearman rho", "rho", "%.3f") +
+              scale_fill_distiller(palette = "RdYlGn", direction = 1,
+                                   limits = c(NA, 1)))
     }
 }
 ```
@@ -1223,6 +1275,32 @@ if (nrow(cluster_dt) == 0 || length(unique(cluster_dt$pipeline)) < 2) {
     })
     ct_ari_plots = Filter(Negate(is.null), ct_ari_plots)
     if (length(ct_ari_plots) > 0) print(wrap_plots(ct_ari_plots, nrow = 1))
+}
+```
+
+### Pseudotime agreement
+
+```{r pseudotime-agreement, eval=is_trajectory, fig.width=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$w, fig.height=ng_fig_size(max(n_pipelines, 1), max(n_pipelines, 1))$h}
+if (length(pseudotime_list) >= 2) {
+    pseudotime_wide = dcast(pseudotime_dt, barcode ~ pipeline, value.var = "pseudotime")
+    pseudotime_cor = pairwise_pseudotime_correlation(as.matrix(pseudotime_wide[, -"barcode"]))
+    saveRDS(list(pseudotime = pseudotime_dt, spearman = pseudotime_cor),
+            file.path(wd, paste0(samp, "_biology_pseudotime.rds")))
+    cor_long = as.data.frame(as.table(pseudotime_cor))
+    names(cor_long) = c("pipeline1", "pipeline2", "value")
+    print(
+        ggplot(cor_long, aes(pipeline1, pipeline2, fill = value)) +
+            geom_tile(colour = "white") +
+            geom_text(aes(label = sprintf("%.3f", value)), size = 3.2) +
+            scale_fill_distiller(palette = "RdYlGn", direction = 1, limits = c(NA, 1)) +
+            theme_ng() +
+            theme(aspect.ratio = NULL,
+                  axis.text.x = element_text(angle = 30, hjust = 1)) +
+            labs(title = "Pseudotime Spearman rho on shared barcodes",
+                 x = NULL, y = NULL, fill = "rho")
+    )
+} else {
+    cat("Pseudotime agreement skipped: need pseudotime for at least 2 pipelines.\n")
 }
 ```
 

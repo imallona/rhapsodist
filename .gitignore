@@ -56,3 +56,9 @@ docs/*html
 docker/testrun
 scripts/._*
 docs/._*
+
+# Ignore the metadata pip writes for an editable install
+*.egg-info/
+
+# Site paths of the Slurm job scripts
+slurm/site.env

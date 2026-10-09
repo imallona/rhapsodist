@@ -1,12 +1,12 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "rhapsodist"
 version = "0.3.0"
 requires-python = ">=3.10"
-dependencies = ["snakemake"]
+dependencies = ["snakemake>=8.12"]
 
 [project.scripts]
 rhapsodist = "rhapsodist.cli:main"

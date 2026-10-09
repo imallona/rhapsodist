@@ -2,12 +2,12 @@ name: tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     # 'labeled' lets a PR start integration-sampletags via the 'integration' label
     # (the dispatch button only shows on the default branch).
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
 
       - name: install test dependencies
-        run: pip install pytest pytest-cov
+        run: pip install pytest pytest-cov pyyaml
 
       - name: run unit tests with coverage
         run: pytest
@@ -41,6 +41,7 @@ jobs:
             r-base
             bioconductor-s4vectors
             r-matrix
+            r-igraph
           condarc: |
             channels:
               - conda-forge
@@ -51,6 +52,15 @@ jobs:
 
       - name: run USA assay collapse R tests
         run: Rscript workflow/tests/test_usa_collapse.R
+
+      - name: run agreement metrics R tests
+        run: Rscript workflow/tests/test_agreement_metrics.R
+
+      - name: run benchmark stage R tests
+        run: Rscript workflow/tests/test_benchmark_stages.R
+
+      - name: run pseudotime R tests
+        run: Rscript workflow/tests/test_pseudotime.R
 
   # Per-sampletag split tests. Needs the SCE/HDF5/anndataR stack (heavier than the
   # light r-unit-tests job above), so it runs as its own job. Checks backend
@@ -74,6 +84,7 @@ jobs:
             r-matrix
             r-data.table
             r-argparse
+            r-ggplot2
           condarc: |
             channels:
               - conda-forge
@@ -81,6 +92,20 @@ jobs:
 
       - name: run sampletag split R tests
         run: cd workflow && Rscript tests/test_split_sce_by_sampletag.R
+
+      - name: run sample tag concordance R tests
+        run: Rscript paper/test_compare_sampletag_calls.R
+
+      - name: run detection recall R tests
+        run: Rscript paper/test_detection_recall.R
+      - name: run linker tolerance R tests
+        run: Rscript paper/test_compare_linker_tolerance.R
+
+      - name: run workflow comparison R tests
+        run: Rscript paper/test_compare_workflows.R
+
+      - name: run stage time R tests
+        run: Rscript paper/test_stage_times.R
 
   integration-dry-run:
     runs-on: ubuntu-latest
@@ -93,11 +118,14 @@ jobs:
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: snakemake
-          create-args: python=3.12 snakemake
+          create-args: python=3.12 snakemake pytest pyyaml
           condarc: |
             channels:
               - conda-forge
               - bioconda
+
+      - name: dry-run the paper Snakefile for the figure job configs
+        run: pytest -o addopts="" -p no:cacheprovider tests/test_paper_dry_run.py
 
       - name: dry-run simulation workflow
         run: |
@@ -178,6 +206,76 @@ jobs:
             --nolock \
             --cores 2
 
+      # tag reads in their own fastq pair, counted by the search mode
+      - name: dry-run separate sampletag library scenario
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_separate_sampletags.yaml \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # simulation with zero counts
+      - name: dry-run sparse simulation config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_sparse_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+      # linker tolerance configs read the fastqs of the base run; empty files stand in
+      - name: dry-run linker tolerance configs
+        run: |
+          for base in sendoel2024:sample_16_wta_p60 moro_mallona2025:hela_unmod; do
+            fastq_dir=output/${base%%:*}/data/fastq/sra/${base##*:}
+            mkdir -p "$fastq_dir"
+            touch "$fastq_dir/${base##*:}_R1.fastq.gz" "$fastq_dir/${base##*:}_R2.fastq.gz"
+            for errors in 1 2; do
+              snakemake \
+                --snakefile workflow/Snakefile \
+                --configfile configs/${base%%:*}_linker${errors}_config.yaml \
+                --dry-run \
+                --nolock \
+                --cores 2
+            done
+          done
+
+      # reads the stand-in fastqs of the step above
+      - name: dry-run downsampled epidermis config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sendoel2024_downsampled_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # public data config: separate tag library fetched from SRA
+      - name: dry-run GSE282765 config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/gse282765_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
+      # public data config: trajectory use case and an eleven-tag separate library
+      - name: dry-run GSE301173 config
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/gse301173_config.yaml \
+            --config "aligner=['starsolo','alevin']" \
+            --dry-run \
+            --nolock \
+            --cores 2
+
       # output_format both adds the sce_to_h5ad targets to the DAG; the delayed
       # split backend keeps the original lazy path reachable.
       - name: dry-run h5ad output and delayed split backend
@@ -237,7 +335,7 @@ jobs:
           fi
 
   integration-run:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -367,10 +465,22 @@ jobs:
             --rerun-incomplete \
             $targets
 
+      # Tag reads in their own fastq pair: the search mode counts them although starsolo runs.
+      - name: run and verify separate sampletag library scenario
+        run: |
+          snakemake \
+            --snakefile workflow/Snakefile \
+            --configfile configs/sim_separate_sampletags.yaml \
+            --cores 2 \
+            --use-conda \
+            --nolock \
+            --rerun-incomplete \
+            "$PWD/output/simul_separate_sampletags/alevin/simulated/by_sampletag/.verified"
+
       - name: cat logs on failure
         if: failure()
         run: |
-          for f in $(find output/simul_search_sampletags output/simul_starsolo_sampletags -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
+          for f in $(find output/simul_search_sampletags output/simul_starsolo_sampletags output/simul_separate_sampletags -path '*/logs/*.log' 2>/dev/null) .snakemake/log/*.log; do
             [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
           done
 
@@ -483,3 +593,19 @@ jobs:
             output/simul_kallisto/simulate/cell_barcodes.txt
             .snakemake/log/
           if-no-files-found: ignore
+
+  container-image:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build the image
+        run: docker build -t rhapsodist .
+
+      - name: dry-run the simulation in the image
+        run: |
+          docker run --rm -v "$PWD":/work rhapsodist \
+            --configfile /opt/rhapsodist/configs/sim_config.yaml \
+            --config "aligner=['starsolo','kallisto','alevin']" \
+            --cores 2 --dry-run --nolock

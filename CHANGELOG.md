@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+- The paper rules read the `aligner` config key.
+- The benchmarks report waits for the tag splits and the simulation validation.
+- `validate_simulation` counts as simulation in the stage times.
+- Paper rules for the linker tolerance, other workflow and sample tag comparisons.
+- The paper figures accept `use_case: trajectory`.
+- Figure tables add time per stage and aligner, and the machine record.
+- Added `sim_min_count` (default 1) to the simulator; 0 allows zero counts.
+- Comparison and biology reports add Spearman rho and MARD on counts per million.
+- MARD is computed by one helper, `workflow/src/agreement_metrics.R`.
+- `run_info.tsv` records CPU, memory, filesystem and Snakemake settings of a run.
+- The `rhapsodist` command passes `--benchmark-extended`, which records threads per rule.
+- The benchmarks report prints the machine record and the threads.
+- Requires Snakemake 8.12 or later.
+- The BD CWL rule writes per-step times to `benchmarks/sbg_cwl_steps_{sample}.tsv`.
+- The benchmarks report adds time per stage and aligner.
+- BD CWL step times are split by stage.
+- Benchmark files are assigned from `workflow/data/benchmark_stages.tsv`.
+- Per-aligner totals change where steps were misassigned.
+- README sections on aligner choice and cell filter choice.
+- No rule needs a system `pigz` or `gawk`; the salmon pin file includes `gawk`.
+- `get_txp2gene` fails on an empty table.
+- The BD CWL rule no longer sets a pull folder, which broke pulls with apptainer 1.5.
+- Samples accept a separate sample tag library: `sampletag_cb_umi_fq`, `sampletag_cdna_fq` or `sampletag_sra_run`.
+- The simulator writes tag reads to their own fastqs with `sim_separate_sampletags`.
+- Biology report: `use_case: trajectory` adds pseudotime agreement between aligners.
+- Config for GSE282765 (two sample tags, separate tag library) and a concordance script.
+- Config for GSE301173 (neutrophils, trajectory use case, eleven sample tags).
+- `biology_markers_file` may be relative to `workflow/`.
+- Paper figure tables add scaled MARD and Spearman per aligner pair.
+- `paper/universc/`: UniverSC run and conversion for the workflow comparison.
+- `paper/zumis/`: zUMIs run and conversion for the workflow comparison.
+- `paper/openpipelines/`: OpenPipelines run for the workflow comparison.
+- `configs/sim_sparse_config.yaml`: simulation with zero counts.
+- Simulation figure tables add the detected fraction per true count.
+- Configs for the epidermis and HeLa data at `cb_umi_max_errors` 1 and 2.
+- `paper/compare_linker_tolerance.R`: cells, UMIs and agreement per setting.
+- `soloCBmatchWLtype` config field, default `1MM_multi` as before.
+- Comparison report lists barcode correction counts per aligner.
+- `Dockerfile` and `rhapsodist.def`: image with the pinned environments.
+- `pip install` works: the build backend in `pyproject.toml` was wrong.
+- `rhapsodist --config` reaches Snakemake; it was read as `--configfile`.
+- Benchmarks report waits for the other reports and skips its own benchmark.
+- `sim_separate_sampletags` without `sampletag_fa` is an error.
+- `paper/compare_workflows.R`: other workflows against the rhapsodist aligners.
+- UniverSC SCE barcodes lose the `-1` suffix, matching the aligners.
+- Config for the epidermis sample at 40% of the reads.
+- `slurm/`: one job script per run, on one CPU model.
+
 ## v0.3.0 - 2026-06-29
 
 ### Requests

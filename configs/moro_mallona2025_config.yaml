@@ -56,3 +56,11 @@ samples:
       allowedlist: 384
       diversity_insets: yes
       use_sampletags: no
+
+## Runs of the same sample at other cb_umi_max_errors, for the paper comparison.
+linker_tolerance_runs:
+  1: output/moro_mallona2025_linker1
+  2: output/moro_mallona2025_linker2
+
+## Tools run by paper/Snakefile on the downsampled reads, for the paper comparison.
+other_workflows: [universc, openpipelines]

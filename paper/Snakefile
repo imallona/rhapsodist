@@ -16,8 +16,11 @@ import os.path as op
 
 WD = config["working_dir"]
 SAMPLES = [s["name"] for s in config.get("samples", [])]
-ALIGNERS = config.get("aligners", ["starsolo", "kallisto", "alevin"])
-HAS_SBG = bool(config.get("has_sbg", False)) or "sbg" in ALIGNERS
+CONFIGURED_ALIGNERS = config.get("aligner", ["starsolo", "kallisto", "alevin"])
+if isinstance(CONFIGURED_ALIGNERS, str):
+    CONFIGURED_ALIGNERS = [CONFIGURED_ALIGNERS]
+ALIGNERS = [a for a in CONFIGURED_ALIGNERS if a != "sbg"]
+HAS_SBG = bool(config.get("has_sbg", False)) or "sbg" in CONFIGURED_ALIGNERS
 IS_SIM = bool(config.get("use_simulated", False))
 N_EXP_CELLS = int(config.get("sim_n_cells", 0))
 
@@ -30,12 +33,35 @@ has_sbg_arg = "true" if HAS_SBG else "false"
 MARKERS_FILE = config.get("biology_markers_file", "")
 BENCH_PREFIX = config.get("bench_prefix", "fig_sim")
 USE_CASE = config.get("use_case", "sendoel")
-_USE_CASE_FIG_STEMS = {"hela": "fig2_hela", "sendoel": "fig3_sendoel"}
+_USE_CASE_FIG_STEMS = {"hela": "fig2_hela", "sendoel": "fig3_sendoel",
+                       "trajectory": "fig5_trajectory"}
 if USE_CASE not in _USE_CASE_FIG_STEMS:
     raise ValueError(
         "use_case must be one of %s, got %r"
         % (sorted(_USE_CASE_FIG_STEMS), USE_CASE))
 EXPERIMENTAL_FIG_STEM = _USE_CASE_FIG_STEMS[USE_CASE]
+HAS_BIOLOGY = bool(config.get("run_biology_report", False))
+
+## Comparisons across runs or tools, each switched on by a config key.
+LINKER_RUNS = config.get("linker_tolerance_runs", {}) or {}
+OTHER_WORKFLOWS = config.get("other_workflows", []) or []
+DEPOSITED_SAMPLETAGS = config.get("deposited_sampletag_files", {}) or {}
+COMPARED_ALIGNERS = ALIGNERS
+ALIGNERS_RUN = ALIGNERS + (["sbg"] if HAS_SBG else [])
+SAMPLE_USES = {s["name"]: s.get("uses", {}) for s in config.get("samples", [])}
+
+
+def sce_path(wd, tool, sample):
+    return op.join(wd, tool, sample, f"{sample}_{tool}_sce.rds")
+
+
+def bead_version(sample):
+    return "enhanced" if int(SAMPLE_USES[sample].get("allowedlist", 384)) == 384 else "v1"
+
+
+def whitelist_dir(sample):
+    return op.join(PAPER_DIR, "..", "workflow", "data",
+                   "whitelist_%sx3" % SAMPLE_USES[sample].get("allowedlist", 384))
 
 
 def simulation_flag(sample):
@@ -54,14 +80,33 @@ def benchmark_flag():
     return op.join(WD, "paper", "bench_full.csv")
 
 
+def linker_tolerance_flag(sample):
+    return op.join(WD, "paper", sample, "linker_tolerance.csv")
+
+
+def workflow_comparison_flag(sample):
+    return op.join(WD, "paper", sample, "workflow_comparison.csv")
+
+
+def sampletag_concordance_flag(sample):
+    return op.join(WD, "paper", sample, "sampletag_concordance.csv")
+
+
 def all_targets():
     targets = [benchmark_flag()]
     for s in SAMPLES:
         if IS_SIM:
             targets.append(simulation_flag(s))
-        else:
+            continue
+        if HAS_BIOLOGY:
             targets.append(experimental_flag(s))
-            targets.append(linker_qc_flag(s))
+        targets.append(linker_qc_flag(s))
+        if LINKER_RUNS:
+            targets.append(linker_tolerance_flag(s))
+        if OTHER_WORKFLOWS:
+            targets.append(workflow_comparison_flag(s))
+        if DEPOSITED_SAMPLETAGS and SAMPLE_USES[s].get("use_sampletags", False):
+            targets.append(sampletag_concordance_flag(s))
     return targets
 
 
@@ -79,6 +124,7 @@ rule simulations_figure:
                       aligner = ALIGNERS),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
         op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
@@ -108,6 +154,7 @@ rule experimental_figure:
         biology_rds = op.join(WD, "{sample}_biology_qc.rds"),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
         op.join(WD, "paper", "{sample}", EXPERIMENTAL_FIG_STEM + ".pdf")
@@ -139,6 +186,7 @@ rule linker_qc_figure:
         tsv = op.join(WD, "linker_qc", "{sample}_linker_errors.tsv"),
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "bio_linker_errors.pdf"),
         op.join(WD, "paper", "{sample}", "bio_linker_errors.csv"),
@@ -161,10 +209,19 @@ rule benchmarks_figure:
     input:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
+        run_info = op.join(WD, "run_info.tsv"),
     output:
         op.join(WD, "paper", "bench_full.csv"),
+        op.join(WD, "paper", "bench_stage.csv"),
+        op.join(WD, "paper", "run_info.csv"),
         op.join(WD, "paper", BENCH_PREFIX + "_bench_total.pdf"),
-        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf")
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_step.pdf"),
+        op.join(WD, "paper", BENCH_PREFIX + "_bench_stage.pdf")
     params:
         wd = WD,
         aligners = aligners_arg,
@@ -182,4 +239,246 @@ rule benchmarks_figure:
             --has_sbg {params.has_sbg} \
             --n_expected_cells {params.n_exp} \
             --bench_prefix {params.bench_prefix} &> {log}
+        """
+
+
+## Cells, UMIs per cell and pseudobulk agreement of this run against the runs
+## in linker_tolerance_runs ({errors: working_dir}), which differ in
+## cb_umi_max_errors.
+rule compare_linker_tolerance:
+    conda:
+        ENV
+    input:
+        sces = [sce_path(wd, a, "{sample}")
+                for wd in [WD, *LINKER_RUNS.values()] for a in COMPARED_ALIGNERS],
+        script = op.join(PAPER_DIR, "compare_linker_tolerance.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "linker_tolerance.csv"),
+        op.join(WD, "paper", "{sample}", "linker_tolerance.pdf"),
+    params:
+        runs = " ".join([f"0={WD}"] + [f"{e}={wd}" for e, wd in LINKER_RUNS.items()]),
+        aligners = ",".join(COMPARED_ALIGNERS),
+        out_prefix = op.join(WD, "paper", "{sample}", "linker_tolerance"),
+    log:
+        op.join(WD, "logs", "paper_linker_tolerance_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} --runs {params.runs} --sample {wildcards.sample} \
+            --aligners {params.aligners} --out_prefix {params.out_prefix} &> {log}
+        """
+
+
+## Cells, agreement, time and memory of the tools in other_workflows against
+## the aligners of this run. A tool without a count object is listed as failed,
+## so its rule is not an input here; run the tool rules first.
+rule compare_workflows:
+    conda:
+        ENV
+    input:
+        sces = [sce_path(WD, a, "{sample}") for a in ALIGNERS_RUN],
+        script = op.join(PAPER_DIR, "compare_workflows.R"),
+        agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "workflow_comparison.csv"),
+        op.join(WD, "paper", "{sample}", "workflow_comparison_cells.pdf"),
+        op.join(WD, "paper", "{sample}", "workflow_comparison_agreement.pdf"),
+    params:
+        aligners = ",".join(ALIGNERS_RUN),
+        workflows = ",".join(OTHER_WORKFLOWS),
+        bead_version = lambda wildcards: bead_version(wildcards.sample),
+        out_prefix = op.join(WD, "paper", "{sample}", "workflow_comparison"),
+    log:
+        op.join(WD, "logs", "paper_workflow_comparison_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} --working_dir {WD} --sample {wildcards.sample} \
+            --bead_version {params.bead_version} --aligners {params.aligners} \
+            --workflows {params.workflows} --out_prefix {params.out_prefix} &> {log}
+        """
+
+
+## Per-tag expression files of the BD pipeline deposited with the dataset,
+## from deposited_sampletag_files ({tag: url}).
+rule fetch_deposited_sampletags:
+    output:
+        op.join(WD, "data", "deposited", "{tag}.st.txt.gz")
+    params:
+        url = lambda wildcards: DEPOSITED_SAMPLETAGS[wildcards.tag]
+    log:
+        op.join(WD, "logs", "fetch_deposited_{tag}.log")
+    shell:
+        "mkdir -p $(dirname {output}) && curl -fL -sS -o {output} {params.url} 2> {log}"
+
+
+rule compare_sampletag_calls:
+    conda:
+        ENV
+    input:
+        demux = op.join(WD, "sampletags", "{sample}", "sampletag_demux.tsv.gz"),
+        deposited = expand(op.join(WD, "data", "deposited", "{tag}.st.txt.gz"),
+                           tag = list(DEPOSITED_SAMPLETAGS)),
+        script = op.join(PAPER_DIR, "compare_sampletag_calls.R"),
+    output:
+        op.join(WD, "paper", "{sample}", "sampletag_concordance.csv"),
+        op.join(WD, "paper", "{sample}", "sampletag_concordance.pdf"),
+    params:
+        deposited = " ".join(f"{tag}={op.join(WD, 'data', 'deposited', tag + '.st.txt.gz')}"
+                             for tag in DEPOSITED_SAMPLETAGS),
+        whitelist_dir = lambda wildcards: whitelist_dir(wildcards.sample),
+        out_prefix = op.join(WD, "paper", "{sample}", "sampletag_concordance"),
+    log:
+        op.join(WD, "logs", "paper_sampletag_concordance_{sample}.log")
+    shell:
+        """
+        Rscript {input.script} --demux {input.demux} --deposited {params.deposited} \
+            --whitelist_dir {params.whitelist_dir} --out_prefix {params.out_prefix} &> {log}
+        """
+
+
+## UniverSC on the downsampled reads. Config: universc_sandbox (see README) and
+## universc_technology (bd-rhapsody or bd-rhapsody-v2). Not part of rule all.
+rule universc:
+    input:
+        r1 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R2.fastq.gz"),
+        genome = op.join(config.get("reference_dir", ""), "genome.fa"),
+        gtf = op.join(config.get("reference_dir", ""), "annotation.gtf"),
+        run = op.join(PAPER_DIR, "universc", "run_universc.sh"),
+    output:
+        outs = directory(op.join(WD, "universc", "{sample}", "work", "{sample}_outs")),
+    params:
+        sandbox = config.get("universc_sandbox", ""),
+        technology = config.get("universc_technology", "bd-rhapsody"),
+        workdir = op.join(WD, "universc", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "universc_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "universc_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.sandbox} {params.workdir} {wildcards.sample} \
+            {params.technology} {input.r1} {input.r2} {input.genome} {input.gtf} \
+            {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule universc_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        outs = op.join(WD, "universc", "{sample}", "work", "{sample}_outs"),
+        script = op.join(PAPER_DIR, "universc", "universc_to_sce.R"),
+    output:
+        op.join(WD, "universc", "{sample}", "{sample}_universc_sce.rds")
+    log:
+        op.join(WD, "logs", "universc_sce_{sample}.log")
+    shell:
+        "Rscript {input.script} {input.outs} {wildcards.sample} {output} &> {log}"
+
+
+## zUMIs on the downsampled reads of v1 beads. Config: zumis_dir, a clone of
+## zUMIs 2.9.7 (see README). Not part of rule all.
+rule zumis:
+    input:
+        r1 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "data", "fastq", "downsampled", "{sample}_R2.fastq.gz"),
+        genome = op.join(config.get("reference_dir", ""), "genome.fa"),
+        gtf = op.join(config.get("reference_dir", ""), "annotation.gtf"),
+        run = op.join(PAPER_DIR, "zumis", "run_zumis.sh"),
+    output:
+        counts = op.join(WD, "zumis", "{sample}", "work", "zUMIs_output", "expression",
+                         "{sample}.dgecounts.rds"),
+    params:
+        zumis_dir = config.get("zumis_dir", ""),
+        workdir = op.join(WD, "zumis", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "zumis_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "zumis_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.zumis_dir} {params.workdir} {wildcards.sample} \
+            {input.r1} {input.r2} {input.genome} {input.gtf} \
+            {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule zumis_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        counts = op.join(WD, "zumis", "{sample}", "work", "zUMIs_output", "expression",
+                         "{sample}.dgecounts.rds"),
+        script = op.join(PAPER_DIR, "zumis", "zumis_to_sce.R"),
+    output:
+        op.join(WD, "zumis", "{sample}", "{sample}_zumis_sce.rds")
+    log:
+        op.join(WD, "logs", "zumis_sce_{sample}.log")
+    shell:
+        "Rscript {input.script} {input.counts} {wildcards.sample} {output} &> {log}"
+
+
+## OpenPipelines bd_rhapsody component on the reads of the sbg aligner, with
+## its reference archive (openpipelines_reference) and bead version
+## (openpipelines_bead_version: Enh for v1 and enhanced beads, EnhV2 with
+## openpipelines_whitelist_dir). Needs nextflow and apptainer. Not part of
+## rule all.
+rule openpipelines:
+    input:
+        r1 = op.join(WD, "sbg", "{sample}", "fastq", "{sample}_R1.fastq.gz"),
+        r2 = op.join(WD, "sbg", "{sample}", "fastq", "{sample}_R2.fastq.gz"),
+        reference = config.get("openpipelines_reference",
+                               op.join(WD, "sbg_reference", "rhapsody_reference.tar.gz")),
+        run = op.join(PAPER_DIR, "openpipelines", "run_openpipelines.sh"),
+    output:
+        matrix = op.join(WD, "openpipelines", "{sample}", "work", "MEX", "matrix.mtx.gz"),
+    params:
+        workdir = op.join(WD, "openpipelines", "{sample}", "work"),
+        mem_gb = int(config.get("max_mem_mb", 48000) / 1000),
+    threads:
+        config.get("nthreads", 8)
+    log:
+        op.join(WD, "logs", "openpipelines_{sample}.log")
+    benchmark:
+        op.join(WD, "benchmarks", "openpipelines_{sample}.txt")
+    shell:
+        """
+        bash {input.run} {params.workdir} {wildcards.sample} {input.r1} {input.r2} \
+            {input.reference} {threads} {params.mem_gb} &> {log}
+        """
+
+
+rule openpipelines_sce:
+    conda:
+        op.join(PAPER_DIR, "..", "workflow", "envs", "r_bioc.yaml")
+    input:
+        matrix = op.join(WD, "openpipelines", "{sample}", "work", "MEX", "matrix.mtx.gz"),
+        script = op.join(PAPER_DIR, "..", "workflow", "src", "generate_sce_sbg.R"),
+        index2barcode = op.join(PAPER_DIR, "..", "workflow", "src", "index2barcode.R"),
+    output:
+        op.join(WD, "openpipelines", "{sample}", "{sample}_openpipelines_sce.rds")
+    params:
+        mex_dir = op.join(WD, "openpipelines", "{sample}", "work", "MEX"),
+        bead_version = config.get("openpipelines_bead_version", "Enh"),
+        whitelist_dir = config.get("openpipelines_whitelist_dir", ""),
+        features_map = op.join(WD, "starsolo", "{sample}", "Solo.out", "Gene", "filtered",
+                               "features.tsv"),
+    log:
+        op.join(WD, "logs", "openpipelines_sce_{sample}.log")
+    shell:
+        """
+        R -q --no-save --no-restore --slave -f {input.script} --args \
+            --sample {wildcards.sample} --mex_dir {params.mex_dir} --output_fn {output} \
+            --bead_version {params.bead_version} \
+            --index2barcode_script {input.index2barcode} --cell_filtering native \
+            $([ -n "{params.whitelist_dir}" ] && echo "--whitelist_dir {params.whitelist_dir}") \
+            $([ -f "{params.features_map}" ] && echo "--features_map {params.features_map}") \
+            &> {log}
         """

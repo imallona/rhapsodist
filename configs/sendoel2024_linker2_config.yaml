@@ -1,0 +1,69 @@
+## sendoel2024 with cb_umi_max_errors: 2, for the linker tolerance comparison.
+## Reads come from the run of configs/sendoel2024_config.yaml, which goes first.
+## The BD pipeline is left out: it does not use this setting.
+repo_path: '.'
+
+nthreads: 10
+max_mem_mb: 60000
+
+soloCellFilter: "EmptyDrops_CR"
+soloMultiMappers: "Unique"
+extraStarSoloArgs: ""
+cell_filtering: "native"
+# alevin_sketch: true runs salmon alevin in RAD mapping mode (--sketch), then
+# quantifies with alevin-fry using cr-like resolution. This gives integer-like
+# counts comparable to STARsolo soloMultiMappers: Unique, avoiding the ~1.75x
+# UMI inflation from alevin's default graph-based EM multi-mapper redistribution.
+alevin_sketch: true
+
+working_dir: output/sendoel2024_linker2
+
+## cb/umi linker trim tolerance (cutadapt -e)
+cb_umi_max_errors: 2
+
+## Gencode GRCm39 vM36 - verify release at https://www.gencodegenes.org/mouse/
+## reference_dir is relative to the repo root; shared across runs on this reference
+reference_dir: data/reference/GRCm39_vM36
+gtf_origin: "gencode"
+genome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/GRCm39.primary_assembly.genome.fa.gz"
+gtf_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.primary_assembly.annotation.gtf.gz"
+## all transcripts (all biotypes). pc_transcripts.fa.gz only has protein coding,
+## which leaves kallisto and salmon/alevin with ~22k genes vs ~78k in the full
+## GTF used by starsolo. Using transcripts.fa.gz keeps the three aligners on the
+## same gene universe.
+transcriptome_url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M36/gencode.vM36.transcripts.fa.gz"
+
+## cDNA read length for WTA was 62 (right/cDNA); sjdbOverhang = readLength - 1
+## Verify with: zcat <R2.fastq.gz> | head -8 | awk 'NR==2{print length($0)}'
+sjdbOverhang: 61
+
+skip_sampletags: true
+
+run_biology_report: true
+
+aligner: ['starsolo', 'kallisto', 'alevin']
+has_sbg: false
+
+samples:
+  - name: sample_16_wta_p60
+    uses:
+      cb_umi_fq: output/sendoel2024/data/fastq/sra/sample_16_wta_p60/sample_16_wta_p60_R1.fastq.gz
+      cdna_fq: output/sendoel2024/data/fastq/sra/sample_16_wta_p60/sample_16_wta_p60_R2.fastq.gz
+      allowedlist: 96
+      diversity_insets: no
+      guide_gsm: "GSM7500353"
+      guide_wta: "WTA16"
+# - name: sample_17_wta_p60
+#   uses:
+#     sra_run: "SRR24978243"
+#     allowedlist: 96
+#     diversity_insets: no
+#     guide_gsm: "GSM7500354"
+#     guide_wta: "WTA17"
+# - name: sample_18_wta_p60
+#   uses:
+#     sra_run: "SRR24978233"
+#     allowedlist: 96
+#     diversity_insets: no
+#     guide_gsm: "GSM7500355"
+#     guide_wta: "WTA18"
