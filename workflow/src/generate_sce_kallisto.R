@@ -53,6 +53,9 @@ id <- args$sample
 counts <- Matrix::readMM(file.path(wd, 'bustools', id, 'output.mtx'))
 gene_ids <- readLines(file.path(wd, 'bustools', id, 'output.genes.txt'))
 barcodes <- readLines(file.path(wd, 'bustools', id, 'output.barcodes.txt'))
+if (anyDuplicated(barcodes)) {
+    stop(sprintf('%d barcodes appear more than once in the bustools output; is the bus file sorted?', sum(duplicated(barcodes))))
+}
 
 gtf_genes <- parse_gtf_genes(args$gtf)
 stopifnot(nrow(gtf_genes) > 0)
