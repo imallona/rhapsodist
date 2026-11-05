@@ -349,7 +349,7 @@ jobs:
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: snakemake
-          create-args: python=3.12 snakemake
+          create-args: python=3.12 snakemake conda
           condarc: |
             channels:
               - conda-forge
@@ -420,7 +420,7 @@ jobs:
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: snakemake
-          create-args: python=3.12 snakemake
+          create-args: python=3.12 snakemake conda
           condarc: |
             channels:
               - conda-forge
@@ -516,7 +516,7 @@ jobs:
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: snakemake
-          create-args: python=3.12 snakemake
+          create-args: python=3.12 snakemake conda
           condarc: |
             channels:
               - conda-forge
