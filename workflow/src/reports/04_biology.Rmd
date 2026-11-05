@@ -302,7 +302,9 @@ for (pipe in names(sces)) {
             so
         }
     }, error = function(e) {
-        warning(sprintf("Seurat build failed for %s: %s", pipe, conditionMessage(e)))
+        msg = sprintf("Seurat build failed for %s: %s", pipe, conditionMessage(e))
+        cat(msg, "\n", file = stderr())
+        warning(msg)
         NULL
     })
     if (!is.null(built)) seurat_objects[[pipe]] = built

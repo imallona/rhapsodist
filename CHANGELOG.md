@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.1 - 2026-11-05
+
+### Tool: fixes
+
+- kallisto: sort the corrected bus file before counting.
+- The kallisto object rule fails on duplicated barcodes.
+
 ## v0.4.0 - 2026-10-16
 
 ### Tool: feature requests

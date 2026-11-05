@@ -24,6 +24,7 @@ star_{sample}	starsolo	alignment and quantification
 {sample}_kallisto_bus	kallisto	alignment and quantification
 {sample}_bustools_sort	kallisto	alignment and quantification
 {sample}_bustools_correct	kallisto	alignment and quantification
+{sample}_bustools_sort_corrected	kallisto	alignment and quantification
 {sample}_bustools_count	kallisto	alignment and quantification
 alevin_{sample}_align	alevin	alignment and quantification
 alevin_fry_quant_{sample}	alevin	alignment and quantification

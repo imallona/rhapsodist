@@ -941,6 +941,9 @@ run_biology = function(opt) {
     seu_fns = setNames(file.path(wd, sprintf("%s_biology_%s_seurat.rds", samp,
                                              aligners)), aligners)
     clusters_fn = biords("clusters")
+    if (!all(file.exists(seu_fns)))
+        message("UMAP and ARI panels skipped, no Seurat object for: ",
+                paste(aligners[!file.exists(seu_fns)], collapse = ", "))
     if (all(file.exists(seu_fns)) && file.exists(clusters_fn) &&
         requireNamespace("Seurat", quietly = TRUE)) {
         cbbPalette = c("#E69F00", "#56B4E9", "#009E73",
