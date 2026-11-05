@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Tool: fixes
+
+- kallisto: sort the corrected bus file before counting.
+- The kallisto object rule fails on duplicated barcodes.
+- A failed Seurat build is written to the rule log.
+- `slurm/08_figures.sh` takes `FIGURE_CONFIGS`.
+
 ## v0.4.0 - 2026-10-16
 
 ### Tool: feature requests

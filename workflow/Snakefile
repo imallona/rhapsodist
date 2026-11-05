@@ -977,6 +977,25 @@ rule bustools_correct:
         bustools correct -w {input.whitelist} -o {output.corrected_bus} {input.bus} &> {log}
         """
 
+## Correction changes barcodes, so count needs a sorted file again;
+## unsorted input splits a barcode over several matrix columns.
+rule bustools_sort_corrected:
+    conda:
+        op.join(workflow.basedir, 'envs', 'kallisto.yaml')
+    input:
+        bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus')
+    output:
+        sorted_bus = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.sorted.bus')
+    threads: workflow.cores
+    benchmark:
+        op.join(config['working_dir'], 'benchmarks', '{sample}_bustools_sort_corrected.txt')
+    log:
+        op.join(config['working_dir'], 'logs', '{sample}_bustools_sort_corrected.log')
+    shell:
+        """
+        bustools sort -t {threads} -o {output.sorted_bus} {input.bus} &> {log}
+        """
+
 rule bustools_count:
     conda:
         op.join(workflow.basedir, 'envs', 'kallisto.yaml')
@@ -984,7 +1003,7 @@ rule bustools_count:
         txp2gene   = op.join(config['working_dir'], 'data', 'index', 'salmon', 'txp2gene'),
         matrix_ec  = op.join(config['working_dir'], 'kallisto', '{sample}', 'matrix.ec'),
         transcripts = op.join(config['working_dir'], 'kallisto', '{sample}', 'transcripts.txt'),
-        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.bus'),
+        bus        = op.join(config['working_dir'], 'kallisto', '{sample}', 'output.corrected.sorted.bus'),
         kal        = op.join(config['working_dir'], 'software', 'kallisto', 'build', 'src', 'kallisto'),
     output:
         op.join(config['working_dir'], 'bustools', '{sample}', 'output.mtx')
