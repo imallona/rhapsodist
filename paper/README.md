@@ -135,3 +135,20 @@ git clone --branch 2.9.7 https://github.com/sdparekh/zUMIs
 - Config: `openpipelines_reference` (default: the `sbg` reference archive), `openpipelines_bead_version` (`Enh` or `EnhV2`), `openpipelines_whitelist_dir` for `EnhV2`.
 - Target: `<working_dir>/openpipelines/<sample>/<sample>_openpipelines_sce.rds`, from the reads of the `sbg` aligner.
 - On the simulated reads its counts equal those of the `sbg` aligner.
+
+## Manuscript figures
+
+`manuscript_figures.R` draws the figures of the paper at print size (6.3 in wide, 7 pt text) from CSV files only. It expects one folder per run under `--results`, named as the working directories (`simul`, `simul_sparse`, `moro_mallona2025`, `sendoel2024`, `sendoel2024_downsampled40`, `gse282765`, `gse301173`), each with its `paper/` folder. Two scripts write the CSVs that the other rules do not:
+
+- `export_embeddings.R` writes `bio_umap.csv`: UMAP coordinates, cluster, cell type and cell cycle phase per cell and aligner, from the Seurat objects and clusters table of `04_biology.Rmd`. It needs Seurat, so run it in the `workflow/envs/r_bioc.yaml` environment.
+- `export_pseudobulk.R` writes `bio_pseudobulk.csv`, the summed counts per aligner on shared gene symbols, and with `--cells_out` the cells called per aligner.
+
+```bash
+Rscript paper/export_embeddings.R --working_dir output/sendoel2024 \
+    --sample sample_16_wta_p60 --out output/sendoel2024/paper/sample_16_wta_p60/bio_umap.csv
+Rscript paper/export_pseudobulk.R --working_dir output/gse282765 \
+    --sample colon --out output/gse282765/paper/colon/bio_pseudobulk.csv
+Rscript paper/manuscript_figures.R --results output --out figures
+```
+
+`--only fig2,linker_tolerance` draws a subset; the names are listed at the end of the script.
