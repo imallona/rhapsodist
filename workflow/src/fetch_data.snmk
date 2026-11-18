@@ -38,6 +38,8 @@ if _sra_samples:
         shell:
             """
             mkdir -p {params.outdir}
+            ## a killed prefetch leaves a lock that makes the next one cancel
+            rm -f {params.outdir}/{params.sra_run}/*.lock
             prefetch --max-size 0 --output-directory {params.outdir} {params.sra_run} 2>> {log}
             fasterq-dump --split-files --threads {threads} \
                 --outdir {params.outdir} {params.outdir}/{params.sra_run}/ 2>> {log}
