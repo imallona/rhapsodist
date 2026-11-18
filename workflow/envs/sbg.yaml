@@ -7,3 +7,5 @@ dependencies:
   ## schema-salad is pulled in by cwltool but pinning it avoids resolver conflicts
   - conda-forge::schema-salad
   - conda-forge::pyyaml ## python helper
+  ## lets cwltool evaluate CWL expressions without starting a node container
+  - conda-forge::nodejs
