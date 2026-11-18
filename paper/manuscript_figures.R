@@ -230,7 +230,7 @@ time_memory_bars = function(time_seg, memory) {
     memory[, pipeline := aligner_factor(pipeline)]
     fills = setNames(aligner_colours, aligner_labels[names(aligner_colours)])
     time_seg[, fill := ifelse(segment == "preprocessing", "barcode preprocessing", as.character(pipeline))]
-    p_time = ggplot(time_seg, aes(minutes, pipeline, fill = fill)) +
+    p_time = ggplot(time_seg, aes(minutes, pipeline, fill = fill, group = segment)) +
         geom_col(width = 0.65, position = position_stack(reverse = TRUE)) +
         geom_text(data = totals, aes(minutes, pipeline,
                                      label = formatC(minutes, format = "f", digits = 1)),
@@ -240,7 +240,7 @@ time_memory_bars = function(time_seg, memory) {
         scale_x_continuous(expand = expansion(mult = c(0, 0.2))) +
         scale_y_discrete(limits = rev) +
         labs(x = "wall-clock time (min)", y = NULL) +
-        theme(legend.position = "inside", legend.position.inside = c(0.9, 0.6))
+        theme(legend.position = "bottom")
     p_mem = ggplot(memory, aes(peak_rss_gb, pipeline, fill = pipeline)) +
         geom_col(width = 0.65) +
         geom_text(aes(label = formatC(peak_rss_gb, format = "f", digits = 1)),
