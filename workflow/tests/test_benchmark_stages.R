@@ -78,7 +78,8 @@ split_times <- stage_times(classified, seconds, c("starsolo", "kallisto", "sbg")
                            cwl_steps, cwl_stage_table)
 check("CWL steps replace the CWL rule",
       value(split_times, "sbg", "alignment and quantification") == 400 &&
-      value(split_times, "sbg", "matrix building") == 50 + 12 &&
+      value(split_times, "sbg", "matrix building") == 50 &&
+      value(split_times, "sbg", "object conversion") == 12 &&
       value(split_times, "sbg", "reporting") == 20)
 check("the rest of the CWL rule time is overhead",
       value(split_times, "sbg", "CWL overhead") == 30)

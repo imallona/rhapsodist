@@ -446,21 +446,21 @@ run_simulation = function(opt) {
         pipe_mem = load_pipeline_memory(bench_dir, aligners)
         time_segments = load_pipeline_time_segments(bench_dir, aligners)
         if (!is.null(pipe_time) && nrow(pipe_time) > 0) {
-            time_segments[, fill_key := ifelse(segment == "cutadapt",
-                                               "cutadapt",
+            time_segments[, fill_key := ifelse(segment == "preprocessing",
+                                               "preprocessing",
                                                as.character(pipeline))]
-            fill_palette = c(aligner_colours, cutadapt = "grey60")
+            fill_palette = c(aligner_colours, preprocessing = "grey60")
             bar_theme = panel_theme +
                 theme(plot.margin = grid::unit(c(2, 6, 2, 2), "pt"),
                       axis.title.y = element_text(margin = margin(r = 2)),
                       axis.text.x = element_text(angle = 30, hjust = 1))
             time_segments[, segment := factor(segment,
-                                              levels = c("aligner", "cutadapt"))]
+                                              levels = c("preprocessing", "aligner"))]
             panels$E = ggplot(time_segments,
                               aes(pipeline, minutes, fill = fill_key,
                                   group = segment)) +
                 geom_col(width = 0.55) +
-                geom_text(data = time_segments[segment == "cutadapt"],
+                geom_text(data = time_segments[segment == "preprocessing"],
                           aes(label = sprintf("%.2f", minutes)),
                           position = position_stack(vjust = 0.5),
                           size = 2.6, colour = "white") +
@@ -470,7 +470,7 @@ run_simulation = function(opt) {
                           vjust = -0.3, size = 3, inherit.aes = FALSE) +
                 scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
                 scale_fill_manual(values = fill_palette,
-                                  breaks = "cutadapt", labels = "cutadapt",
+                                  breaks = "preprocessing", labels = "barcode preprocessing",
                                   name = NULL) +
                 bar_theme +
                 theme(legend.position = "bottom",
@@ -1369,15 +1369,15 @@ run_biology = function(opt) {
         pipe_time[, pipeline := order_pipelines(pipeline, aligners)]
         pipe_mem[, pipeline := order_pipelines(pipeline, aligners)]
         time_segments[, pipeline := order_pipelines(pipeline, aligners)]
-        time_segments[, fill_key := ifelse(segment == "cutadapt",
-                                           "cutadapt",
+        time_segments[, fill_key := ifelse(segment == "preprocessing",
+                                           "preprocessing",
                                            as.character(pipeline))]
-        fill_palette = c(aligner_colours, cutadapt = "grey60")
+        fill_palette = c(aligner_colours, preprocessing = "grey60")
         p_t = ggplot(time_segments,
                      aes(pipeline, minutes, fill = fill_key,
                          group = segment)) +
             geom_col(width = 0.7) +
-            geom_text(data = time_segments[segment == "cutadapt"],
+            geom_text(data = time_segments[segment == "preprocessing"],
                       aes(label = round(minutes, 1)),
                       position = position_stack(vjust = 0.5),
                       size = 2.8, colour = "white") +
@@ -1386,7 +1386,7 @@ run_biology = function(opt) {
                       vjust = -0.3, size = 3, inherit.aes = FALSE) +
             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
             scale_fill_manual(values = fill_palette,
-                              breaks = "cutadapt", labels = "cutadapt",
+                              breaks = "preprocessing", labels = "barcode preprocessing",
                               name = NULL) +
             theme_bw() +
             theme(legend.position = "bottom",
@@ -1499,12 +1499,12 @@ run_biology = function(opt) {
                   axis.title.y = element_text(size = 9,
                                               margin = margin(r = 2)),
                   axis.text.x = element_text(angle = 30, hjust = 1))
-        fill_palette = c(aligner_colours, cutadapt = "grey60")
+        fill_palette = c(aligner_colours, preprocessing = "grey60")
         panels2$I = ggplot(time_segments,
                            aes(pipeline, minutes, fill = fill_key,
                                group = segment)) +
             geom_col(width = 0.55) +
-            geom_text(data = time_segments[segment == "cutadapt"],
+            geom_text(data = time_segments[segment == "preprocessing"],
                       aes(label = round(minutes, 1)),
                       position = position_stack(vjust = 0.5),
                       size = 2.6, colour = "white") +
@@ -1513,7 +1513,7 @@ run_biology = function(opt) {
                       vjust = -0.3, size = 3, inherit.aes = FALSE) +
             scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
             scale_fill_manual(values = fill_palette,
-                              breaks = "cutadapt", labels = "cutadapt",
+                              breaks = "preprocessing", labels = "barcode preprocessing",
                               name = NULL) +
             bar_theme2 +
             theme(legend.position = "bottom",
@@ -1590,52 +1590,26 @@ run_benchmarks = function(opt) {
     bm = load_benchmarks(bench_dir, aligners)
     pp_save_csv(bm, pdir, "bench_full")
 
-    ## Fairness: starsolo, kallisto, alevin all consume the cutadapt-standardized
-    ## CB/UMI fastqs produced by standardize_cb_umis_cutadapt; sbg's CWL ingests
-    ## raw fastqs and does its own demultiplexing internally. Stack the shared
-    ## cutadapt step under each non-sbg aligner so totals include the same
-    ## pre-alignment work that sbg already performs in its container.
-    nonsbg_aligners = setdiff(aligners, "sbg")
-    cutadapt_rows = bm[grepl("^standardize_cb_umis_", file) & is_tool_rule(file)]
-    cutadapt_minutes = if (nrow(cutadapt_rows) > 0) sum(cutadapt_rows$minutes) else 0
-    cutadapt_max_rss = if (nrow(cutadapt_rows) > 0)
-        max(cutadapt_rows$max_rss_gb, na.rm = TRUE) else NA_real_
-
-    aligner_time = bm[pipeline %in% aligners & is_tool_rule(file),
-                      .(minutes = sum(minutes)), by = pipeline]
-    time_segments = rbindlist(list(
-        aligner_time[, .(pipeline, segment = "aligner", minutes)],
-        if (length(nonsbg_aligners) > 0 && cutadapt_minutes > 0)
-            data.table(pipeline = nonsbg_aligners,
-                       segment = "cutadapt",
-                       minutes = cutadapt_minutes)
-    ), use.names = TRUE, fill = TRUE)
-    time_segments[, segment := factor(segment, levels = c("aligner", "cutadapt"))]
+    time_segments = load_pipeline_time_segments(bench_dir, aligners)
     time_segments[, pipeline := order_pipelines(pipeline)]
     pipe_time = time_segments[, .(total_min = sum(minutes)), by = pipeline]
-
-    pipe_mem = bm[pipeline %in% aligners & is_tool_rule(file),
-                  .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
-    if (!is.na(cutadapt_max_rss) && length(nonsbg_aligners) > 0) {
-        pipe_mem[pipeline %in% nonsbg_aligners,
-                 peak_rss_gb := pmax(peak_rss_gb, cutadapt_max_rss)]
-    }
+    pipe_mem = load_pipeline_memory(bench_dir, aligners)
     pipe_mem[, pipeline := order_pipelines(pipeline)]
 
     pp_save_csv(pipe_time, pdir, "bench_total_time")
     pp_save_csv(time_segments, pdir, "bench_total_time_segments")
     pp_save_csv(pipe_mem, pdir, "bench_peak_memory")
 
-    fill_palette = c(aligner_colours, cutadapt = "grey60")
-    time_segments[, fill_key := ifelse(segment == "cutadapt",
-                                       "cutadapt",
+    fill_palette = c(aligner_colours, preprocessing = "grey60")
+    time_segments[, fill_key := ifelse(segment == "preprocessing",
+                                       "preprocessing",
                                        as.character(pipeline))]
 
     p_t = ggplot(time_segments,
                  aes(pipeline, minutes, fill = fill_key,
                      group = segment)) +
         geom_col(width = 0.7) +
-        geom_text(data = time_segments[segment == "cutadapt"],
+        geom_text(data = time_segments[segment == "preprocessing"],
                   aes(label = round(minutes, 1)),
                   position = position_stack(vjust = 0.5),
                   size = 2.8, colour = "white") +
@@ -1644,8 +1618,8 @@ run_benchmarks = function(opt) {
                   vjust = -0.3, size = 3, inherit.aes = FALSE) +
         scale_y_continuous(expand = expansion(mult = c(0.05, 0.10))) +
         scale_fill_manual(values = fill_palette,
-                          breaks = "cutadapt",
-                          labels = "cutadapt",
+                          breaks = "preprocessing",
+                          labels = "barcode preprocessing",
                           name = NULL) +
         theme_bw() +
         theme(legend.position = "bottom",
@@ -1715,55 +1689,28 @@ load_benchmarks = function(bench_dir, aligners) {
     bm[]
 }
 
-## Add the shared cutadapt CB/UMI standardization step to non-sbg aligner totals
-## so figures compare like-for-like against sbg, whose CWL ingests raw fastqs and
-## demultiplexes internally.
+## Time per aligner over the compared stages of workflow/data/benchmark_stages.tsv
+## (barcode preprocessing, alignment and quantification, matrix building, sample
+## tags). Downloads, installs, references, downsampling and reports are left
+## out. Barcode preprocessing of rhapsodist is its own segment; sbg does its own
+## inside the CWL, so all of its time is one segment.
+load_pipeline_time_segments = function(bench_dir, aligners) {
+    by_stage = as.data.table(stage_time_table(bench_dir, aligners))
+    by_stage[, segment := ifelse(stage == "preprocessing" & pipeline != "sbg",
+                                 "preprocessing", "aligner")]
+    out = by_stage[, .(minutes = sum(minutes)), by = .(pipeline, segment)]
+    out[, pipeline := as.character(pipeline)]
+    out[, segment := factor(segment, levels = c("preprocessing", "aligner"))]
+    out[]
+}
+
 load_pipeline_time = function(bench_dir, aligners) {
-    bm = load_benchmarks(bench_dir, aligners)
-    out = bm[pipeline %in% aligners & is_tool_rule(file),
-             .(total_min = sum(minutes)), by = pipeline]
-    cutadapt_minutes = bm[grepl("^standardize_cb_umis_", file) & is_tool_rule(file),
-                          sum(minutes)]
-    nonsbg = setdiff(aligners, "sbg")
-    if (length(nonsbg) > 0 && length(cutadapt_minutes) > 0 && cutadapt_minutes > 0) {
-        out[pipeline %in% nonsbg, total_min := total_min + cutadapt_minutes]
-    }
-    out
+    load_pipeline_time_segments(bench_dir, aligners)[, .(total_min = sum(minutes)),
+                                                       by = pipeline]
 }
 
 load_pipeline_memory = function(bench_dir, aligners) {
-    bm = load_benchmarks(bench_dir, aligners)
-    out = bm[pipeline %in% aligners & is_tool_rule(file),
-             .(peak_rss_gb = max(max_rss_gb, na.rm = TRUE)), by = pipeline]
-    cutadapt_max_rss = bm[grepl("^standardize_cb_umis_", file) & is_tool_rule(file),
-                          max(max_rss_gb, na.rm = TRUE)]
-    nonsbg = setdiff(aligners, "sbg")
-    if (length(nonsbg) > 0 && is.finite(cutadapt_max_rss)) {
-        out[pipeline %in% nonsbg,
-            peak_rss_gb := pmax(peak_rss_gb, cutadapt_max_rss)]
-    }
-    out
-}
-
-## Same data as load_pipeline_time() but split into aligner / cutadapt rows so
-## the cutadapt fraction can be drawn as a stacked segment on the time bar.
-load_pipeline_time_segments = function(bench_dir, aligners) {
-    bm = load_benchmarks(bench_dir, aligners)
-    aligner_time = bm[pipeline %in% aligners & is_tool_rule(file),
-                      .(minutes = sum(minutes)), by = pipeline]
-    cutadapt_minutes = bm[grepl("^standardize_cb_umis_", file) & is_tool_rule(file),
-                          sum(minutes)]
-    nonsbg = setdiff(aligners, "sbg")
-    out = aligner_time[, .(pipeline, segment = "aligner", minutes)]
-    if (length(nonsbg) > 0 && length(cutadapt_minutes) > 0 &&
-        cutadapt_minutes > 0) {
-        out = rbindlist(list(out,
-            data.table(pipeline = nonsbg, segment = "cutadapt",
-                       minutes = cutadapt_minutes)),
-            use.names = TRUE)
-    }
-    out[, segment := factor(segment, levels = c("aligner", "cutadapt"))]
-    out
+    as.data.table(aligner_peak_memory(bench_dir, aligners))
 }
 
 ## Per-sample linker error rate panel. Consumes the TSV written by the

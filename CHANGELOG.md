@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Paper: fixes
+
+- Aligner time and peak memory sum the compared stages of `benchmark_stages.tsv`: barcode preprocessing (cutadapt and the observed allowlist), alignment and quantification, matrix building and sample tags. STARsolo alignment was missed for sample names without an underscore; kallisto and sbg reference builds were counted.
+- Downsampling and the conversion to SingleCellExperiment are their own stages, left out of the compared time.
+
 ## v0.4.1 - 2026-11-05
 
 ### Tool: fixes

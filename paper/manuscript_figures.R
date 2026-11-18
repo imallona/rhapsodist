@@ -222,21 +222,21 @@ cluster_rank = function(umap) {
 
 time_memory_bars = function(time_seg, memory) {
     time_seg = copy(time_seg)
-    time_seg[, segment := factor(segment, c("cutadapt", "aligner"))]
+    time_seg[, segment := factor(segment, c("preprocessing", "aligner"))]
     totals = time_seg[, .(minutes = sum(minutes)), by = pipeline]
     time_seg[, pipeline := aligner_factor(pipeline)]
     totals[, pipeline := aligner_factor(pipeline)]
     memory = copy(memory)
     memory[, pipeline := aligner_factor(pipeline)]
     fills = setNames(aligner_colours, aligner_labels[names(aligner_colours)])
-    time_seg[, fill := ifelse(segment == "cutadapt", "cutadapt", as.character(pipeline))]
+    time_seg[, fill := ifelse(segment == "preprocessing", "barcode preprocessing", as.character(pipeline))]
     p_time = ggplot(time_seg, aes(minutes, pipeline, fill = fill)) +
         geom_col(width = 0.65, position = position_stack(reverse = TRUE)) +
         geom_text(data = totals, aes(minutes, pipeline,
                                      label = formatC(minutes, format = "f", digits = 1)),
                   inherit.aes = FALSE, hjust = -0.15, size = label_size) +
-        scale_fill_manual(values = c(fills, cutadapt = "grey60"),
-                          breaks = "cutadapt", name = NULL) +
+        scale_fill_manual(values = c(fills, "barcode preprocessing" = "grey60"),
+                          breaks = "barcode preprocessing", name = NULL) +
         scale_x_continuous(expand = expansion(mult = c(0, 0.2))) +
         scale_y_discrete(limits = rev) +
         labs(x = "wall-clock time (min)", y = NULL) +
@@ -306,8 +306,9 @@ figure_biology = function(key, name, second_label, second_title) {
     second_ari = read_sample(key, switch(second_label,
                                          Phase = "bio_phase_ari_matrix.csv",
                                          "bio_celltype_ari_matrix.csv"))
-    bars = time_memory_bars(read_sample(key, "bio_perf_time_segments.csv"),
-                            read_sample(key, "bio_perf_memory.csv"))
+    run_dir = file.path(opt$results, datasets[[key]]$run, "paper")
+    bars = time_memory_bars(fread(file.path(run_dir, "bench_total_time_segments.csv")),
+                            fread(file.path(run_dir, "bench_peak_memory.csv")))
     umap = cluster_rank(umap)
     n_clusters = nlevels(umap$cluster_rank)
     cluster_palette = setNames(grDevices::hcl.colors(n_clusters, "Dynamic"),
