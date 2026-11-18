@@ -24,8 +24,8 @@ if _sra_samples:
         conda:
             op.join(workflow.basedir, 'envs', 'fetch.yaml')
         output:
-            r1 = temp(op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R1.fastq.gz')),
-            r2 = temp(op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R2.fastq.gz'))
+            r1 = op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R1.fastq.gz'),
+            r2 = op.join(config['working_dir'], 'data', 'fastq', 'sra', '{sample}', '{sample}_R2.fastq.gz')
         params:
             sra_run = lambda wildcards: _sra_run_by_name(wildcards.sample),
             outdir = lambda wildcards: op.join(config['working_dir'], 'data', 'fastq', 'sra', wildcards.sample)
