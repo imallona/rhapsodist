@@ -37,5 +37,11 @@ run_workflow workflow/Snakefile "$configfile" \
 if [ -n "${RUN_ROOT:-}" ]; then
     benchmarks="$(sed -n 's/^working_dir: *//p' "$configfile")/benchmarks"
     mkdir -p "$benchmarks"
-    cp -v "$working_dir"/benchmarks/sbg_cwl_{,steps_}"$sample".* "$benchmarks"/
+    for timing in sbg_cwl_"$sample".txt sbg_cwl_steps_"$sample".tsv; do
+        if [ -f "$working_dir/benchmarks/$timing" ]; then
+            cp -v "$working_dir/benchmarks/$timing" "$benchmarks"/
+        else
+            echo "missing $working_dir/benchmarks/$timing, not copied" >&2
+        fi
+    done
 fi
