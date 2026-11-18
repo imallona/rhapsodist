@@ -489,12 +489,12 @@ figure_linker_tolerance = function() {
                       vjust = ifelse(value >= 0, -0.3, 1.2)),
                   position = position_dodge(width = 0.75),
                   size = label_size * 0.85) +
-        facet_grid(dataset ~ metric, scales = "free_y") +
+        facet_wrap(vars(dataset, metric), ncol = 3, scales = "free_y",
+                   labeller = label_wrap_gen(multi_line = FALSE)) +
         scale_fill_manual(values = mismatch_fills, name = "tolerated linker mismatches") +
         scale_y_continuous(expand = expansion(mult = 0.15)) +
         labs(x = NULL, y = NULL) +
-        theme(legend.position = "top",
-              strip.text.y = element_text(angle = 270))
+        theme(legend.position = "top")
     ## Agreement with sbg, which has no linker setting, at 0 and 1 mismatches.
     sbg_rows = rbindlist(lapply(c("hela", "epidermis"), function(key) {
         dt = read_sample(key, "linker_tolerance_sbg.csv")
@@ -515,12 +515,12 @@ figure_linker_tolerance = function() {
                                      sprintf("%.2f", value), sprintf("%.0f", value))),
                   position = position_dodge(width = 0.75), vjust = -0.3,
                   size = label_size * 0.85) +
-        facet_grid(dataset ~ metric, scales = "free_y") +
+        facet_wrap(vars(dataset, metric), ncol = 3, scales = "free_y",
+                   labeller = label_wrap_gen(multi_line = FALSE)) +
         scale_fill_manual(values = mismatch_fills, name = "tolerated linker mismatches") +
         scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
         labs(x = NULL, y = NULL) +
-        theme(legend.position = "top",
-              strip.text.y = element_text(angle = 270))
+        theme(legend.position = "top")
     fig = (p / p_sbg) + plot_annotation(tag_levels = "A")
     save_figure(fig, "linker_tolerance", height = 7)
 }
