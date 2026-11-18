@@ -672,8 +672,8 @@ rule concat_fastqs:
         r1 = lambda wildcards: get_cbumi_inputs(wildcards.sample),
         r2 = lambda wildcards: get_cdna_inputs(wildcards.sample)
     output:
-        r1 = op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R1.fastq.gz'),
-        r2 = op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R2.fastq.gz')
+        r1 = temp(op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R1.fastq.gz')),
+        r2 = temp(op.join(config['working_dir'], 'data', 'fastq', 'combined', '{sample}_R2.fastq.gz'))
     params:
         outdir = op.join(config['working_dir'], 'data', 'fastq', 'combined')
     log:
@@ -693,8 +693,8 @@ rule downsample_fastqs:
         r1 = lambda wildcards: _raw_cbumi_path(wildcards.sample),
         r2 = lambda wildcards: _raw_cdna_path(wildcards.sample)
     output:
-        r1 = op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R1.fastq.gz'),
-        r2 = op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R2.fastq.gz')
+        r1 = temp(op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R1.fastq.gz')),
+        r2 = temp(op.join(config['working_dir'], 'data', 'fastq', 'downsampled', '{sample}_R2.fastq.gz'))
     params:
         fraction = lambda wildcards: get_downsample_fraction(wildcards.sample),
         seed = config.get('downsample_seed', 42),
@@ -780,12 +780,12 @@ rule standardize_cb_umis_cutadapt:
         cdna = lambda wildcards: get_cdna_by_name(wildcards.sample),
         validation_flag = op.join(config['working_dir'], 'logs', '{sample}_bead_version_validated.flag')
     output:
-        cdna = op.join(config['working_dir'], 'data', 'fastq',
-                       "{sample}_standardized_cdna.fq.gz"),
+        cdna = temp(op.join(config['working_dir'], 'data', 'fastq',
+                            "{sample}_standardized_cdna.fq.gz")),
         temp_cb_umi = temp(op.join(config['working_dir'], 'data', 'fastq',
                                       "{sample}_temp_cb_umi.fq.gz")),
-        standardized_cb_umi = op.join(config['working_dir'], 'data', 'fastq',
-                                      "{sample}_standardized_cb_umi.fq.gz")
+        standardized_cb_umi = temp(op.join(config['working_dir'], 'data', 'fastq',
+                                           "{sample}_standardized_cb_umi.fq.gz"))
     params:
         path = op.join(config['working_dir'], 'data', 'fastq'),
         bead_type = lambda wildcards: get_bead_type_by_name(wildcards.sample),
@@ -1790,8 +1790,8 @@ for _sbg_sample in _sbg_samples:
             r1 = get_cbumi_by_name(_sbg_sample),
             r2 = get_cdna_by_name(_sbg_sample)
         output:
-            r1 = _sbg_fq_r1,
-            r2 = _sbg_fq_r2
+            r1 = temp(_sbg_fq_r1),
+            r2 = temp(_sbg_fq_r2)
         threads:
             config['nthreads']
         log:
