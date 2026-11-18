@@ -127,6 +127,10 @@ rule simulations_figure:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
     output:
         op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
         op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
@@ -157,6 +161,10 @@ rule experimental_figure:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
         op.join(WD, "paper", "{sample}", EXPERIMENTAL_FIG_STEM + ".pdf")

@@ -64,7 +64,7 @@ stage_time_table <- function(bench_dir, aligners, data_dir = STAGE_DATA_DIR) {
 }
 
 ## Peak resident memory (GiB) per aligner over the rules of its compared
-## stages, as for the time per stage.
+## stages, as for the time per stage. For sbg this is the peak of the whole CWL run.
 aligner_peak_memory <- function(bench_dir, aligners, data_dir = STAGE_DATA_DIR) {
     stage_table <- read_stage_table(file.path(data_dir, "benchmark_stages.tsv"))
     files <- list.files(bench_dir, pattern = "\\.txt$", full.names = TRUE)
@@ -73,14 +73,15 @@ aligner_peak_memory <- function(bench_dir, aligners, data_dir = STAGE_DATA_DIR) 
         if (is.null(bm) || !"max_rss" %in% names(bm)) NA_real_ else as.numeric(bm$max_rss[1])
     }, numeric(1))
     classified <- classify_benchmarks(sub("\\.txt$", "", basename(files)), stage_table)
-    kept <- classified$stage %in% setdiff(COMPARED_STAGES, "reporting") & !is.na(rss)
+    kept <- classified$stage %in% setdiff(COMPARED_STAGES, c("reporting", "unassigned")) & !is.na(rss)
     rows <- lapply(aligners, function(aligner) {
         used <- kept & vapply(strsplit(classified$aligners, ",", fixed = TRUE),
                               function(a) aligner %in% a, logical(1))
         if (!any(used)) return(NULL)
         data.frame(pipeline = aligner, peak_rss_gb = max(rss[used]) / 1024)
     })
-    do.call(rbind, rows)
+    out <- do.call(rbind, rows)
+    if (is.null(out)) data.frame(pipeline = character(0), peak_rss_gb = numeric(0)) else out
 }
 
 ## The machine record of a run as key and value columns, or NULL when absent.

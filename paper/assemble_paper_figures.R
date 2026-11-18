@@ -455,7 +455,7 @@ run_simulation = function(opt) {
                       axis.title.y = element_text(margin = margin(r = 2)),
                       axis.text.x = element_text(angle = 30, hjust = 1))
             time_segments[, segment := factor(segment,
-                                              levels = c("preprocessing", "aligner"))]
+                                              levels = c("aligner", "preprocessing"))]
             panels$E = ggplot(time_segments,
                               aes(pipeline, minutes, fill = fill_key,
                                   group = segment)) +
@@ -1689,18 +1689,19 @@ load_benchmarks = function(bench_dir, aligners) {
     bm[]
 }
 
-## Time per aligner over the compared stages of workflow/data/benchmark_stages.tsv
-## (barcode preprocessing, alignment and quantification, matrix building, sample
-## tags). Downloads, installs, references, downsampling and reports are left
-## out. Barcode preprocessing of rhapsodist is its own segment; sbg does its own
-## inside the CWL, so all of its time is one segment.
+## Time per aligner from barcode preprocessing to the SingleCellExperiment, over
+## the stages of workflow/data/benchmark_stages.tsv. Downloads, installs,
+## references, downsampling, reports and unassigned rules are left out. Barcode
+## preprocessing of rhapsodist is its own segment; sbg does its own inside the
+## CWL, so all of its time is one segment.
 load_pipeline_time_segments = function(bench_dir, aligners) {
     by_stage = as.data.table(stage_time_table(bench_dir, aligners))
+    by_stage = by_stage[pipeline %in% aligners & stage != "unassigned"]
     by_stage[, segment := ifelse(stage == "preprocessing" & pipeline != "sbg",
                                  "preprocessing", "aligner")]
     out = by_stage[, .(minutes = sum(minutes)), by = .(pipeline, segment)]
     out[, pipeline := as.character(pipeline)]
-    out[, segment := factor(segment, levels = c("preprocessing", "aligner"))]
+    out[, segment := factor(segment, levels = c("aligner", "preprocessing"))]
     out[]
 }
 

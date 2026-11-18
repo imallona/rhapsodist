@@ -306,9 +306,12 @@ figure_biology = function(key, name, second_label, second_title) {
     second_ari = read_sample(key, switch(second_label,
                                          Phase = "bio_phase_ari_matrix.csv",
                                          "bio_celltype_ari_matrix.csv"))
+    ## run-level tables come from --kind benchmarks; fall back to the per-sample ones
     run_dir = file.path(opt$results, datasets[[key]]$run, "paper")
-    bars = time_memory_bars(fread(file.path(run_dir, "bench_total_time_segments.csv")),
-                            fread(file.path(run_dir, "bench_peak_memory.csv")))
+    perf = if (file.exists(file.path(run_dir, "bench_peak_memory.csv")))
+        file.path(run_dir, c("bench_total_time_segments.csv", "bench_peak_memory.csv"))
+    else file.path(sample_dir(key), c("bio_perf_time_segments.csv", "bio_perf_memory.csv"))
+    bars = time_memory_bars(fread(perf[1]), fread(perf[2]))
     umap = cluster_rank(umap)
     n_clusters = nlevels(umap$cluster_rank)
     cluster_palette = setNames(grDevices::hcl.colors(n_clusters, "Dynamic"),
