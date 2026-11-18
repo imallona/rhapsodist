@@ -42,7 +42,10 @@ def test_every_benchmarked_rule_has_a_stage():
 
 def test_stage_table_has_no_stale_rule():
     in_table = {row[0] for row in stage_table_rows()}
-    assert in_table - benchmark_patterns() == set()
+    ## a separate sample tag library reuses the WTA rules with sample <sample>_sampletags
+    patterns = benchmark_patterns()
+    tag_library = {p.replace('{sample}', '{sample}_sampletags') for p in patterns}
+    assert in_table - patterns - tag_library == set()
 
 
 def test_stage_table_patterns_are_unique():

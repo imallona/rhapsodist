@@ -46,7 +46,10 @@ check("the step keeps its placeholders",
 check("a step used by several aligners is shared",
       row("standardize_cb_umis_s1")$pipeline == "shared" &&
       row("standardize_cb_umis_s1")$aligners == "starsolo,kallisto,alevin")
-check("a species placeholder matches", row("mouse_sampletags__index")$stage == "sample tags")
+check("a species placeholder matches", row("mouse_sampletags__index")$stage == "reference")
+check("a separate tag library counts as sample tags for every aligner",
+      with(classify_benchmarks("standardize_cb_umis_s1_sampletags", stage_table),
+           stage == "sample tags" && aligners == "starsolo,kallisto,alevin,sbg"))
 check("an unknown stem is unassigned", row("made_up_step")$stage == "unassigned")
 
 check("named CWL steps get their stage",

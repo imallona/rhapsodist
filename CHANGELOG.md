@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Paper: fixes
+
+- Aligner time and peak memory cover barcode preprocessing (cutadapt and the observed allowlist) to the SingleCellExperiment, with sample tags, from `benchmark_stages.tsv`. STARsolo alignment was missed for sample names without an underscore; kallisto and sbg reference builds were counted.
+- Downsampling and the sample tag STAR index are their own stages, left out. Sample tag rules count for every aligner, sbg included.
+
 ## v0.4.1 - 2026-11-05
 
 ### Tool: fixes
