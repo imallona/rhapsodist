@@ -2,6 +2,8 @@
 ## Reruns only the BD pipeline of each dataset, to time it with
 ## cwl-runner --parallel. Fetches reads and builds the reference again when the
 ## scratch purge removed them: sbatch slurm/10_sbg_parallel.sh
+## With RUN_ROOT set in site.env the run writes there, and the BD timings are
+## copied back to the benchmarks of the config's working_dir.
 #SBATCH --job-name=rhapsodist-sbg-parallel
 #SBATCH --array=0-6
 #SBATCH --time=72:00:00
@@ -25,6 +27,15 @@ configfiles=(
 )
 samples=(simulated simulated hela_unmod sample_16_wta_p60 sample_16_wta_p60 colon neutrophils)
 
-rule="run_sbg_cwl_${samples[$SLURM_ARRAY_TASK_ID]}"
-run_workflow workflow/Snakefile "${configfiles[$SLURM_ARRAY_TASK_ID]}" \
-    --forcerun "$rule" --until "$rule"
+configfile=${configfiles[$SLURM_ARRAY_TASK_ID]}
+sample=${samples[$SLURM_ARRAY_TASK_ID]}
+rule="run_sbg_cwl_$sample"
+working_dir=$(working_dir_of "$configfile")
+run_workflow workflow/Snakefile "$configfile" \
+    --config working_dir="$working_dir" --forcerun "$rule" --until "$rule"
+
+if [ -n "${RUN_ROOT:-}" ]; then
+    benchmarks="$(sed -n 's/^working_dir: *//p' "$configfile")/benchmarks"
+    mkdir -p "$benchmarks"
+    cp -v "$working_dir"/benchmarks/sbg_cwl_{,steps_}"$sample".* "$benchmarks"/
+fi
