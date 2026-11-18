@@ -1,7 +1,7 @@
 #!/bin/bash
 ## Reruns only the BD pipeline of each dataset, to time it with
-## cwl-runner --parallel. Fetches reads and builds the reference again when the
-## scratch purge removed them: sbatch slurm/10_sbg_parallel.sh
+## cwl-runner --parallel. Fetches reads and builds the reference again when
+## they are missing: sbatch slurm/10_sbg_parallel.sh
 ## With RUN_ROOT set in site.env the run writes there, and the BD timings are
 ## copied back to the benchmarks of the config's working_dir.
 #SBATCH --job-name=rhapsodist-sbg-parallel
