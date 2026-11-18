@@ -8,6 +8,7 @@
 
 ### Tool: changes
 
+- `10_sbg_parallel.sh` and `11_colon_emptydrops.sh` write under `RUN_ROOT` when `slurm/site.env` sets it; the BD timings are copied back to `output/<dataset>/benchmarks`. Large reruns can then use a filesystem other than the clone's.
 - `fetch_sra` removes a stale prefetch lock, which a killed fetch leaves and which cancels the next download.
 - The BD pipeline runs with `cwl-runner --parallel`, as in OpenPipelines, so its scattered steps run at once.
 - The BD pipeline environment includes nodejs, so cwltool evaluates CWL expressions locally instead of starting a container for each.
