@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Paper: features
+
+- `compare_linker_tolerance.R --reference_aligner sbg` writes `linker_tolerance_sbg.csv`: Spearman, scaled MARD and MARD of every aligner and linker setting against sbg, on shared gene symbols. The paper rule passes it when the run has sbg; Figure S9 B draws it.
+
 ### Tool: changes
 
 - The BD pipeline runs with `cwl-runner --parallel`, as in OpenPipelines, so its scattered steps run at once.
+- The BD pipeline environment includes nodejs, so cwltool evaluates CWL expressions locally instead of starting a container for each.
 
 ### Paper: fixes
 

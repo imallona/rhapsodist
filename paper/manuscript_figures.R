@@ -466,6 +466,7 @@ figure_scaled_agreement = function() {
 
 ## Effect of 1 and 2 tolerated linker mismatches, relative to 0.
 figure_linker_tolerance = function() {
+    mismatch_fills = c(`0` = "grey70", `1` = "#9ECAE1", `2` = "#2171B5")
     rows = rbindlist(lapply(c("hela", "epidermis"), function(key) {
         dt = read_sample(key, "linker_tolerance.csv")
         base = dt[max_errors == 0, .(aligner, cells0 = n_cells, umis0 = median_umis)]
@@ -489,13 +490,39 @@ figure_linker_tolerance = function() {
                   position = position_dodge(width = 0.75),
                   size = label_size * 0.85) +
         facet_grid(dataset ~ metric, scales = "free_y") +
-        scale_fill_manual(values = c(`1` = "#9ECAE1", `2` = "#2171B5"),
-                          name = "tolerated linker mismatches") +
+        scale_fill_manual(values = mismatch_fills, name = "tolerated linker mismatches") +
         scale_y_continuous(expand = expansion(mult = 0.15)) +
         labs(x = NULL, y = NULL) +
         theme(legend.position = "top",
               strip.text.y = element_text(angle = 270))
-    save_figure(p, "linker_tolerance", height = 3.6)
+    ## Agreement with sbg, which has no linker setting, at 0 and 1 mismatches.
+    sbg_rows = rbindlist(lapply(c("hela", "epidermis"), function(key) {
+        dt = read_sample(key, "linker_tolerance_sbg.csv")
+        dt = dt[max_errors <= 1]
+        dt[, .(dataset = datasets[[key]]$label, aligner, max_errors,
+               `pseudobulk MARD with sbg (%)` = mard * 100,
+               `scaled MARD with sbg (%)` = scaled_mard * 100,
+               `Spearman with sbg` = spearman)]
+    }))
+    sbg_long = melt(sbg_rows, id.vars = c("dataset", "aligner", "max_errors"),
+                    variable.name = "metric")
+    sbg_long[, aligner := aligner_factor(aligner)]
+    sbg_long[, mismatches := factor(max_errors)]
+    sbg_long[, dataset := factor(dataset, c("HeLa", "Mouse epidermis"))]
+    p_sbg = ggplot(sbg_long, aes(aligner, value, fill = mismatches)) +
+        geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+        geom_text(aes(label = ifelse(metric == "Spearman with sbg",
+                                     sprintf("%.2f", value), sprintf("%.0f", value))),
+                  position = position_dodge(width = 0.75), vjust = -0.3,
+                  size = label_size * 0.85) +
+        facet_grid(dataset ~ metric, scales = "free_y") +
+        scale_fill_manual(values = mismatch_fills, name = "tolerated linker mismatches") +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+        labs(x = NULL, y = NULL) +
+        theme(legend.position = "top",
+              strip.text.y = element_text(angle = 270))
+    fig = (p / p_sbg) + plot_annotation(tag_levels = "A")
+    save_figure(fig, "linker_tolerance", height = 7)
 }
 
 ## Sample tag calls on the colon against the tags deposited by the authors.

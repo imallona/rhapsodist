@@ -76,12 +76,13 @@ Rscript paper/compare_sampletag_calls.R \
 
 ## Linker tolerance
 
-`compare_linker_tolerance.R` compares runs of one sample that differ in `cb_umi_max_errors`. Per aligner and setting it writes cells, median UMIs per cell, and Spearman and scaled MARD of the pseudobulk against the first run, as a CSV and a PDF.
+`compare_linker_tolerance.R` compares runs of one sample that differ in `cb_umi_max_errors`. Per aligner and setting it writes cells, median UMIs per cell, and Spearman and scaled MARD of the pseudobulk against the first run, as a CSV and a PDF. With `--reference_aligner sbg` it also writes `<out_prefix>_sbg.csv`: Spearman, scaled MARD and MARD of every aligner and setting against `sbg` of the first run, on gene symbols shared by all of them. The paper rule passes it when the run has `sbg`.
 
 ```bash
 Rscript paper/compare_linker_tolerance.R \
     --runs 0=output/sendoel2024 1=output/sendoel2024_linker1 2=output/sendoel2024_linker2 \
     --sample sample_16_wta_p60 --aligners starsolo,kallisto,alevin \
+    --reference_aligner sbg \
     --out_prefix output/sendoel2024/paper/sample_16_wta_p60/linker_tolerance
 ```
 
