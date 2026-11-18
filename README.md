@@ -461,7 +461,7 @@ Order:
 
 `10_sbg_parallel.sh` (7 tasks) reruns only the BD pipeline of each dataset, fetching reads and rebuilding the reference when they are missing. Run it before `08_figures.sh`. With `RUN_ROOT` set in `slurm/site.env`, `10_sbg_parallel.sh` and `11_colon_emptydrops.sh` write under that folder; `10_sbg_parallel.sh` then copies the BD timings back to `output/<dataset>/benchmarks`.
 
-`11_colon_emptydrops.sh` runs GSE282765 with `cell_filtering: emptydrops` in `output/gse282765_emptydrops`, so the aligners are compared on cells called the same way.
+`11_colon_emptydrops.sh` runs GSE282765 with `cell_filtering: emptydrops` in `output/gse282765_emptydrops` (or under `RUN_ROOT`), so the aligners are compared on cells called the same way; on success it copies the results to `RESULTS_DIR`.
 
 Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
 

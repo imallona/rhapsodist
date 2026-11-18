@@ -48,6 +48,18 @@ working_dir_of() {
     echo "$working_dir"
 }
 
+## archive_results SOURCE DESTINATION
+## Copies reports, count objects, benchmarks, paper tables and logs.
+archive_results() {
+    mkdir -p "$2"
+    rsync -a --prune-empty-dirs \
+        --include='*/' --include='*.html' --include='*_sce.rds' --include='*_hdf5/***' \
+        --include='by_sampletag/***' --include='*.h5ad' \
+        --include='run_info.tsv' --include='benchmarks/***' --include='paper/***' \
+        --include='logs/***' --exclude='*' \
+        "$1"/ "$2"/
+}
+
 ## run_workflow SNAKEFILE CONFIGFILE [snakemake arguments]
 ## Prints a dry run to the job log first.
 ## Slurm sends TERM before the time limit; it is forwarded to Snakemake.

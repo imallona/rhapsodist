@@ -1,7 +1,8 @@
 #!/bin/bash
 ## GSE282765 with emptyDrops for every aligner, in its own working directory,
 ## so the aligners are compared on cells called the same way. Writes under
-## RUN_ROOT when site.env sets it, else under output/:
+## RUN_ROOT when site.env sets it, else under output/, and on success copies
+## the results to RESULTS_DIR:
 ## sbatch slurm/11_colon_emptydrops.sh
 #SBATCH --job-name=rhapsodist-colon-emptydrops
 #SBATCH --time=72:00:00
@@ -14,5 +15,7 @@
 
 source "${SLURM_SUBMIT_DIR:-$PWD}/slurm/common.sh"
 
+working_dir="${RUN_ROOT:-output}/gse282765_emptydrops"
 run_workflow workflow/Snakefile configs/gse282765_config.yaml \
-    --config cell_filtering=emptydrops working_dir="${RUN_ROOT:-output}/gse282765_emptydrops"
+    --config cell_filtering=emptydrops working_dir="$working_dir"
+archive_results "$working_dir" "$RESULTS_DIR/$(git rev-parse --short HEAD)/gse282765_emptydrops"
