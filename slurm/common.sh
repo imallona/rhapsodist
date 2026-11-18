@@ -37,29 +37,6 @@ fi
 echo "host $(hostname), job ${SLURM_JOB_ID:-none}, commit $(git rev-parse --short HEAD)"
 echo "cpu $(sed -n 's/^model name[^:]*: //p' /proc/cpuinfo | head -n 1), cores $CORES"
 
-## working_dir_of CONFIGFILE
-## Prints the working_dir of a config, moved under RUN_ROOT when site.env sets it.
-working_dir_of() {
-    local working_dir
-    working_dir=$(sed -n 's/^working_dir: *//p' "$1")
-    if [ -n "${RUN_ROOT:-}" ]; then
-        working_dir="$RUN_ROOT/$(basename "$working_dir")"
-    fi
-    echo "$working_dir"
-}
-
-## archive_results SOURCE DESTINATION
-## Copies reports, count objects, benchmarks, paper tables and logs.
-archive_results() {
-    mkdir -p "$2"
-    rsync -a --prune-empty-dirs \
-        --include='*/' --include='*.html' --include='*_sce.rds' --include='*_hdf5/***' \
-        --include='by_sampletag/***' --include='*.h5ad' \
-        --include='run_info.tsv' --include='benchmarks/***' --include='paper/***' \
-        --include='logs/***' --exclude='*' \
-        "$1"/ "$2"/
-}
-
 ## run_workflow SNAKEFILE CONFIGFILE [snakemake arguments]
 ## Prints a dry run to the job log first.
 ## Slurm sends TERM before the time limit; it is forwarded to Snakemake.

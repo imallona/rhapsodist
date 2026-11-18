@@ -12,5 +12,10 @@ source "${SLURM_SUBMIT_DIR:-$PWD}/slurm/common.sh"
 destination="$RESULTS_DIR/$(git rev-parse --short HEAD)"
 mkdir -p "$destination"
 
-archive_results output "$destination"
+rsync -a --prune-empty-dirs \
+    --include='*/' --include='*.html' --include='*_sce.rds' --include='*_hdf5/***' \
+    --include='by_sampletag/***' --include='*.h5ad' \
+    --include='run_info.tsv' --include='benchmarks/***' --include='paper/***' \
+    --include='logs/***' --exclude='*' \
+    output/ "$destination/"
 rsync -a slurm/logs/ "$destination/slurm_logs/"

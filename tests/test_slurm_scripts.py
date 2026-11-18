@@ -72,9 +72,9 @@ def test_readme_lists_every_script():
 
 @pytest.mark.skipif(shutil.which('rsync') is None, reason='needs rsync')
 def test_archive_keeps_counts_and_leaves_alignments(tmp_path):
-    """The filters of archive_results in common.sh, applied to a small output tree."""
+    """The filters of 09_archive.sh, applied to a small output tree."""
     filters = re.findall(r"--(?:include|exclude)='[^']+'",
-                         read(os.path.join(SLURM_DIR, 'common.sh')))
+                         read(os.path.join(SLURM_DIR, '09_archive.sh')))
     sample_dir = tmp_path / 'output' / 'run' / 'starsolo' / 's1'
     kept = ['s1_starsolo_sce.rds', 's1_starsolo_sce_hdf5/assays.h5',
             's1_starsolo_sce_hdf5/se.rds', 'by_sampletag/tag_1/assays.h5',
