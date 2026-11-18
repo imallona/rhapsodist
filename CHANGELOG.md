@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Tool: changes
+
+- The BD pipeline runs with `cwl-runner --parallel`, as in OpenPipelines, so its scattered steps run at once.
+
 ### Paper: fixes
 
 - Aligner time and peak memory cover barcode preprocessing (cutadapt and the observed allowlist) to the SingleCellExperiment, with sample tags, from `benchmark_stages.tsv`. STARsolo alignment was missed for sample names without an underscore; kallisto and sbg reference builds were counted.

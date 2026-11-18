@@ -1902,8 +1902,9 @@ ENDOFYML
               sed -i "/PLACEHOLDER_STV/d" "$INPUT_YML"
             fi
 
+            ## --parallel runs the scattered steps at once, as OpenPipelines does
             CWL_SINGULARITY_CACHE={params.sif_cache} \
-            cwl-runner --singularity --timestamps \
+            cwl-runner --singularity --parallel --timestamps \
                 --outdir {params.outdir} \
                 {params.cwl} "$INPUT_YML" &> {log}
 
