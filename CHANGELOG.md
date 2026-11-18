@@ -4,20 +4,19 @@
 
 ### Paper: features
 
-- `compare_linker_tolerance.R --reference_aligner sbg` writes `linker_tolerance_sbg.csv`: Spearman, scaled MARD and MARD of every aligner and linker setting against sbg, on shared gene symbols. The paper rule passes it when the run has sbg; Figure S9 B draws it.
+- `manuscript_figures.R` draws the manuscript figures at print size; `export_pseudobulk.R` and `export_embeddings.R` write its input tables.
+- `compare_linker_tolerance.R --reference_aligner sbg` compares every aligner and linker setting with sbg (Figure S9 B).
+- `10_sbg_parallel.sh` reruns only the BD pipeline; `11_colon_emptydrops.sh` runs GSE282765 with emptyDrops for every aligner.
 
 ### Tool: changes
 
-- Combined and standardized FASTQ files are temporary; `--notemp` keeps them. Downloaded, downsampled and BD-rewritten reads stay, since the linker configs and the paper rules read them.
-- `fetch_sra` writes the fasterq-dump temporary files next to the reads, not in the directory Snakemake runs from.
-- `fetch_sra` removes a stale prefetch lock, which a killed fetch leaves and which cancels the next download.
-- The BD pipeline runs with `cwl-runner --parallel`, as in OpenPipelines, so its scattered steps run at once.
-- The BD pipeline environment includes nodejs, so cwltool evaluates CWL expressions locally instead of starting a container for each.
+- Combined and standardized FASTQ files are Snakemake `temp()`; `--notemp` keeps them.
+- `fetch_sra` writes fasterq-dump temporary files next to the reads and removes stale prefetch locks.
+- The BD pipeline runs with `cwl-runner --parallel`, and its environment includes nodejs for CWL expressions.
 
 ### Paper: fixes
 
-- Aligner time and peak memory cover barcode preprocessing (cutadapt and the observed allowlist) to the SingleCellExperiment, with sample tags, from `benchmark_stages.tsv`. STARsolo alignment was missed for sample names without an underscore; kallisto and sbg reference builds were counted.
-- Downsampling and the sample tag STAR index are their own stages, left out. Sample tag rules count for every aligner, sbg included.
+- Aligner time and peak memory come from `benchmark_stages.tsv`: barcode preprocessing to the SingleCellExperiment, sample tags included; downloads, references and downsampling left out.
 
 ## v0.4.1 - 2026-11-05
 
