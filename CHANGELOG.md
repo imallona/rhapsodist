@@ -14,6 +14,10 @@
 - `fetch_sra` writes fasterq-dump temporary files next to the reads and removes stale prefetch locks.
 - The BD pipeline runs with `cwl-runner --parallel`, and its environment includes nodejs for CWL expressions.
 
+### Tool: fixes
+
+- `cell_filtering: emptydrops` calls cells with DropletUtils emptyDropsCellRanger for kallisto, alevin and sbg, as STARsolo EmptyDrops_CR does; alevin passes every barcode to it instead of the knee list.
+
 ### Paper: fixes
 
 - Aligner time and peak memory come from `benchmark_stages.tsv`: barcode preprocessing to the SingleCellExperiment, sample tags included; downloads, references and downsampling left out.

@@ -36,7 +36,7 @@ parser$add_argument('--output_fn', type = 'character', help = 'Output SCE RDS pa
 parser$add_argument('--knee_barcodes', type = 'character',
                     help = 'Path to knee-filtered barcode list')
 parser$add_argument('--cell_filtering', type = 'character', default = 'native',
-                    help = 'native: use knee barcodes directly; emptydrops: apply DropletUtils emptyDrops; none: keep all barcodes')
+                    help = 'native: use knee barcodes directly; emptydrops: apply DropletUtils emptyDropsCellRanger; none: keep all barcodes')
 parser$add_argument('--usa', action = 'store_true', default = FALSE,
                     help = 'alevin-fry USA mode: split spliced/unspliced/ambiguous counts into separate assays')
 
@@ -177,16 +177,16 @@ saveRDS(sce, file.path(dirname(args$output_fn), paste0(id, '_alevin_sce_pre_filt
 if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
     ed <- tryCatch(
-        emptyDrops(counts(sce)),
+        emptyDropsCellRanger(counts(sce)),
         error = function(e) {
-            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n',
+            cat(sprintf('emptyDropsCellRanger failed (%s); keeping all %d barcodes\n',
                         conditionMessage(e), ncol(sce)))
             NULL
         }
     )
     if (!is.null(ed)) {
         keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        cat(sprintf('emptyDropsCellRanger: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
         sce <- sce[, keep]
     }
 }

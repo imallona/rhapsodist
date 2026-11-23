@@ -220,7 +220,7 @@ cell_filtering: "native"
 ```
 
 - `native`: STARsolo uses its soloCellFilter; alevin and kallisto apply DropletUtils barcodeRanks.
-- `emptydrops`: apply DropletUtils emptyDrops across all aligners.
+- `emptydrops`: STARsolo uses its soloCellFilter (EmptyDrops_CR is the default); kallisto, alevin and sbg apply DropletUtils emptyDropsCellRanger, the same method, to every observed barcode.
 - `none`: no cell filtering; every observed barcode is kept so you can filter downstream yourself. For STARsolo this overrides soloCellFilter to None; for alevin and kallisto the knee filter is skipped.
 
 `native` takes the least time and fits a run with one aligner. With `emptydrops` every aligner is filtered by the same method, so cell numbers are comparable between aligners; it tests each barcode against the ambient profile of the empty droplets, which helps on tissues where small cells have few UMIs.

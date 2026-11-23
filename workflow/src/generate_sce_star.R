@@ -33,7 +33,7 @@ parser$add_argument('--output_fn',
 
 parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
-                    help = 'native: use pre-filtered STARsolo output; emptydrops: apply DropletUtils emptyDrops on raw counts')
+                    help = 'native: use pre-filtered STARsolo output; emptydrops: apply DropletUtils emptyDropsCellRanger on raw counts')
 
 parser$add_argument('--solo_cell_filter',
                     type = 'character', default = 'CellRanger2',
@@ -126,15 +126,15 @@ if (args$cell_filtering == 'emptydrops') {
     } else {
         set.seed(42)
         ed <- tryCatch(
-            emptyDrops(counts(sce)),
+            emptyDropsCellRanger(counts(sce)),
             error = function(e) {
-                cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+                cat(sprintf('emptyDropsCellRanger failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
                 NULL
             }
         )
         if (!is.null(ed)) {
             keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-            cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+            cat(sprintf('emptyDropsCellRanger: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
             sce <- sce[, keep]
         }
     }

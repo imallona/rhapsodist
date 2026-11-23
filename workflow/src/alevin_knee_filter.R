@@ -7,7 +7,7 @@
 ##            --output <path> \
 ##            [--cell_filtering <native|emptydrops|none>] \
 ##            [--sim_barcodes <path>]
-## cell_filtering none keeps every observed barcode (no knee filter).
+## cell_filtering none or emptydrops keeps every observed barcode (no knee filter).
 
 suppressPackageStartupMessages({
     library(DropletUtils)
@@ -54,10 +54,10 @@ if (nchar(opts$fry_quant_dir) > 0) {
     umi_totals = as.numeric(fd[["DeduplicatedReads"]])
 }
 
-if (opts$cell_filtering == "none") {
+if (opts$cell_filtering %in% c("none", "emptydrops")) {
     writeLines(barcodes, opts$output)
-    message(sprintf("cell_filtering none: kept all %d barcodes (no knee filter)",
-                    length(barcodes)))
+    message(sprintf("cell_filtering %s: kept all %d barcodes (no knee filter)",
+                    opts$cell_filtering, length(barcodes)))
     quit(save = "no", status = 0)
 }
 
