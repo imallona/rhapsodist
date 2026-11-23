@@ -17,7 +17,8 @@ deversion_transcriptome	kallisto,alevin	reference
 get_txp2gene	kallisto,alevin	reference
 build_sbg_reference_simulated	sbg	reference
 build_sbg_reference_real	sbg	reference
-{sample}_downsample	starsolo,kallisto,alevin,sbg	preprocessing
+{sample}_downsample	starsolo,kallisto,alevin,sbg	downsampling
+standardize_cb_umis_{sample}_sampletags	starsolo,kallisto,alevin,sbg	sample tags
 standardize_cb_umis_{sample}	starsolo,kallisto,alevin	preprocessing
 {sample}_derive_observed_whitelist	starsolo,kallisto,alevin	preprocessing
 star_{sample}	starsolo	alignment and quantification
@@ -35,13 +36,13 @@ r_sce_generation_{sample}_star	starsolo	matrix building
 r_sce_generation_{sample}_kallisto	kallisto	matrix building
 r_sce_generation_{sample}_alevin	alevin	matrix building
 r_sce_generation_{sample}_sbg	sbg	matrix building
-{sample}_unaligned_tagged	starsolo,kallisto,alevin	sample tags
-{sample}_sampletags_cutadapt	starsolo,kallisto,alevin	sample tags
-{species}_sampletags__index	starsolo,kallisto,alevin	sample tags
-{sample}_align_sampletags_star	starsolo,kallisto,alevin	sample tags
-{sample}_sampletag_counting	starsolo,kallisto,alevin	sample tags
-{sample}_search_sampletags	starsolo,kallisto,alevin	sample tags
-{sample}_demux_sampletags	starsolo,kallisto,alevin	sample tags
+{sample}_unaligned_tagged	starsolo,kallisto,alevin,sbg	sample tags
+{sample}_sampletags_cutadapt	starsolo,kallisto,alevin,sbg	sample tags
+{species}_sampletags__index	starsolo,kallisto,alevin	reference
+{sample}_align_sampletags_star	starsolo,kallisto,alevin,sbg	sample tags
+{sample}_sampletag_counting	starsolo,kallisto,alevin,sbg	sample tags
+{sample}_search_sampletags	starsolo,kallisto,alevin,sbg	sample tags
+{sample}_demux_sampletags	starsolo,kallisto,alevin,sbg	sample tags
 {sample}_{aligner}_split_sampletags	{aligner}	sample tags
 {sample}_sampletag_report	starsolo,kallisto,alevin	reporting
 {aligner}_{sample}_descriptive_report	{aligner}	reporting

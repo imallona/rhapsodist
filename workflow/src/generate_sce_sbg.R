@@ -44,7 +44,7 @@ parser$add_argument('--features_map',
     help = 'STARsolo features.tsv (gene_id<TAB>gene_name<TAB>...) used to remap SBG gene symbols to Ensembl IDs')
 parser$add_argument('--cell_filtering',
     type = 'character', default = 'native',
-    help = 'native: use mex_dir as-is (expected to be filtered); emptydrops: apply DropletUtils emptyDrops on the loaded counts')
+    help = 'native: use mex_dir as-is (expected to be filtered); emptydrops: apply DropletUtils emptyDropsCellRanger on the loaded counts')
 
 args <- parser$parse_args()
 
@@ -122,15 +122,15 @@ if (!is.null(args$features_map)) {
 if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
     ed <- tryCatch(
-        emptyDrops(counts(sce)),
+        emptyDropsCellRanger(counts(sce)),
         error = function(e) {
-            cat(sprintf('emptyDrops failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
+            cat(sprintf('emptyDropsCellRanger failed (%s); keeping all %d barcodes\n', conditionMessage(e), ncol(sce)))
             NULL
         }
     )
     if (!is.null(ed)) {
         keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        cat(sprintf('emptyDropsCellRanger: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
         sce <- sce[, keep]
     }
 }

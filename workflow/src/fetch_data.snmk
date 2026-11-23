@@ -38,8 +38,10 @@ if _sra_samples:
         shell:
             """
             mkdir -p {params.outdir}
+            ## a killed prefetch leaves a lock that makes the next one cancel
+            rm -f {params.outdir}/{params.sra_run}/*.lock
             prefetch --max-size 0 --output-directory {params.outdir} {params.sra_run} 2>> {log}
-            fasterq-dump --split-files --threads {threads} \
+            fasterq-dump --split-files --threads {threads} --temp {params.outdir} \
                 --outdir {params.outdir} {params.outdir}/{params.sra_run}/ 2>> {log}
             pigz -p {threads} -c {params.outdir}/{params.sra_run}_1.fastq \
                 > {output.r1} 2>> {log}

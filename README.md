@@ -146,7 +146,7 @@ workflow/
     reports/             biology and benchmark report templates
 paper/                   optional manuscript materials, independent of workflow/ (see paper/README.md)
 rhapsodist/              installable CLI package
-tests/                   pytest unit tests
+tests/                   pytest unit tests (needs pytest-cov and pyyaml; pytest.ini sets a 70% coverage floor)
 ```
 
 ## Configuration
@@ -220,7 +220,7 @@ cell_filtering: "native"
 ```
 
 - `native`: STARsolo uses its soloCellFilter; alevin and kallisto apply DropletUtils barcodeRanks.
-- `emptydrops`: apply DropletUtils emptyDrops across all aligners.
+- `emptydrops`: STARsolo uses its soloCellFilter (EmptyDrops_CR is the default); kallisto, alevin and sbg apply DropletUtils emptyDropsCellRanger, the same method, to every observed barcode.
 - `none`: no cell filtering; every observed barcode is kept so you can filter downstream yourself. For STARsolo this overrides soloCellFilter to None; for alevin and kallisto the knee filter is skipped.
 
 `native` takes the least time and fits a run with one aligner. With `emptydrops` every aligner is filtered by the same method, so cell numbers are comparable between aligners; it tests each barcode against the ambient profile of the empty droplets, which helps on tissues where small cells have few UMIs.
@@ -459,9 +459,13 @@ Order:
 4. `05_linker_tolerance.sh` (4 tasks), `06_public_datasets.sh` (2 tasks), `07_other_workflows.sh` (2 tasks): 10 cores per task, after 03 and 04.
 5. `08_figures.sh`: figure tables of every run, with the linker tolerance, other workflow and sample tag comparisons. Then `09_archive.sh`.
 
+`10_sbg_parallel.sh` (7 tasks) reruns only the BD pipeline of each dataset, fetching reads and rebuilding the reference when they were purged; it retimed the BD pipeline after `--parallel` was added. Run it before `08_figures.sh`.
+
+`11_colon_emptydrops.sh` runs GSE282765 with `cell_filtering: emptydrops` in `output/gse282765_emptydrops`, so the aligners are compared on cells called the same way.
+
 Run together, 05 to 07 use 80 cores. `sbatch --array=0-3%2 slurm/05_linker_tolerance.sh` runs two tasks at a time.
 
-`07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. Downloads with `curl` are retried, as set in `slurm/.curlrc`. `output` can be a symlink to scratch storage; `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
+`07_other_workflows.sh` requires `nextflow` on `PATH`, and the UniverSC sandbox and zUMIs clone described in `paper/README.md`. Downloads with `curl` are retried, as set in `slurm/.curlrc`. `output` can be a symlink to scratch storage. Combined and standardized FASTQ files are removed once no rule needs them; `--notemp` keeps them. `09_archive.sh` copies reports, count objects, benchmarks and logs to `RESULTS_DIR`.
 
 ## Contributors
 

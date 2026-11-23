@@ -42,7 +42,7 @@ parser$add_argument('--output_fn',
 
 parser$add_argument('--cell_filtering',
                     type = 'character', default = 'native',
-                    help = 'native: barcodeRanks knee filter; emptydrops: apply DropletUtils emptyDrops; none: keep all barcodes')
+                    help = 'native: barcodeRanks knee filter; emptydrops: apply DropletUtils emptyDropsCellRanger; none: keep all barcodes')
 
 args <- parser$parse_args()
 
@@ -99,15 +99,15 @@ if (args$cell_filtering == 'native') {
 } else if (args$cell_filtering == 'emptydrops') {
     set.seed(42)
     ed <- tryCatch(
-        emptyDrops(counts(sce)),
+        emptyDropsCellRanger(counts(sce)),
         error = function(e) {
-            warning(sprintf('emptyDrops failed (%s); keeping all %d barcodes', conditionMessage(e), ncol(sce)))
+            warning(sprintf('emptyDropsCellRanger failed (%s); keeping all %d barcodes', conditionMessage(e), ncol(sce)))
             NULL
         }
     )
     if (!is.null(ed)) {
         keep <- !is.na(ed$FDR) & ed$FDR <= 0.01
-        cat(sprintf('emptyDrops: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
+        cat(sprintf('emptyDropsCellRanger: kept %d / %d barcodes at FDR 0.01\n', sum(keep), ncol(sce)))
         sce <- sce[, keep]
     }
 } else if (args$cell_filtering == 'none') {

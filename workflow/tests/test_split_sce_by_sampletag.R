@@ -72,7 +72,8 @@ run_split <- function(case, out_base, backend, output_format = "sce") {
               "--sce", case$sce_rds, "--demux", case$demux, "--out_base", out_base,
               "--backend", backend, "--output_format", output_format,
               "--tags", paste(case$tags, collapse = ","))
-    t <- system.time(status <- system2("R", args, stdout = NULL, stderr = NULL))
+    t <- system.time(status <- system2(file.path(R.home("bin"), "R"), args,
+                                       stdout = NULL, stderr = NULL))
     if (status != 0) stop(sprintf("split failed (backend=%s, format=%s)", backend, output_format))
     t[["elapsed"]]
 }

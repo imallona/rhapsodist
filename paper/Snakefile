@@ -127,6 +127,10 @@ rule simulations_figure:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
     output:
         op.join(WD, "paper", "{sample}", "sim_cell_counts.csv"),
         op.join(WD, "paper", "{sample}", "fig1_simulations_panels.pdf")
@@ -157,6 +161,10 @@ rule experimental_figure:
         script = SCRIPT,
         helpers = op.join(PAPER_DIR, "export_helpers.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
+        stages = [op.join(PAPER_DIR, "stage_times.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "src", "benchmark_stages.R"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "benchmark_stages.tsv"),
+                  op.join(PAPER_DIR, "..", "workflow", "data", "sbg_cwl_stages.tsv")],
     output:
         op.join(WD, "paper", "{sample}", "bio_qc.csv"),
         op.join(WD, "paper", "{sample}", EXPERIMENTAL_FIG_STEM + ".pdf")
@@ -253,21 +261,26 @@ rule compare_linker_tolerance:
     input:
         sces = [sce_path(wd, a, "{sample}")
                 for wd in [WD, *LINKER_RUNS.values()] for a in COMPARED_ALIGNERS],
+        sbg = [sce_path(WD, "sbg", "{sample}")] if HAS_SBG else [],
         script = op.join(PAPER_DIR, "compare_linker_tolerance.R"),
         agreement = op.join(PAPER_DIR, "..", "workflow", "src", "agreement_metrics.R"),
     output:
         op.join(WD, "paper", "{sample}", "linker_tolerance.csv"),
         op.join(WD, "paper", "{sample}", "linker_tolerance.pdf"),
+        ## sbg has no linker setting; every aligner and setting is compared with it
+        [op.join(WD, "paper", "{sample}", "linker_tolerance_sbg.csv")] if HAS_SBG else [],
     params:
         runs = " ".join([f"0={WD}"] + [f"{e}={wd}" for e, wd in LINKER_RUNS.items()]),
         aligners = ",".join(COMPARED_ALIGNERS),
+        reference = "--reference_aligner sbg" if HAS_SBG else "",
         out_prefix = op.join(WD, "paper", "{sample}", "linker_tolerance"),
     log:
         op.join(WD, "logs", "paper_linker_tolerance_{sample}.log")
     shell:
         """
         Rscript {input.script} --runs {params.runs} --sample {wildcards.sample} \
-            --aligners {params.aligners} --out_prefix {params.out_prefix} &> {log}
+            --aligners {params.aligners} {params.reference} \
+            --out_prefix {params.out_prefix} &> {log}
         """
 
 

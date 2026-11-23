@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Paper: features
+
+- `manuscript_figures.R` draws the manuscript figures at print size; `export_pseudobulk.R` and `export_embeddings.R` write its input tables.
+- `compare_linker_tolerance.R --reference_aligner sbg` compares every aligner and linker setting with sbg (Figure S9 B).
+- `10_sbg_parallel.sh` reruns only the BD pipeline; `11_colon_emptydrops.sh` runs GSE282765 with emptyDrops for every aligner.
+
+### Tool: changes
+
+- Combined and standardized FASTQ files are Snakemake `temp()`; `--notemp` keeps them.
+- `fetch_sra` writes fasterq-dump temporary files next to the reads and removes stale prefetch locks.
+- The BD pipeline runs with `cwl-runner --parallel`, and its environment includes nodejs for CWL expressions.
+
+### Tool: fixes
+
+- `cell_filtering: emptydrops` calls cells with DropletUtils emptyDropsCellRanger for kallisto, alevin and sbg, as STARsolo EmptyDrops_CR does; alevin passes every barcode to it instead of the knee list.
+
+### Paper: fixes
+
+- Aligner time and peak memory come from `benchmark_stages.tsv`: barcode preprocessing to the SingleCellExperiment, sample tags included; downloads, references and downsampling left out.
+
 ## v0.4.1 - 2026-11-05
 
 ### Tool: fixes

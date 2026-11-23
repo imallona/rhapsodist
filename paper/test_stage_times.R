@@ -71,4 +71,20 @@ writeLines(c("key\tvalue", "cpu_model\tAMD EPYC 7763", "n_cpus\t128"),
 info <- read_run_info(run)
 check("run info is read as text", identical(info$value[info$key == "n_cpus"], "128"))
 
+mem <- file.path(run, "memory_benchmarks")
+dir.create(mem)
+write_rss <- function(stem, rss) {
+    writeLines(c("s\th:m:s\tmax_rss", sprintf("1\t0:00:01\t%s", rss)),
+               file.path(mem, paste0(stem, ".txt")))
+}
+write_rss("star_s1", 30720)
+write_rss("star_indexing", 40960)
+write_rss("standardize_cb_umis_s1", 1024)
+write_rss("s1_bustools_correct", 20480)
+write_rss("s1_comparison_report", 99999)
+peak <- aligner_peak_memory(mem, c("starsolo", "kallisto"))
+check("peak memory counts the alignment rule and leaves out indexing and reports",
+      peak$peak_rss_gb[peak$pipeline == "starsolo"] == 30 &&
+      peak$peak_rss_gb[peak$pipeline == "kallisto"] == 20)
+
 cat("all stage time tests passed\n")

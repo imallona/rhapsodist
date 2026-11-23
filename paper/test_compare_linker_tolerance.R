@@ -28,3 +28,22 @@ check("genes are matched by name and a change in yield alone leaves scaled MARD 
 changed <- pseudobulk_agreement(reference, c(g1 = 30, g2 = 20, g3 = 10))
 check("a reversed order gives Spearman -1 and a positive scaled MARD",
       changed$spearman == -1 && changed$scaled_mard > 0)
+
+row_data <- S4Vectors::DataFrame(name = c("A", "B"))
+summed <- symbol_pseudobulk(counts, row_data)
+check("pseudobulk is named by gene symbol and sums the called cells",
+      identical(summed, c(A = 4, B = 4)))
+empty_cell <- cbind(counts, d = c(0, 0))
+check("cells without counts do not change the pseudobulk",
+      identical(symbol_pseudobulk(empty_cell, row_data), summed))
+check("genes without counts are dropped",
+      identical(names(symbol_pseudobulk(counts[, "b", drop = FALSE], row_data)), "B"))
+
+against <- reference_agreement(c(g1 = 10, g2 = 20, g3 = 30),
+    list(list(aligner = "starsolo", max_errors = "0", pseudobulk = c(g1 = 20, g2 = 40, g3 = 60)),
+         list(aligner = "starsolo", max_errors = "1", pseudobulk = c(g1 = 20, g2 = 40))))
+check("agreement with the reference uses the genes every run holds",
+      all(against$n_genes == 2))
+check("a doubled yield keeps Spearman and scaled MARD and raises MARD",
+      isTRUE(all.equal(against$spearman[1], 1)) && isTRUE(all.equal(against$scaled_mard[1], 0)) &&
+      isTRUE(all.equal(against$mard[1], 2 / 3)))
