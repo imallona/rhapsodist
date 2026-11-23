@@ -48,6 +48,10 @@ datasets = list(
     neutrophils = list(run = "gse301173", sample = "neutrophils",
                        label = "Mouse neutrophils", markers = "neutrophil_markers.tsv"),
     colon = list(run = "gse282765", sample = "colon", label = "Mouse colon"))
+## The pseudobulk figures add the colon with emptyDrops for every aligner.
+pseudobulk_datasets = c(datasets, list(
+    colon_emptydrops = list(run = "gse282765_emptydrops", sample = "colon",
+                            label = "Mouse colon,\nemptyDrops")))
 
 theme_paper = function() {
     theme_classic(base_size = base_size) +
@@ -67,7 +71,7 @@ theme_paper = function() {
 theme_set(theme_paper())
 
 sample_dir = function(key) {
-    d = datasets[[key]]
+    d = pseudobulk_datasets[[key]]
     file.path(opt$results, d$run, "paper", d$sample)
 }
 read_sample = function(key, name) fread(file.path(sample_dir(key), name))
@@ -409,20 +413,20 @@ marker_genes = function(key) {
 
 ## Pairwise pseudobulk scatterplots, one row per dataset.
 figure_pseudobulk_scatter = function() {
-    rows = rbindlist(lapply(names(datasets), function(key) {
+    rows = rbindlist(lapply(names(pseudobulk_datasets), function(key) {
         pb = read_sample(key, "bio_pseudobulk.csv")
         markers = marker_genes(key)
         pipes = intersect(aligner_order, colnames(pb))
         pairs = combn(pipes, 2, simplify = FALSE)
         rbindlist(lapply(pairs, function(pr) {
-            data.table(dataset = datasets[[key]]$label,
+            data.table(dataset = pseudobulk_datasets[[key]]$label,
                        is_marker = pb$gene %in% markers,
                        pair = sprintf("%s vs\n%s", aligner_labels[pr[1]], aligner_labels[pr[2]]),
                        x = log10(pb[[pr[1]]] + 1), y = log10(pb[[pr[2]]] + 1),
                        r = cor(log10(pb[[pr[1]]] + 1), log10(pb[[pr[2]]] + 1)))
         }))
     }))
-    rows[, dataset := factor(dataset, sapply(datasets, `[[`, "label"))]
+    rows[, dataset := factor(dataset, sapply(pseudobulk_datasets, `[[`, "label"))]
     rows[, pair := factor(pair, unique(pair))]
     labels = unique(rows[, .(dataset, pair, r)])
     p = ggplot(rows, aes(x, y)) +
@@ -438,16 +442,16 @@ figure_pseudobulk_scatter = function() {
              y = "log10(pseudobulk count + 1), second aligner") +
         theme(strip.text.y = element_text(angle = 270),
               panel.border = element_rect(fill = NA, linewidth = 0.3))
-    save_figure(p, "pseudobulk_scatter", height = 5.2)
+    save_figure(p, "pseudobulk_scatter", height = 6.4)
     labels
 }
 
 ## Spearman correlation and scaled MARD on the pseudobulk, per dataset.
 figure_scaled_agreement = function() {
     panels = list()
-    for (key in names(datasets)) {
+    for (key in names(pseudobulk_datasets)) {
         pb = read_sample(key, "bio_pseudobulk.csv")
-        label = datasets[[key]]$label
+        label = pseudobulk_datasets[[key]]$label
         sp = pseudobulk_pairs(pb, spearman)
         sm = pseudobulk_pairs(pb, scaled_mard)[, value := value * 100]
         fwrite(rbind(sp[, stat := "spearman"], sm[, stat := "scaled_mard_pct"]),
@@ -461,7 +465,7 @@ figure_scaled_agreement = function() {
                                                     direction = -1)
     }
     fig = wrap_plots(panels, ncol = 4) + plot_annotation(tag_levels = "A")
-    save_figure(fig, "pseudobulk_scaled_agreement", height = 3.6)
+    save_figure(fig, "pseudobulk_scaled_agreement", height = 5.4)
 }
 
 ## Effect of 1 and 2 tolerated linker mismatches, relative to 0.
