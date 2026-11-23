@@ -146,7 +146,7 @@ workflow/
     reports/             biology and benchmark report templates
 paper/                   optional manuscript materials, independent of workflow/ (see paper/README.md)
 rhapsodist/              installable CLI package
-tests/                   pytest unit tests
+tests/                   pytest unit tests (needs pytest-cov and pyyaml; pytest.ini sets a 70% coverage floor)
 ```
 
 ## Configuration
